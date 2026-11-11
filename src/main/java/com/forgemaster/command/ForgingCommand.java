@@ -30,6 +30,7 @@ import java.util.Locale;
 import org.bukkit.inventory.meta.ItemMeta;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 public final class ForgingCommand implements CommandExecutor, TabCompleter {
@@ -2021,13 +2022,13 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
     /**
      * 数据看板（v2.23 切片 2/3 接线）：
      * <ul>
-     *   <li>{@code /zhujian admin metrics} —— 切片 1 的实时体检（剑币产出/消耗构成、总量、基尼），
+     *   <li>{@code /zhujian metrics} —— 切片 1 的实时体检（剑币产出/消耗构成、总量、基尼），
      *       文案与 v2.20 完全一致，老用户用法不变。</li>
-     *   <li>{@code /zhujian admin metrics trend [天数]} —— 近 N 天（默认 7，上限 history-days）
+     *   <li>{@code /zhujian metrics trend [天数]} —— 近 N 天（默认 7，上限 history-days）
      *       的产出/消耗/净额/锻造数/碎裂数与趋势总结。</li>
-     *   <li>{@code /zhujian admin metrics csv [天数]} —— 把同样的窗口导出成 CSV 存到
+     *   <li>{@code /zhujian metrics csv [天数]} —— 把同样的窗口导出成 CSV 存到
      *       {@code plugins/ForgingMaster/metrics-export/}，异步生成，完成后私聊路径。</li>
-     *   <li>{@code /zhujian admin metrics sample} —— 立刻采一次样（调参后想看效果时用）。</li>
+     *   <li>{@code /zhujian metrics sample} —— 立刻采一次样（调参后想看效果时用）。</li>
      * </ul>
      */
     private void metrics(CommandSender sender, String[] args) {
@@ -2039,7 +2040,10 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             Msg.prefix(sender, "<yellow>数据看板已关闭。</yellow> <dark_gray>（config.yml → metrics.enabled）");
             return;
         }
-        String sub = args.length == 0 ? "" : args[0].toLowerCase(java.util.Locale.ROOT);
+        // v2.23.5 修：这里原来读的是 args[0]（也就是 "metrics" 本身），于是 trend / csv /
+        // sample / gui 四条分支全是死代码，怎么敲都落到默认报表。分派处传的是完整 args，
+        // 子命令在 args[1]。
+        String sub = args.length < 2 ? "" : args[1].toLowerCase(java.util.Locale.ROOT);
         var svc = plugin.metrics();
         if (svc == null) {
             Msg.prefix(sender, "<red>数据看板服务没有启动，请检查启动日志。</red>");
@@ -2052,7 +2056,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
                 java.util.List<com.forgemaster.metrics.MetricsService.DayTotal> totals = svc.dayTotals(days);
                 if (totals.isEmpty()) {
                     Msg.send(sender, "<gray>还没有采样数据。等一个采样周期（默认 "
-                            + svc.intervalMinutes() + " 分钟），或先跑 /zhujian admin metrics sample。</gray>");
+                            + svc.intervalMinutes() + " 分钟），或先跑 /zhujian metrics sample。</gray>");
                     return;
                 }
                 for (var d : totals) {
@@ -2098,7 +2102,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
                         Msg.send(sender, line);
                     }
                 }
-                Msg.send(sender, "<dark_gray>　用 <white>/zhujian admin metrics trend [天数]</white> 看历史趋势，"
+                Msg.send(sender, "<dark_gray>　用 <white>/zhujian metrics trend [天数]</white> 看历史趋势，"
                         + "<white>metrics csv [天数]</white> 导出 CSV，<white>metrics sample</white> 立刻采样。</dark_gray>");
             }
         }
@@ -3124,18 +3128,21 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         Msg.send(sender, "<white>/" + label + " <gray>— 打开锻造台");
         Msg.send(sender, "<white>/" + label + " stats [玩家] <gray>— 锻造档案 / 专精 / 收集度");
         Msg.send(sender, "<white>/" + label + " codex <gray>— 锻造图鉴");
+        Msg.send(sender, "<white>/" + label + " collection <gray>— 收藏图鉴（五类进度 + 分类奖励 + 全收集称号）");
+        Msg.send(sender, "<white>/" + label + " relicset <gray>— 星陨套装：同材料件数 / 档位加成 / 主动技冷却");
+        Msg.send(sender, "<white>/" + label + " spectrum <gray>— 名剑谱：达成条目登记领奖");
+        Msg.send(sender, "<white>/" + label + " pass <gray>— 赛季通行证：进度与免费轨道奖励");
+        Msg.send(sender, "<white>/" + label + " power <gray>— 战力评分：手里这把的分数拆解与建议价");
         Msg.send(sender, "<white>/" + label + " env <gray>— 当前天气 / 时辰 / 锻造修正面板");
         Msg.send(sender, "<white>/" + label + " story <gray>— 查看当前剧情章节");
-        Msg.send(sender, "<white>/" + label + " config check <gray>— 配置体检：盘上缺哪些必需键 + 那些「只写在代码里」的实际生效值");
-        Msg.send(sender, "<white>/" + label + " metrics <gray>— 经济体检：剑币产出/消耗构成、总量、基尼系数（服主）");
-        Msg.send(sender, "<white>/" + label + " givefull <gray>— 懒人指令：一次发出满配锻造品（满强化 · 满蜕变 · 满词条 · 满宝石）");
         if (sender.hasPermission("forgemaster.admin")) {
             Msg.send(sender, "<white>/" + label + " halloffame set <gray>— 把名人堂盔甲架设在脚下（clear 清理）");
             Msg.send(sender, "<white>/" + label + " hall set|show|del <gray>— 名人殿堂：脚下设原点 / 立即重摆前三 / 删除");
         }
         Msg.send(sender, "<white>/" + label + " profile [玩家] <gray>— 档案面板（剑币 / 连锻 / 声望 / 成就）");
         Msg.send(sender, "<white>/" + label + " talent <gray>— 匠人天赋（每 5 级 1 点：add <id> / reset）");
-        Msg.send(sender, "<white>/" + label + " rank [coins|reputation|streak|level] <gray>— 排行榜 GUI（text 看文字版）");
+        Msg.send(sender, "<white>/" + label + " title <gray>— 称号：解锁条件与佩戴（chenghao）");
+        Msg.send(sender, "<white>/" + label + " rank [coins|reputation|streak|level|strengthen] [text] <gray>— 排行榜 GUI（text 看文字版）");
         Msg.send(sender, "<white>/" + label + " season <gray>— 查看当前赛季");
         Msg.send(sender, "<white>/" + label + " board <gray>— 锻造委托板（交货换声望）");
         Msg.send(sender, "<white>/" + label + " duel <玩家> <gray>— 发起比试（accept/deny 应答）");
@@ -3150,6 +3157,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         Msg.send(sender, "<white>/" + label + " master 玩家名 <gray>— 向在线玩家发出拜师邀请（master leave / expel 徒弟名 / 不带参看状态）");
         Msg.send(sender, "<white>/" + label + " accept <gray>— 收下拜师邀请");
         Msg.send(sender, "<white>/" + label + " guild <gray>— 行会商会（create 建会 / invite 邀人 / deposit 存金库 / list 全服行会 / upgrade 扩容）");
+        Msg.send(sender, "<dark_gray>    还有 warehouse 金库 / quest 行会委托（info|claim|report <成员> [数量]）");
         Msg.send(sender, "<white>/" + label + " salvage <gray>— 熔掉手上的锻造品，回一半材料");
         Msg.send(sender, "<white>/" + label + " top <gray>— 锻造名人堂");
         Msg.send(sender, "<white>/" + label + " achievements <gray>— 成就界面（已达成 / 未达成 / 进度）");
@@ -3170,13 +3178,23 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             Msg.send(sender, "<white>/" + label + " give <玩家> <剑胚> [品质] [分数] <gray>— 直接发一把");
             Msg.send(sender, "<dark_gray>    装备用 <white>armor-<剑胚>-<部位></white>，例如 "
                     + "<white>give Steve armor-iron-chestplate LEGENDARY 90</white>");
+            Msg.send(sender, "<white>/" + label + " givefull <玩家> <剑胚> [品质] <gray>— 一次发出满配锻造品"
+                    + "（满强化 · 满蜕变 · 满词条 · 满宝石）");
             Msg.send(sender, "<white>/" + label + " gem give <玩家|all> <类型|random> [L1~L5] [数量] "
                     + "<gray>— 发宝石");
             Msg.send(sender, "<white>/" + label + " gem list <gray>— 列出所有宝石 id / 中文名 / 效果");
             Msg.send(sender, "<white>/" + label + " reload <gray>— 重载配置");
             Msg.send(sender, "<white>/" + label + " selftest <gray>— 运行时自检");
+            // v2.23.5：这三条以前只在代码里，help 一个字都没写，服主根本不知道有
+            Msg.send(sender, "<white>/" + label + " fixattrs [all|containers] <gray>— 存量物品收敛"
+                    + "（不带参修主手 · all 扫在线玩家 · containers 扫已加载容器）");
+            Msg.send(sender, "<white>/" + label + " backup <gray>· <white>restore <备份id> <gray>— 存档备份 / 回档");
+            Msg.send(sender, "<white>/" + label + " metrics [trend|csv|sample|gui] <gray>— 经济看板："
+                    + "实时报表 / 近 N 天趋势 / 导出 CSV / 立刻采样 / 三页面板");
+            Msg.send(sender, "<white>/" + label + " config check [all] <gray>— 配置体检：盘上缺键 + 实际生效值");
         }
         Msg.send(sender, "<dark_gray>玩法：烧红 → 卡点落锤 → 序列叠钢 → 稳住刃压 → 选淬火介质");
+        Msg.send(sender, "<dark_gray>　全部子命令（含别名与玩家名 / 剑胚 / 谱号 / 编号这些参数）都能 Tab 补全。");
     }
 
     /**
@@ -3249,9 +3267,118 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
 
     // ------------------------------------------------------------ Tab 补全
     //
-    // 逐层补全：每个子命令按自己的语法给候选，而不是只补第一层。
-    // 例如 /zhujian money coin give <玩家> <数量> 一路按 Tab 就能走完，
-    // /zhujian tomb take <编号> 的编号、/zhujian restore <备份id> 的 id 也都能补。
+    // 分三层：
+    //   ① SUBCOMMANDS —— 顶层分派 switch 的镜像（每条 case 的<b>完整别名组</b>，第一项是主名）。
+    //      第一层补全直接由它展开，所以「分派加了 case 却忘了补全」只要往这里加一行；
+    //      SelfTestSuite 的 Tab 自检会逐条核对：表里每个名字都必须出现在首层补全里，
+    //      并且每条子命令第二层的候选必须与它的语法对得上。
+    //   ② tabComplete0 —— 按 args[0] 找到对应子命令，再交给 ③。
+    //   ③ tabXxx —— 每条子命令按「现在在补第几段」给候选，逐层给到最后一层。
+    //
+    // 约定：补第 N 段时 args.length == N（玩家打完空格后服务端收到的是末尾空串）。
+    // 候选一律小写 —— 分派与各 handler 全部走 toLowerCase(Locale.ROOT) / equalsIgnoreCase，
+    // 给大写会让「已经打出小写前缀」的玩家一个候选都看不到（Bukkit 的前缀过滤是忽略大小写的，
+    // 但小写永远不会有歧义）。
+    // 动态候选（玩家名 / 剑胚 id / 谱号 / 剑冢编号 / 拍卖单号 / 备份 id / 附魔 id …）全部现取；
+    // 服务没起来时给空表而不是抛异常 —— 补全里抛异常，客户端会表现为「按 Tab 完全没反应」。
+
+    /** 顶层分派表的镜像：第一项是主名，其余是别名。与 onCommand 的 switch 一一对应。 */
+    private static final List<List<String>> SUBCOMMANDS = List.of(
+            // ---- 档案 / 排行 / 赛季 ----
+            List.of("stats"),
+            List.of("profile", "dangan"),
+            List.of("talent", "tianfu"),
+            List.of("rank", "paihang"),
+            List.of("top"),
+            List.of("season", "jijie"),
+            List.of("achievements", "achv", "chengjiu"),
+            // ---- 图鉴 / 收集 / 面板类 ----
+            List.of("codex"),
+            List.of("collection", "shoucang", "tujian"),
+            List.of("relicset", "taozhuang"),
+            List.of("spectrum", "mingjian", "pu"),
+            List.of("pass", "tongxingzheng"),
+            List.of("power", "zhanli"),
+            List.of("env"),
+            List.of("story"),
+            // ---- 委托 / 比试 / 修复 / 剑谱 ----
+            List.of("board", "orders"),
+            List.of("duel", "bishi"),
+            List.of("repair", "yanmo"),
+            List.of("manual", "manuals", "jianpu"),
+            List.of("record", "dengji"),
+            List.of("copy", "linmo"),
+            List.of("contest", "dasai"),
+            // ---- 材料 / 熔炼 / 分解 / 符 ----
+            List.of("grade", "cailiao"),
+            List.of("salvage", "melt"),
+            List.of("dissolve", "jiapo", "fenjie"),
+            List.of("imprint", "cifu"),
+            // ---- 宝石 / 附魔 / 强化 / 锤 / 蜕变 ----
+            List.of("gem", "baoshi", "baoshitai"),
+            List.of("enchant", "fumo", "fumoshuxiang"),
+            List.of("ench", "fumotai", "yuangchuang"),
+            List.of("strengthen", "qianghua", "duanzao", "duanzaodengji"),
+            List.of("hammer", "chongchui", "tiechui"),
+            List.of("evolve", "tuibian", "jinhua", "jieduan"),
+            // ---- 契约 / 悬赏 / 货币 / 称号 ----
+            List.of("contract", "longshui", "shui"),
+            List.of("shangjin", "bounty", "xuanshang"),
+            List.of("money", "coins", "qian", "coin"),
+            List.of("title", "chenghao"),
+            // ---- 商店 / 黑市 / 签到 ----
+            List.of("shop", "shanghui"),
+            List.of("blackmarket", "heishi"),
+            List.of("signin", "qiandao"),
+            // ---- 剑灵 / 剑冢 / 秘境 ----
+            List.of("spirit", "jianling"),
+            List.of("tomb", "jiantomb", "jianzhong"),
+            List.of("tombrun", "mijing"),
+            // ---- 市场 / 社交 ----
+            List.of("order", "dingdan"),
+            List.of("auction", "paimai"),
+            List.of("guild", "hanghui"),
+            List.of("master", "shifu"),
+            List.of("accept"),
+            // ---- 极限锻造 / 世界事件 / 帮助 ----
+            List.of("forge", "jixian"),
+            List.of("event", "shijian"),
+            List.of("help"),
+            // ---- 服主 ----
+            List.of("give"),
+            List.of("givefull", "maxitem", "manpei"),
+            List.of("reload"),
+            List.of("selftest"),
+            List.of("backup", "beifen"),
+            List.of("restore", "huandang"),
+            List.of("config", "peizhi"),
+            List.of("metrics", "jingji"),
+            List.of("fixattrs", "xiufu"),
+            List.of("halloffame"),
+            List.of("hall"));
+
+    /**
+     * 自检用：顶层分派表的只读视图（每一项是一条 case 的别名组，第一项是主名）。
+     *
+     * <p>暴露出来是为了让 {@code SelfTestSuite} 能反过来核对「分派表里的每个名字
+     * 都能在首层补全里选到」—— 单靠补全自己检查自己，漏项永远查不出来。</p>
+     */
+    public static List<List<String>> subcommandTable() {
+        return SUBCOMMANDS;
+    }
+
+    /** 只有 forgemaster.admin 才看得见的顶层子命令（其余对所有人可见） */
+    private static final Set<String> ADMIN_ONLY = Set.of(
+            "give", "givefull", "reload", "selftest", "backup", "restore",
+            "config", "metrics", "fixattrs", "halloffame", "hall");
+
+    /** 数量类候选（发钱 / 发材料 / 拍卖起拍价都用同一串，覆盖常见的量级） */
+    private static final List<String> AMOUNTS = List.of(
+            "100", "500", "1000", "5000", "10000", "50000", "100000");
+
+    /** 等级类候选：覆盖六档蜕变门槛与各品质上限 */
+    private static final List<String> LEVELS = List.of(
+            "5", "10", "15", "20", "25", "30", "40", "50", "60", "70", "80", "90", "99");
 
     @Override
     public List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command,
@@ -3269,90 +3396,83 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
     }
 
     private List<String> tabComplete0(CommandSender sender, String[] args) {
-        if (args.length == 1) {
-            return filter(topLevelSubs(sender), args[0]);
+        if (args.length <= 1) {
+            return filter(topLevelSubs(sender), args.length == 0 ? "" : args[0]);
         }
         return switch (args[0].toLowerCase(Locale.ROOT)) {
+            // ---- 发东西 ----
             case "give" -> tabGive(sender, args);
-            case "gem", "baoshi", "baoshitai" -> tabGem(args);
-            case "money", "coins", "qian", "coin" -> tabMoney(args);
+            case "givefull", "maxitem", "manpei" -> tabGiveFull(sender, args);
+            case "gem", "baoshi", "baoshitai" -> tabGem(sender, args);
+            // ---- 钱 / 材料 ----
+            case "money", "coins", "qian", "coin" -> tabMoney(sender, args);
+            case "grade", "cailiao" -> tabGrade(sender, args);
+            // ---- 剑冢 ----
             case "tomb", "jiantomb", "jianzhong" -> tabTomb(args);
-            case "tombrun", "mijing" ->
-                    args.length == 2 ? filter(List.of("enter", "status", "quit"), args[1]) : List.of();
-            case "strengthen", "qianghua", "duanzao", "duanzaodengji" -> tabStrengthen(args);
-            case "evolve", "tuibian", "jinhua", "jieduan" ->
-                    args.length == 2 ? filter(List.of("sim", "now"), args[1]) : List.of();
-            case "contract", "longshui", "shui" ->
-                    args.length == 2 ? filter(List.of("join", "quit", "deposit"), args[1]) : List.of();
-            case "shangjin", "bounty", "xuanshang" ->
-                    args.length == 2 ? filter(List.of("claim"), args[1]) : List.of();
-            case "contest", "dasai" ->
-                    args.length == 2 ? filter(List.of("start", "list"), args[1]) : List.of();
-            case "season", "jijie" ->
-                    args.length == 2 ? filter(List.of("end"), args[1]) : List.of();
-            case "rank", "paihang" ->
-                    args.length == 2
-                            ? filter(List.of("coins", "reputation", "streak", "level", "text"), args[1])
-                            : List.of();
-            case "forge", "jixian" ->
-                    args.length == 2 ? filter(List.of("risk", "cancel"), args[1]) : List.of();
-            case "halloffame" ->
-                    args.length == 2 ? filter(List.of("set", "clear"), args[1]) : List.of();
-            case "hall" ->
-                    args.length == 2 ? filter(List.of("set", "show", "del"), args[1]) : List.of();
-            case "enchant", "fumo", "fumoshuxiang" ->
-                    args.length == 2 ? filter(List.of("extract"), args[1]) : List.of();
-            // 原创附魔台（v2.23.2）：book 的第三段补全成附魔 id
-            case "ench", "fumotai", "yuangchuang" -> {
-                if (args.length == 2) {
-                    yield filter(List.of("open", "list", "book"), args[1]);
-                }
-                if (args.length == 3 && args[1].equalsIgnoreCase("book")) {
-                    yield filter(plugin.enchants() == null ? List.of()
-                            : plugin.enchants().all().stream()
-                            .map(com.forgemaster.enchant.CustomEnchant::id).toList(), args[2]);
-                }
-                yield List.of();
-            }
-            case "dissolve", "jiapo", "fenjie" ->
-                    args.length == 2 ? filter(List.of("confirm"), args[1]) : List.of();
-            case "imprint", "cifu" ->
-                    args.length == 2 ? filter(List.of("merge"), args[1]) : List.of();
-            case "restore", "huandang" ->
-                    args.length == 2 ? filter(backupIds(), args[1]) : List.of();
+            case "tombrun", "mijing" -> tabTombrun(args);
+            // ---- 强化 / 蜕变 / 附魔 ----
+            case "strengthen", "qianghua", "duanzao", "duanzaodengji" -> tabStrengthen(sender, args);
+            case "evolve", "tuibian", "jinhua", "jieduan" -> tabEvolve(args);
+            case "enchant", "fumo", "fumoshuxiang" -> tabEnchant(args);
+            case "ench", "fumotai", "yuangchuang" -> tabEnch(sender, args);
+            // ---- 阵营 / 赛季 / 排行 / 大赛 ----
+            case "contract", "longshui", "shui" -> tabContract(args);
+            case "shangjin", "bounty", "xuanshang" -> tabShangjin(args);
+            case "contest", "dasai" -> tabContest(sender, args);
+            case "season", "jijie" -> tabSeason(sender, args);
+            case "rank", "paihang" -> tabRank(args);
+            case "forge", "jixian" -> tabForge(args);
+            // ---- 名人堂 / 殿堂 ----
+            case "halloffame" -> tabHallOfFame(args);
+            case "hall" -> tabHall(args);
+            // ---- 分解 / 符 / 临摹 / 备份 ----
+            case "dissolve", "jiapo", "fenjie" -> tabDissolve(args);
+            case "imprint", "cifu" -> tabImprint(args);
             case "copy", "linmo" -> tabCopy(args);
-            case "grade", "cailiao" -> tabGrade(args);
+            case "restore", "huandang" -> tabRestore(args);
+            // ---- 比试 / 天赋 / 事件 / 市场 ----
             case "duel", "bishi" -> tabDuel(args);
             case "talent", "tianfu" -> tabTalent(args);
             case "event", "shijian" -> tabEvent(args);
             case "auction", "paimai" -> tabAuction(args);
-            case "order", "dingdan" ->
-                    args.length == 2 ? filter(List.of("post", "cancel"), args[1]) : List.of();
+            case "order", "dingdan" -> tabOrder(args);
+            // ---- 社交 ----
             case "master", "shifu" -> tabMaster(args);
             case "guild", "hanghui" -> tabGuild(args);
             case "spirit", "jianling" -> tabSpirit(args);
+            // ---- 服主 ----
+            case "metrics", "jingji" -> tabMetrics(args);
+            case "config", "peizhi" -> tabConfig(args);
+            case "fixattrs", "xiufu" -> tabFixAttrs(args);
+            case "stats" -> tabPlayerArg(sender, args);
+            case "profile", "dangan" -> tabPlayerArg(sender, args);
+            case "top", "legacy" -> tabTop(args);
+            // ---- 无参子命令（再往下一层没有候选）----
+            case "codex", "collection", "shoucang", "tujian", "relicset", "taozhuang",
+                 "spectrum", "mingjian", "pu", "pass", "tongxingzheng", "salvage", "melt",
+                 "board", "orders", "repair", "yanmo", "manual", "manuals", "jianpu",
+                 "record", "dengji", "hammer", "chongchui", "tiechui", "title", "chenghao",
+                 "shop", "shanghui", "blackmarket", "heishi", "signin", "qiandao",
+                 "env", "story", "power", "zhanli", "accept", "reload", "selftest",
+                 "backup", "beifen", "help", "achievements", "achv", "chengjiu" -> List.of();
             default -> List.of();
         };
     }
 
-    /** 第一层：所有子命令（管理员的几个只对管理员出现） */
+    /** 第一层：所有子命令（服主那几条只对管理员出现） */
     private List<String> topLevelSubs(CommandSender sender) {
-        List<String> subs = new ArrayList<>(Arrays.asList(
-                "stats", "profile", "rank", "codex", "env", "story", "spectrum", "mingjian", "pu",
-                "pass", "tongxingzheng",
-                "halloffame", "hall", "salvage", "board",
-                "duel", "repair", "manual", "record", "copy", "contest", "grade", "top", "shop", "help",
-                "master", "accept", "guild", "hanghui", "spirit", "tomb", "tombrun", "mijing",
-                "achievements", "auction", "order", "dingdan",
-                "strengthen", "hammer",
-                "enchant", "ench", "fumotai", "talent", "evolve", "contract", "shangjin", "gem", "money", "forge", "event",
-                "dissolve", "imprint", "collection", "shoucang", "tujian", "title", "chenghao"));
-        if (sender.hasPermission("forgemaster.admin")) {
-            subs.addAll(List.of("give", "reload", "selftest", "season", "backup", "restore",
-                    "config", "metrics", "givefull"));
+        boolean admin = sender.hasPermission("forgemaster.admin");
+        List<String> subs = new ArrayList<>();
+        for (List<String> group : SUBCOMMANDS) {
+            if (!admin && ADMIN_ONLY.contains(group.get(0))) {
+                continue;
+            }
+            subs.addAll(group);
         }
         return subs;
     }
+
+    // ------------------------------------------------------------ 逐条子命令
 
     private List<String> tabGive(CommandSender sender, String[] args) {
         if (!sender.hasPermission("forgemaster.admin")) {
@@ -3362,24 +3482,10 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             return filter(players(), args[1]);
         }
         if (args.length == 3) {
-            List<String> ids = new ArrayList<>();
-            plugin.materials().all().forEach(m -> ids.add(m.id()));
-            // 装备：armor-<剑胚>-<部位>，管理员发东西常要，直接补全出来
-            for (var m : plugin.materials().all()) {
-                for (var slot : com.forgemaster.material.ForgeMaterial.Slot.values()) {
-                    if (com.forgemaster.material.ArmorCatalog.create(m, slot, 1.0) != null) {
-                        ids.add("armor-" + m.id() + "-" + slot.name().toLowerCase(Locale.ROOT));
-                    }
-                }
-            }
-            return filter(ids, args[2]);
+            return filter(materialIds(), args[2]);
         }
         if (args.length == 4) {
-            List<String> qs = new ArrayList<>();
-            for (Quality q : Quality.values()) {
-                qs.add(q.name());
-            }
-            return filter(qs, args[3]);
+            return filter(qualityNames(), args[3]);
         }
         if (args.length == 5) {
             return filter(List.of("50", "70", "85", "90", "95", "100"), args[4]);
@@ -3387,33 +3493,52 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         return List.of();
     }
 
-    private List<String> tabGem(String[] args) {
+    /** /zhujian givefull <玩家> <剑胚|armor-剑胚-部位> [品质] */
+    private List<String> tabGiveFull(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("forgemaster.admin")) {
+            return List.of();
+        }
         if (args.length == 2) {
-            return filter(List.of("socket", "esocket", "smelt", "inlay", "extract", "merge",
-                    "enchant", "give", "list"), args[1]);
+            return filter(players(), args[1]);
+        }
+        if (args.length == 3) {
+            return filter(materialIds(), args[2]);
+        }
+        if (args.length == 4) {
+            return filter(qualityNames(), args[3]);
+        }
+        return List.of();
+    }
+
+    private List<String> tabGem(CommandSender sender, String[] args) {
+        if (args.length == 2) {
+            List<String> subs = new ArrayList<>(List.of(
+                    "socket", "kaikong", "kai",
+                    "esocket", "fumokong", "ekai",
+                    "smelt", "ronglian", "lian",
+                    "inlay", "xiangqian", "qian",
+                    "extract", "chaixie", "qu",
+                    "merge", "hecheng", "he",
+                    "list", "types"));
+            if (sender.hasPermission("forgemaster.admin")) {
+                subs.addAll(List.of("give", "fa", "gei"));
+            }
+            return filter(subs, args[1]);
         }
         String sub = args[1].toLowerCase(Locale.ROOT);
-        if (!sub.equals("give") && !sub.equals("fa") && !sub.equals("gei")) {
+        if (!isAny(sub, "give", "fa", "gei") || !sender.hasPermission("forgemaster.admin")) {
             return List.of();
         }
         if (args.length == 3) {
-            List<String> names = new ArrayList<>(List.of("all"));
-            names.addAll(players());
-            return filter(names, args[2]);
+            List<String> targets = new ArrayList<>(List.of("all", "*"));
+            targets.addAll(players());
+            return filter(targets, args[2]);
         }
         if (args.length == 4) {
-            List<String> types = new ArrayList<>(List.of("random"));
-            for (var t : com.forgemaster.gem.GemType.values()) {
-                types.add(t.id());
-            }
-            return filter(types, args[3]);
+            return filter(gemTypeTokens(), args[3]);
         }
         if (args.length == 5) {
-            List<String> grades = new ArrayList<>();
-            for (var g : com.forgemaster.gem.GemType.Grade.values()) {
-                grades.add(g.name());
-            }
-            return filter(grades, args[4]);
+            return filter(gemGradeTokens(), args[4]);
         }
         if (args.length == 6) {
             return filter(List.of("1", "4", "8", "16", "32", "64"), args[5]);
@@ -3421,95 +3546,254 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         return List.of();
     }
 
-    /** 钱：/zhujian money [balance|give|take|coin] …，coin 后面还有一层 balance|give|take */
-    private List<String> tabMoney(String[] args) {
+    /** 钱：/zhujian money [balance|give|take|coin …]（coin 后面还有一层 balance|give|take） */
+    private List<String> tabMoney(CommandSender sender, String[] args) {
+        boolean admin = sender.hasPermission("forgemaster.admin");
         if (args.length == 2) {
-            return filter(List.of("balance", "give", "take", "coin"), args[1]);
+            List<String> subs = new ArrayList<>(List.of("balance", "bal", "coin", "coins", "jianbi"));
+            if (admin) {
+                subs.addAll(List.of("give", "add", "take", "remove"));
+            }
+            return filter(subs, args[1]);
         }
         String sub = args[1].toLowerCase(Locale.ROOT);
-        if (sub.equals("coin") || sub.equals("coins") || sub.equals("jianbi")) {
+        if (isAny(sub, "coin", "coins", "jianbi")) {
             if (args.length == 3) {
-                return filter(List.of("balance", "give", "take"), args[2]);
+                List<String> ops = new ArrayList<>(List.of("balance", "bal"));
+                if (admin) {
+                    ops.addAll(List.of("give", "take"));
+                }
+                return filter(ops, args[2]);
             }
             if (args.length == 4) {
                 return filter(players(), args[3]);
             }
             if (args.length == 5) {
-                return filter(List.of("100", "1000", "10000", "50000", "100000"), args[4]);
+                return filter(AMOUNTS, args[4]);
             }
             return List.of();
         }
-        if (args.length == 3) {
-            return filter(players(), args[2]);
+        if (isAny(sub, "give", "add", "take", "remove") && admin) {
+            if (args.length == 3) {
+                return filter(players(), args[2]);
+            }
+            if (args.length == 4) {
+                return filter(AMOUNTS, args[3]);
+            }
+            return List.of();
         }
-        if (args.length == 4) {
-            return filter(List.of("100", "1000", "10000", "50000", "100000"), args[3]);
+        if (isAny(sub, "balance", "bal") && args.length == 3) {
+            return filter(players(), args[2]);
         }
         return List.of();
     }
 
     private List<String> tabTomb(String[] args) {
         if (args.length == 2) {
-            return filter(List.of("list", "bury", "take", "challenge", "info", "remove"), args[1]);
+            // 候选与 TombManager.command 的 case 一一对应（连中文别名一起给，别让玩家猜）
+            return filter(List.of("list", "gui", "bury", "埋", "take", "qu", "challenge", "tiaozhan",
+                    "info", "remove", "delete", "shandiao"), args[1]);
         }
         String sub = args[1].toLowerCase(Locale.ROOT);
-        boolean wantsId = sub.equals("take") || sub.equals("challenge")
-                || sub.equals("info") || sub.equals("remove");
+        boolean wantsId = isAny(sub, "take", "qu", "challenge", "tiaozhan", "info",
+                "remove", "delete", "shandiao");
         if (args.length == 3 && wantsId) {
             return filter(tombIds(), args[2]);
         }
         return List.of();
     }
 
-    private List<String> tabStrengthen(String[] args) {
+    private List<String> tabTombrun(String[] args) {
         if (args.length == 2) {
-            return filter(List.of("info", "sim", "plan", "set", "reforge", "strip", "graft", "jianyi"), args[1]);
+            return filter(List.of("enter", "jin", "start", "status", "chakan", "quit", "fangqi"), args[1]);
+        }
+        return List.of();
+    }
+
+    private List<String> tabStrengthen(CommandSender sender, String[] args) {
+        if (args.length == 2) {
+            List<String> subs = new ArrayList<>(List.of(
+                    "info", "cha", "sim", "moni", "yuce",
+                    "plan", "guihua", "curve", "quxian", "tubiao",
+                    "reforge", "chongzhu", "xilian",
+                    "strip", "bo", "bobo", "graft", "yizhi", "zhuang",
+                    "jianyi", "prof", "proficiency", "shulian",
+                    "merge", "hecheng", "he"));
+            if (sender.hasPermission("forgemaster.admin")) {
+                subs.addAll(List.of("set", "shezhi"));
+            }
+            return filter(subs, args[1]);
         }
         String sub = args[1].toLowerCase(Locale.ROOT);
         if (args.length == 3) {
-            if (sub.equals("sim") || sub.equals("set")) {
-                return filter(List.of("5", "10", "15", "20", "25", "30", "40", "50", "60",
-                        "70", "80", "90", "99"), args[2]);
+            if (isAny(sub, "sim", "moni", "yuce", "plan", "guihua", "set", "shezhi")) {
+                return filter(LEVELS, args[2]);
             }
-            if (sub.equals("reforge") || sub.equals("strip")) {
-                return filter(List.of("1", "2", "3", "4", "5", "6"), args[2]);
+            if (isAny(sub, "reforge", "chongzhu", "xilian")) {
+                List<String> opts = new ArrayList<>(List.of("gui", "kj", "jm", "caidan", "info", "list"));
+                opts.addAll(affixSlots(heldAffixCount(sender)));
+                return filter(opts, args[2]);
             }
+            if (isAny(sub, "strip", "bo", "bobo")) {
+                return filter(affixSlots(heldAffixCount(sender)), args[2]);
+            }
+            return List.of();
+        }
+        if (args.length == 4 && isAny(sub, "plan", "guihua")) {
+            return filter(List.of("500", "1000", "2000", "5000", "10000"), args[3]);
+        }
+        return List.of();
+    }
+
+    private List<String> tabEvolve(String[] args) {
+        if (args.length == 2) {
+            return filter(List.of("sim", "moni", "yuce", "now", "ok", "go"), args[1]);
+        }
+        return List.of();
+    }
+
+    private List<String> tabContract(String[] args) {
+        if (args.length == 2) {
+            return filter(List.of("join", "qian", "qiding", "quit", "tuichu",
+                    "deposit", "gong", "jiao"), args[1]);
+        }
+        return List.of();
+    }
+
+    private List<String> tabShangjin(String[] args) {
+        if (args.length == 2) {
+            return filter(List.of("claim", "ling", "duihuan"), args[1]);
+        }
+        if (args.length == 3) {
+            int count = plugin.bounties() == null ? 3 : plugin.bounties().current().size();
+            return filter(affixSlots(Math.max(1, count)), args[2]);
+        }
+        return List.of();
+    }
+
+    private List<String> tabContest(CommandSender sender, String[] args) {
+        if (args.length == 2) {
+            List<String> subs = new ArrayList<>(List.of("list", "watch", "guanzhan", "kan",
+                    "gui", "panel", "mianban"));
+            if (sender.hasPermission("forgemaster.admin")) {
+                subs.add("start");
+            }
+            return filter(subs, args[1]);
+        }
+        return List.of();
+    }
+
+    private List<String> tabSeason(CommandSender sender, String[] args) {
+        if (args.length == 2) {
+            return sender.hasPermission("forgemaster.admin") ? filter(List.of("end"), args[1]) : List.of();
+        }
+        return List.of();
+    }
+
+    /** 排行：维度可以连写（`rank coins streak text`），所以第一层之后一直给维度候选 */
+    private List<String> tabRank(String[] args) {
+        if (args.length >= 2) {
+            return filter(rankTokens(), args[args.length - 1]);
+        }
+        return List.of();
+    }
+
+    private List<String> tabForge(String[] args) {
+        if (args.length == 2) {
+            return filter(List.of("risk", "cancel"), args[1]);
+        }
+        return List.of();
+    }
+
+    private List<String> tabHallOfFame(String[] args) {
+        if (args.length == 2) {
+            return filter(List.of("set", "clear"), args[1]);
+        }
+        return List.of();
+    }
+
+    private List<String> tabHall(String[] args) {
+        if (args.length == 2) {
+            return filter(List.of("set", "show", "del", "delete", "remove", "clear"), args[1]);
+        }
+        return List.of();
+    }
+
+    private List<String> tabEnchant(String[] args) {
+        if (args.length == 2) {
+            return filter(List.of("extract", "qu", "quetu", "qufu", "chai"), args[1]);
+        }
+        return List.of();
+    }
+
+    /** 原创附魔台：/zhujian ench [open|list|book <id> [等级]] */
+    private List<String> tabEnch(CommandSender sender, String[] args) {
+        if (args.length == 2) {
+            List<String> subs = new ArrayList<>(List.of("open", "list", "liebiao"));
+            if (sender.hasPermission("forgemaster.admin")) {
+                subs.addAll(List.of("book", "shu"));
+            }
+            return filter(subs, args[1]);
+        }
+        String sub = args[1].toLowerCase(Locale.ROOT);
+        if (!isAny(sub, "book", "shu")) {
+            return List.of();
+        }
+        if (args.length == 3) {
+            return filter(enchantIds(), args[2]);
+        }
+        if (args.length == 4) {
+            return filter(List.of("1", "2", "3", "4", "5"), args[3]);
+        }
+        return List.of();
+    }
+
+    private List<String> tabDissolve(String[] args) {
+        if (args.length == 2) {
+            return filter(List.of("confirm", "queren"), args[1]);
+        }
+        return List.of();
+    }
+
+    private List<String> tabImprint(String[] args) {
+        if (args.length == 2) {
+            return filter(List.of("merge", "hecheng", "he"), args[1]);
+        }
+        return List.of();
+    }
+
+    private List<String> tabRestore(String[] args) {
+        if (args.length == 2) {
+            return filter(backupIds(), args[1]);
         }
         return List.of();
     }
 
     private List<String> tabCopy(String[] args) {
-        if (args.length != 2) {
-            return List.of();
+        if (args.length == 2) {
+            List<String> ids = new ArrayList<>(List.of("stop", "cancel"));
+            ids.addAll(manualIds());
+            return filter(ids, args[1]);
         }
-        List<String> ids = new ArrayList<>(List.of("stop"));
-        for (var e : plugin.manuals().all()) {
-            ids.add(e.id());
-        }
-        return filter(ids, args[1]);
+        return List.of();
     }
 
     /** 材料分级：/zhujian grade [up|give <材料> <档次> [数量]] */
-    private List<String> tabGrade(String[] args) {
+    private List<String> tabGrade(CommandSender sender, String[] args) {
         if (args.length == 2) {
+            if (!sender.hasPermission("forgemaster.admin")) {
+                return List.of();
+            }
             return filter(List.of("up", "give"), args[1]);
         }
-        if (!args[1].equalsIgnoreCase("give")) {
+        if (!sender.hasPermission("forgemaster.admin") || !args[1].equalsIgnoreCase("give")) {
             return List.of();
         }
         if (args.length == 3) {
-            List<String> mats = new ArrayList<>();
-            for (var m : plugin.materials().all()) {
-                mats.add(m.costItem().name().toLowerCase(Locale.ROOT));
-            }
-            return filter(mats, args[2]);
+            return filter(materialItemNames(), args[2]);
         }
         if (args.length == 4) {
-            List<String> grades = new ArrayList<>();
-            for (var g : com.forgemaster.material.MaterialGrade.values()) {
-                grades.add(g.name());
-            }
-            return filter(grades, args[3]);
+            return filter(materialGradeNames(), args[3]);
         }
         if (args.length == 5) {
             return filter(List.of("8", "16", "32", "64"), args[4]);
@@ -3518,28 +3802,24 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
     }
 
     private List<String> tabDuel(String[] args) {
-        if (args.length != 2) {
-            return List.of();
+        if (args.length == 2) {
+            List<String> names = new ArrayList<>(List.of("accept", "yes", "ok", "deny", "no"));
+            names.addAll(players());
+            return filter(names, args[1]);
         }
-        List<String> names = new ArrayList<>(List.of("accept", "deny"));
-        names.addAll(players());
-        return filter(names, args[1]);
+        return List.of();
     }
 
     private List<String> tabTalent(String[] args) {
         if (args.length == 2) {
-            return filter(List.of("add", "reset"), args[1]);
+            return filter(List.of("add", "dian", "jia", "reset", "xi", "xidian"), args[1]);
         }
         if (args.length == 3) {
-            if (args[1].equalsIgnoreCase("add")) {
-                List<String> ids = new ArrayList<>();
-                for (var t : com.forgemaster.growth.Talents.Talent.values()) {
-                    ids.add(t.id());
-                }
-                return filter(ids, args[2]);
+            if (isAny(args[1].toLowerCase(Locale.ROOT), "add", "dian", "jia")) {
+                return filter(talentTokens(), args[2]);
             }
-            if (args[1].equalsIgnoreCase("reset")) {
-                return filter(List.of("confirm"), args[2]);
+            if (isAny(args[1].toLowerCase(Locale.ROOT), "reset", "xi", "xidian")) {
+                return filter(List.of("confirm", "queren"), args[2]);
             }
         }
         return List.of();
@@ -3551,11 +3831,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             return filter(List.of("status", "start", "stop"), args[1]);
         }
         if (args.length == 3 && args[1].equalsIgnoreCase("start")) {
-            List<String> ids = new ArrayList<>();
-            if (plugin.events() != null) {
-                ids.addAll(plugin.events().ids());
-            }
-            return filter(ids, args[2]);
+            return filter(eventIds(), args[2]);
         }
         return List.of();
     }
@@ -3563,12 +3839,12 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
     /** 拍卖行：/zhujian auction [browse|sell <起> [一口] [小时]|bid <id> <价>|buy <id>|cancel <id>|claim] */
     private List<String> tabAuction(String[] args) {
         if (args.length == 2) {
-            return filter(List.of("browse", "sell", "bid", "buy", "cancel", "claim"), args[1]);
+            return filter(List.of("browse", "list", "sell", "bid", "buy", "cancel", "claim"), args[1]);
         }
         String sub = args[1].toLowerCase(Locale.ROOT);
         if (sub.equals("sell")) {
             if (args.length == 3) {
-                return filter(List.of("100", "500", "1000", "5000"), args[2]);
+                return filter(AMOUNTS, args[2]);
             }
             if (args.length == 4) {
                 return filter(List.of("0", "1000", "5000", "10000"), args[3]);
@@ -3578,46 +3854,281 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             }
             return List.of();
         }
-        boolean wantsLot = sub.equals("bid") || sub.equals("buy") || sub.equals("cancel");
-        if (wantsLot && args.length == 3) {
+        if (sub.equals("bid") && args.length == 4) {
+            return filter(AMOUNTS, args[3]);
+        }
+        if ((sub.equals("bid") || sub.equals("buy") || sub.equals("cancel")) && args.length == 3) {
             return filter(auctionLotIds(), args[2]);
         }
-        if (sub.equals("bid") && args.length == 4) {
-            return filter(List.of("100", "500", "1000", "5000"), args[3]);
+        return List.of();
+    }
+
+    /** 锻造订单：/zhujian order [post <悬赏>|cancel <编号>] */
+    private List<String> tabOrder(String[] args) {
+        if (args.length == 2) {
+            return filter(List.of("browse", "list", "post", "fabu", "cancel", "quxiao"), args[1]);
+        }
+        String sub = args[1].toLowerCase(Locale.ROOT);
+        if (args.length == 3) {
+            if (isAny(sub, "post", "fabu")) {
+                return filter(AMOUNTS, args[2]);
+            }
+            if (isAny(sub, "cancel", "quxiao")) {
+                return filter(orderIds(), args[2]);
+            }
         }
         return List.of();
     }
 
     private List<String> tabMaster(String[] args) {
-        if (args.length != 2) {
-            return List.of();
-        }
-        List<String> names = new ArrayList<>(List.of("status", "leave", "expel",
-                "graduate", "graduate-confirm", "graduates"));
-        names.addAll(players());
-        return filter(names, args[1]);
-    }
-
-    /** 行会：/zhujian guild [create|invite|accept|deny|leave|kick|info|deposit|list|upgrade] */
-    private List<String> tabGuild(String[] args) {
         if (args.length == 2) {
-            return filter(List.of("create", "invite", "accept", "deny", "leave", "kick",
-                    "info", "deposit", "list", "upgrade"), args[1]);
+            List<String> names = new ArrayList<>(List.of("status", "info", "leave", "unbind",
+                    "expel", "kick", "graduate", "graduate-confirm", "queren",
+                    "graduates", "chutu"));
+            names.addAll(players());
+            return filter(names, args[1]);
         }
-        String sub = args[1].toLowerCase(Locale.ROOT);
-        boolean wantsPlayer = sub.equals("invite") || sub.equals("kick");
-        if (wantsPlayer && args.length == 3) {
+        if (args.length == 3 && isAny(args[1].toLowerCase(Locale.ROOT), "expel", "kick")) {
             return filter(players(), args[2]);
         }
         return List.of();
     }
 
+    /** 行会：/zhujian guild [create|invite|…|warehouse|quest …] */
+    private List<String> tabGuild(String[] args) {
+        if (args.length == 2) {
+            return filter(List.of("create", "jian", "li",
+                    "invite", "yaoqing", "accept", "jieshou", "deny", "jujue",
+                    "leave", "tuichu", "kick", "tichu", "info", "xinxi", "chakan",
+                    "deposit", "cun", "juan", "list", "liebiao",
+                    "upgrade", "kuorong", "shengji",
+                    "warehouse", "cangku", "ck", "quest", "renwu"), args[1]);
+        }
+        String sub = args[1].toLowerCase(Locale.ROOT);
+        if (args.length == 3) {
+            if (isAny(sub, "invite", "yaoqing", "kick", "tichu")) {
+                return filter(players(), args[2]);
+            }
+            if (isAny(sub, "deposit", "cun", "juan")) {
+                return filter(AMOUNTS, args[2]);
+            }
+            if (isAny(sub, "quest", "renwu")) {
+                return filter(List.of("info", "xinxi", "claim", "lingjiang", "ling",
+                        "report", "shangbao"), args[2]);
+            }
+        }
+        if (args.length == 4 && isAny(sub, "quest", "renwu")
+                && isAny(args[2].toLowerCase(Locale.ROOT), "report", "shangbao")) {
+            return filter(players(), args[3]);
+        }
+        if (args.length == 5 && isAny(sub, "quest", "renwu")
+                && isAny(args[2].toLowerCase(Locale.ROOT), "report", "shangbao")) {
+            return filter(List.of("1", "5", "10", "20", "50"), args[4]);
+        }
+        return List.of();
+    }
+
     private List<String> tabSpirit(String[] args) {
-        if (args.length != 2) {
+        if (args.length == 2) {
+            return filter(List.of("info", "view", "feed", "yang", "name", "rename",
+                    "show", "hide"), args[1]);
+        }
+        return List.of();
+    }
+
+    /** 数据看板：/zhujian metrics [trend [天数]|csv [天数]|sample|gui] */
+    private List<String> tabMetrics(String[] args) {
+        if (args.length == 2) {
+            return filter(List.of("trend", "qushi", "csv", "daochu", "sample", "caiji",
+                    "gui", "mianban"), args[1]);
+        }
+        if (args.length == 3 && isAny(args[1].toLowerCase(Locale.ROOT), "trend", "qushi", "csv", "daochu")) {
+            return filter(List.of("1", "3", "7", "14", "30", "60", "90"), args[2]);
+        }
+        return List.of();
+    }
+
+    private List<String> tabConfig(String[] args) {
+        if (args.length == 2) {
+            return filter(List.of("check"), args[1]);
+        }
+        if (args.length == 3 && args[1].equalsIgnoreCase("check")) {
+            return filter(List.of("--all", "all"), args[2]);
+        }
+        return List.of();
+    }
+
+    /** 存量物品收敛：/zhujian fixattrs [all|containers]（不带参 = 只修主手那一件） */
+    private List<String> tabFixAttrs(String[] args) {
+        if (args.length == 2) {
+            return filter(List.of("all", "全部", "containers", "container", "容器"), args[1]);
+        }
+        return List.of();
+    }
+
+    /** stats / profile：第二段是玩家名，且只有管理员能查别人 */
+    private List<String> tabPlayerArg(CommandSender sender, String[] args) {
+        if (args.length != 2 || !sender.hasPermission("forgemaster.admin")) {
             return List.of();
         }
-        return filter(List.of("info", "feed", "name", "show", "hide"), args[1]);
+        return filter(players(), args[1]);
     }
+
+    private List<String> tabTop(String[] args) {
+        if (args.length == 2) {
+            return filter(List.of("legacy", "lishi", "chuancheng"), args[1]);
+        }
+        return List.of();
+    }
+
+    // ------------------------------------------------------------ 补全素材（token 源）
+
+    /** 剑胚 id + armor-<剑胚>-<部位> 的装备写法（发东西时两条路都要能补出来） */
+    private List<String> materialIds() {
+        List<String> ids = new ArrayList<>();
+        for (var m : plugin.materials().all()) {
+            ids.add(m.id());
+        }
+        for (var m : plugin.materials().all()) {
+            for (var slot : com.forgemaster.material.ForgeMaterial.Slot.values()) {
+                if (com.forgemaster.material.ArmorCatalog.create(m, slot, 1.0) != null) {
+                    ids.add("armor-" + m.id() + "-" + slot.name().toLowerCase(Locale.ROOT));
+                }
+            }
+        }
+        return ids;
+    }
+
+    /** 材料分级只认 Bukkit 材质名：给材料库里用到的那些（省得服主背材质表） */
+    private List<String> materialItemNames() {
+        List<String> names = new ArrayList<>();
+        for (var m : plugin.materials().all()) {
+            String n = m.costItem().name().toLowerCase(Locale.ROOT);
+            if (!names.contains(n)) {
+                names.add(n);
+            }
+        }
+        return names;
+    }
+
+    private static List<String> qualityNames() {
+        List<String> out = new ArrayList<>();
+        for (Quality q : Quality.values()) {
+            out.add(q.name());
+        }
+        return out;
+    }
+
+    private static List<String> materialGradeNames() {
+        List<String> out = new ArrayList<>();
+        for (var g : com.forgemaster.material.MaterialGrade.values()) {
+            out.add(g.name());
+        }
+        return out;
+    }
+
+    /** 宝石：id + 中文名 + random/suiji（gemGive 两种写法都认） */
+    private static List<String> gemTypeTokens() {
+        List<String> out = new ArrayList<>(List.of("random", "suiji"));
+        for (var t : com.forgemaster.gem.GemType.values()) {
+            out.add(t.id());
+            out.add(t.gemName());
+        }
+        return out;
+    }
+
+    /** 宝石等级：L1~L5，兼容旧写法 COMMON/FINE/EPIC/LEGENDARY */
+    private static List<String> gemGradeTokens() {
+        List<String> out = new ArrayList<>();
+        for (var g : com.forgemaster.gem.GemType.Grade.values()) {
+            out.add(g.name());
+        }
+        out.addAll(List.of("COMMON", "FINE", "EPIC", "LEGENDARY"));
+        return out;
+    }
+
+    private List<String> enchantIds() {
+        List<String> ids = new ArrayList<>();
+        if (plugin.enchants() != null) {
+            for (var def : plugin.enchants().all()) {
+                ids.add(def.id());
+            }
+        }
+        return ids;
+    }
+
+    private List<String> manualIds() {
+        List<String> ids = new ArrayList<>();
+        if (plugin.manuals() != null) {
+            for (var entry : plugin.manuals().all()) {
+                ids.add(entry.id());
+            }
+        }
+        return ids;
+    }
+
+    private List<String> eventIds() {
+        return plugin.events() == null ? List.of() : new ArrayList<>(plugin.events().ids());
+    }
+
+    private static List<String> talentTokens() {
+        List<String> ids = new ArrayList<>();
+        for (var t : com.forgemaster.growth.Talents.Talent.values()) {
+            ids.add(t.id());
+        }
+        return ids;
+    }
+
+    /** 排行维度：枚举名 / 中文标签 / 别名全部给出来，末尾再加 text（文字版） */
+    private List<String> rankTokens() {
+        List<String> out = new ArrayList<>();
+        for (var m : com.forgemaster.ranking.Metric.values()) {
+            out.addAll(m.tokens());
+        }
+        out.add("text");
+        return out;
+    }
+
+    private List<String> orderIds() {
+        List<String> ids = new ArrayList<>();
+        if (plugin.orders() != null) {
+            for (var o : plugin.orders().openByBounty()) {
+                ids.add(o.id());
+            }
+        }
+        return ids;
+    }
+
+    /** 主手那件的词条条数（补全用；读不到就当 0 条） */
+    private int heldAffixCount(CommandSender sender) {
+        if (!(sender instanceof Player p)) {
+            return 0;
+        }
+        org.bukkit.inventory.ItemStack hand = p.getInventory().getItemInMainHand();
+        if (hand == null || hand.getType().isAir()) {
+            return 0;
+        }
+        return Math.max(0, com.forgemaster.affix.Reforge.affixCount(hand));
+    }
+
+    /** 序号 1..n 的候选（词条序号 / 悬赏序号用） */
+    private static List<String> affixSlots(int n) {
+        List<String> out = new ArrayList<>();
+        for (int i = 1; i <= n; i++) {
+            out.add(String.valueOf(i));
+        }
+        return out;
+    }
+
+    private static boolean isAny(String raw, String... options) {
+        for (String o : options) {
+            if (o.equalsIgnoreCase(raw)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
 
     // ------------------------------------------------------------ 补全素材
 

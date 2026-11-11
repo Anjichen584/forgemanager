@@ -3,6 +3,8 @@ package com.forgemaster.ranking;
 import com.forgemaster.stats.StatsStore;
 import org.bukkit.Material;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -82,9 +84,25 @@ public enum Metric {
         return b == null ? "未上榜（历史最高）" : "+" + b.level() + "/+" + b.cap() + "（历史最高）";
     }
 
+    /**
+     * Tab 补全用：这一维度能被 {@link #parse(String)} 认下来的全部写法
+     * （枚举名 / 中文标签 / 别名，统一小写）。
+     *
+     * <p>放在枚举里而不是抄在命令类的补全表里：解析规则改一次，补全跟着变，
+     * 不会出现「补全给出一个 {@code parse} 又不认」的假候选。</p>
+     */
+    public List<String> tokens() {
+        List<String> out = new ArrayList<>();
+        out.add(name().toLowerCase(java.util.Locale.ROOT));
+        out.add(label);
+        for (String a : aliases) {
+            out.add(a);
+        }
+        return out;
+    }
+
     /** 按名字 / 别名 / 中文名解析，找不到返回 null */
-    public static Metric parse(String raw) {
-        if (raw == null) {
+    public static Metric parse(String raw) {        if (raw == null) {
             return null;
         }
         String s = raw.trim();

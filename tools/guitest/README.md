@@ -15,7 +15,18 @@ node chain.js      # 主菜单三个入口全链路
 node forge.js      # 锻造五阶段
 node stage.js      # 加热→锻打阶段推进
 node fulltest.js   # 全功能实测：61 个子命令 + 满配物品链 + 附魔台闭环 + 15 个 GUI 契约
+node durability-check.js  # 内置耐久真机对照：give 一把 -> 连击 -> 读 PDC 与 Lore 耐久行
+node st-run.js     # 起一个 bot 在线后跑 /zhujian selftest，只打摘要与可疑行
+node rq.js "list" "zhujian config check"   # 纯 RCON 发命令（不需要 bot）
 ```
+
+`durability-check.js` 的三个坑（不处理的话会得出「耐久不掉」的**假结论**）：
+
+- 测试服的出生点是个刷怪场，bot 站在那儿会被打死 —— 死一次整包东西掉光，读到的 `heldItem` 是 null。
+  先把 bot `minecraft:tp` 到空地并切创造（**`/tp` 会被 CMI 接管，必须写 `minecraft:tp`**）。
+- 打**普通僵尸**没用：满配剑两刀就把它打死，之后没有 damage 事件，耐久当然不动。
+  要 `attribute @e[tag=...] minecraft:max_health base set 20000` 再 `data merge ... {Health:20000f}`。
+- 创造模式不影响插件扣账（`EntityDamageByEntityEvent` 照常触发），只是原版耐久条本来就不动。
 
 `fulltest.js` 是覆盖面最广的一把：跑完输出 `PASS/WARN/FAIL` 汇总，明细落 `fulltest-report.json`（机器可读）。
 最近一次（v2.23.4 真机）：**PASS 114 / WARN 1 / FAIL 0**。

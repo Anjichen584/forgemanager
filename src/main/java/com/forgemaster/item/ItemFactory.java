@@ -553,6 +553,12 @@ public final class ItemFactory {
      * 或崩刃提示行的有无翻转。档内一击走快路，省掉整条 Lore 的两轮纯文本序列化与重挂；
      * 代价是档内显示的耐久数字停留在上次跨档时的值（PDC 才是结算用的真相）。</p>
      *
+     * <p><b>v2.23.5 修「内置耐久看起来不掉」</b>：档宽原来是纯百分比（5%），
+     * 三千多点的剑一刀掉 1 点，要砍 <b>195 刀</b> Lore 上的数字才跳一次 ——
+     * 玩家砍完一只怪，看到的还是满耐久，自然当成「加了无法破坏」。
+     * 现在档宽再夹一层绝对值上限 {@code settings.durability-lore-max-points}
+     * （默认 5 点）：几千点的剑每 5 刀跳一次数字，小件仍按 5% 走。</p>
+     *
      * <p>v2.23 起崩刃是<b>真·属性失效</b>：耐久从正值落到 0 的那一刻，摘掉全部基础属性
      * 修饰符（fm_atk / fm_speed / fm_armor / fm_toughness 系）——之前只停词条与套装结算，
      * 攻击 / 护甲 modifiers 还挂着，文案说「属性失效」实际只失效了一半。修复回耐久时由
@@ -668,17 +674,42 @@ public final class ItemFactory {
     }
 
     /**
-     * 耐久显示档位：把当前耐久压进 {@code step}% 宽的档（step ≤ 0 = 实时，档号即数值）；
-     * 档位没变就不值得重写 Lore。
+     * 耐久显示档宽（点数）：{@code step% × 上限}，但绝对值不超过
+     * {@code settings.durability-lore-max-points}（默认 5 点）。
+     *
+     * <p>为什么要有绝对上限：纯百分比在大耐久品上等于「永不刷新」——
+     * 3900 点的剑 5% 是 195 点，砍 195 刀数字才动一次。夹一层 5 点之后
+     * 每 5 刀就能看到数字减少，而 Lore 重写的频率仍然只有 1/5，
+     * 不会给每个命中都挂一次整条 Lore 的序列化。</p>
+     *
+     * @param max 该物品的最大耐久（PDC durability_max）
+     * @return 档宽，至少 1
      */
-    private static int durabilityBand(int cur, int max, int step) {
+    public int durabilityBandWidth(int max) {
+        if (max <= 0) {
+            return 1;
+        }
+        int step = settings.durabilityLoreStep();
+        if (step <= 0) {
+            return 1; // 实时模式：档宽 1 点 = 每掉 1 点就重写
+        }
+        int cap = Math.max(1, settings.intOf("settings.durability-lore-max-points", 5));
+        int byPercent = Math.max(1, max * step / 100);
+        return Math.min(byPercent, cap);
+    }
+
+    /**
+     * 耐久显示档位：把当前耐久按 {@link #durabilityBandWidth} 压成档号
+     * （step ≤ 0 时档号即数值）；档号没变就不值得重写 Lore。
+     */
+    private int durabilityBand(int cur, int max, int step) {
         if (max <= 0) {
             return 0;
         }
         if (step <= 0) {
             return cur; // 实时模式：数值一变档号就变，Lore 每刀刷新
         }
-        return cur * 100 / (max * step);
+        return cur / durabilityBandWidth(max);
     }
 
     /** @param quenchId 指定淬火介质 id，null = 随机一种 */

@@ -63,6 +63,8 @@ settings:
   durability-enabled: true       # 打怪掉耐久（武器砍怪 / 护甲挨打），掉光就崩刃
   durability-loss-per-hit: 1     # 每砍一刀 / 每次挨打掉多少耐久
   durability-lore-step: 5        # Lore 耐久数字的刷新档宽（%）：5 = 每掉 5% 跳一次数字，0 = 每刀实时刷新
+  durability-lore-max-points: 5  # 上一项的绝对上限（点）：几千点耐久的剑按 5% 要砍 195 刀数字才动，
+                                 # 夹到 5 点后每 5 刀就能看到数字减少（0/缺省 = 5）
   armor-wear-throttle-ms: 500    # 护甲扣账节流窗口（毫秒）：火焰等逐 tick 伤害在窗口内只扣一次账，0 = 不节流
   repair-cost-amount: 2          # 研磨一次消耗几个该剑胚的材料
   repair-zone-width: 7.0         # 研磨绿区宽度（比开刃宽，好修）

@@ -3272,60 +3272,165 @@ public final class SelfTestSuite {
             }
         });
 
-        add(g, "Tab 补全：每条子命令的每一层都有候选，不是只补第一层", () -> {
+        add(g, "Tab 补全：分派表每个别名都补得出，且每条子命令每一层都有候选", () -> {
             var cmd = plugin.getCommand("zhujian");
             require(cmd != null, "注册不到 /zhujian");
             // PluginCommand 本身不是 TabCompleter，注册进去的 executor 才是
             if (!(cmd.getExecutor() instanceof org.bukkit.command.TabCompleter tc)) {
                 throw new AssertionError("/zhujian 的 executor 没实现 TabCompleter");
             }
-            // 用控制台当 sender 会漏掉管理员项，这里造一个离线的 Player 视角不现实，
-            // 所以直接拿在线玩家；没有在线玩家时跳过，不让自检因为「没人」而红。
+            // 用控制台当 sender 会漏掉管理员项；拿在线玩家，再临时挂一条 admin 权限，
+            // 这样第一层/第二层的服主分支也能一并核对（finally 里摘掉，不留副作用）。
             org.bukkit.entity.Player p = org.bukkit.Bukkit.getOnlinePlayers().stream().findFirst().orElse(null);
             if (p == null) {
                 return;
             }
-            java.util.function.BiFunction<String, String, List<String>> tab = (line, prefix) -> {
-                String[] parts = line.isBlank() ? new String[0] : line.split(" ", -1);
-                return tc.onTabComplete(p, cmd, "zhujian", parts);
-            };
-            // 第一层：常用子命令一个都不能缺
-            List<String> top = tab.apply("", "");
-            for (String need : List.of("money", "gem", "tomb", "strengthen", "forge", "event",
-                    "auction", "talent", "grade", "restore")) {
-                require(top.contains(need), "第一层补全缺 " + need + "：" + top);
-            }
-            // 第二层：逐条点名，防止以后加子命令忘了补
-            Map<String, List<String>> expects = new java.util.LinkedHashMap<>();
-            expects.put("money", List.of("balance", "give", "take", "coin"));
-            expects.put("money coin", List.of("balance", "give", "take"));
-            expects.put("gem", List.of("socket", "esocket", "smelt", "inlay", "extract", "merge",
-                    "enchant", "give", "list"));
-            expects.put("tomb", List.of("list", "bury", "take", "challenge", "info", "remove"));
-            expects.put("strengthen", List.of("info", "sim", "set", "reforge", "strip", "graft"));
-            expects.put("grade", List.of("up", "give"));
-            expects.put("event", List.of("status", "start", "stop"));
-            expects.put("talent", List.of("add", "reset"));
-            expects.put("auction", List.of("browse", "sell", "bid", "buy", "cancel", "claim"));
-            expects.put("forge", List.of("risk", "cancel"));
-            expects.put("evolve", List.of("sim", "now"));
-            expects.put("contract", List.of("join", "quit", "deposit"));
-            expects.put("rank", List.of("coins", "reputation", "streak", "level", "text"));
-            expects.put("halloffame", List.of("set", "clear"));
-            expects.put("enchant", List.of("extract"));
-            for (var e : expects.entrySet()) {
-                List<String> got = tab.apply(e.getKey(), "");
-                require(!got.isEmpty(), "/zhujian " + e.getKey() + " 的 Tab 补全是空的");
-                for (String need : e.getValue()) {
-                    require(got.contains(need),
-                            "/zhujian " + e.getKey() + " 补全缺 " + need + "，实得 " + got);
+            org.bukkit.permissions.PermissionAttachment adminAtt =
+                    p.addAttachment(plugin, "forgemaster.admin", true);
+            try {
+                // Bukkit 只有收到「末尾空串」时才知道你在补下一段：
+                //   补第一段 → args = [""]
+                //   补第二段 → args = [第一段, ""]
+                // 所以补第 N 段的模拟就是把前 N-1 段 + 空串塞进去。
+                java.util.function.Function<String, List<String>> first =
+                        typed -> tc.onTabComplete(p, cmd, "zhujian", new String[]{typed});
+                java.util.function.Function<String, List<String>> next = line -> {
+                    if (line.isBlank()) {
+                        return tc.onTabComplete(p, cmd, "zhujian", new String[]{""});
+                    }
+                    String[] parts = line.split(" ", -1);
+                    String[] padded = java.util.Arrays.copyOf(parts, parts.length + 1);
+                    padded[parts.length] = "";
+                    return tc.onTabComplete(p, cmd, "zhujian", padded);
+                };
+
+                // ① 分派表的镜像：主名与每一个别名，首层补全都得给得出来。
+                //    这条是核心断言 —— 以前「加了 case 忘了补全」就是在这里被抓出来。
+                List<String> top = first.apply("");
+                require(!top.isEmpty(), "第一层补全是空的");
+                for (List<String> group : com.forgemaster.command.ForgingCommand.subcommandTable()) {
+                    for (String alias : group) {
+                        require(top.contains(alias),
+                                "第一层补全缺 " + alias + "（分派表里有，补全里没有）：" + top);
+                    }
                 }
+
+                // ② 第二层：逐条点名（每条子命令的语法都必须能 Tab 出来）
+                Map<String, List<String>> expects = new java.util.LinkedHashMap<>();
+                expects.put("money", List.of("balance", "give", "take", "coin"));
+                expects.put("money coin", List.of("balance", "give", "take"));
+                expects.put("gem", List.of("socket", "esocket", "smelt", "inlay",
+                        "extract", "merge", "list", "give"));
+                expects.put("gem give", List.of("all"));
+                expects.put("tomb", List.of("list", "bury", "take", "challenge", "info", "remove"));
+                expects.put("tombrun", List.of("enter", "status", "quit"));
+                expects.put("strengthen", List.of("info", "sim", "plan", "curve", "set",
+                        "reforge", "strip", "graft", "jianyi", "merge"));
+                expects.put("strengthen reforge", List.of("gui", "info"));
+                expects.put("evolve", List.of("sim", "now"));
+                expects.put("contract", List.of("join", "quit", "deposit"));
+                expects.put("shangjin", List.of("claim"));
+                expects.put("contest", List.of("start", "list", "watch", "gui"));
+                expects.put("season", List.of("end"));
+                expects.put("rank", List.of("coins", "reputation", "streak", "level",
+                        "strengthen", "text"));
+                expects.put("forge", List.of("risk", "cancel"));
+                expects.put("halloffame", List.of("set", "clear"));
+                expects.put("hall", List.of("set", "show", "del"));
+                expects.put("enchant", List.of("extract"));
+                expects.put("ench", List.of("open", "list", "book"));
+                expects.put("dissolve", List.of("confirm"));
+                expects.put("imprint", List.of("merge"));
+                expects.put("copy", List.of("stop", "cancel"));
+                expects.put("grade", List.of("up", "give"));
+                expects.put("duel", List.of("accept", "deny"));
+                expects.put("talent", List.of("add", "reset"));
+                expects.put("event", List.of("status", "start", "stop"));
+                expects.put("auction", List.of("browse", "sell", "bid", "buy", "cancel", "claim"));
+                expects.put("order", List.of("post", "cancel"));
+                expects.put("master", List.of("status", "leave", "expel", "graduate",
+                        "graduate-confirm", "graduates"));
+                expects.put("guild", List.of("create", "invite", "kick", "deposit", "list",
+                        "upgrade", "warehouse", "quest"));
+                expects.put("guild quest", List.of("info", "claim", "report"));
+                expects.put("spirit", List.of("info", "feed", "name", "show", "hide"));
+                expects.put("metrics", List.of("trend", "csv", "sample", "gui"));
+                expects.put("metrics trend", List.of("7", "30"));
+                expects.put("config", List.of("check"));
+                expects.put("fixattrs", List.of("all", "containers"));
+                expects.put("top", List.of("legacy"));
+                expects.put("givefull", List.of(p.getName()));
+                expects.put("stats", List.of(p.getName()));
+                for (var e : expects.entrySet()) {
+                    List<String> got = next.apply(e.getKey());
+                    require(!got.isEmpty(), "/zhujian " + e.getKey() + " 的 Tab 补全是空的");
+                    for (String need : e.getValue()) {
+                        require(got.contains(need),
+                                "/zhujian " + e.getKey() + " 补全缺 " + need + "，实得 " + got);
+                    }
+                }
+
+                // ③ 别名必须走到同一套候选（玩家记不住主名，常敲的是别名）。
+                //    这里只放「本身还有下一层」的子命令别名 —— relicset / signin / shop
+                //    这类是叶子命令，下一层本来就该是空的，把它们塞进来只会误报。
+                for (String alias : List.of("qianghua", "duanzao", "baoshi", "xuanshang",
+                        "mijing", "cifu", "xiufu", "linmo", "jianling", "hanghui",
+                        "shifu", "paihang", "jijie", "dasai", "jixian", "jiapo",
+                        "tianfu", "shijian", "dingdan", "paimai", "bishi", "cailiao",
+                        "fumotai", "qian", "coin")) {
+                    require(!next.apply(alias).isEmpty(),
+                            "别名的下一层补全空了：" + alias);
+                }
+                require(next.apply("qianghua").contains("merge"),
+                        "别名 qianghua 的补全没走到 strengthen 分支");
+                require(next.apply("baoshi").contains("socket"),
+                        "别名 baoshi 的补全没走到 gem 分支");
+                require(next.apply("xuanshang").contains("claim"),
+                        "别名 xuanshang 的补全没走到 shangjin 分支");
+
+                // ③b 除「叶子命令」白名单外，每条子命令的第二层都必须有候选。
+                //     这条是给以后加命令的人留的钉子：新加一条 case 却忘了配补全，
+                //     自检立刻红，不用等玩家来报「/zhujian xxx 按 Tab 没反应」。
+                java.util.Set<String> leaf = java.util.Set.of(
+                        "codex", "collection", "shoucang", "tujian", "relicset", "taozhuang",
+                        "spectrum", "mingjian", "pu", "pass", "tongxingzheng", "power", "zhanli",
+                        "env", "story", "board", "orders", "repair", "yanmo",
+                        "manual", "manuals", "jianpu", "record", "dengji", "salvage", "melt",
+                        "title", "chenghao", "shop", "shanghui", "blackmarket", "heishi",
+                        "signin", "qiandao", "hammer", "chongchui", "tiechui", "accept",
+                        "help", "reload", "selftest", "backup", "beifen",
+                        "achievements", "achv", "chengjiu");
+                for (List<String> group : com.forgemaster.command.ForgingCommand.subcommandTable()) {
+                    for (String name : group) {
+                        if (leaf.contains(name)) {
+                            continue;
+                        }
+                        require(!next.apply(name).isEmpty(),
+                                "第二层补全空了：" + name
+                                        + "（要么补上候选，要么确实没有下一层 → 加进 leaf 白名单）");
+                    }
+                }
+
+                // ④ 假候选 / 漏候选专项
+                require(!next.apply("gem").contains("enchant"),
+                        "gem 的补全里还挂着不存在的 enchant 分支（那是另一条子命令）");
+                require(top.contains("fixattrs") && top.contains("xiufu"),
+                        "首层补全没有 fixattrs —— 收敛全服存量物品那条命令以前就是这么被漏掉的");
+                require(top.contains("power") && top.contains("title")
+                                && top.contains("relicset") && top.contains("collection"),
+                        "首层补全缺扩展模块的子命令：" + top);
+
+                // ⑤ 前缀过滤要真的过滤，而不是无论打什么都全给
+                require(first.apply("mo").contains("money") && first.apply("mo").size() <= 2,
+                        "前缀过滤坏了：mo → " + first.apply("mo"));
+                require(!first.apply("mo").contains("gem"),
+                        "前缀过滤坏了：mo 里混进了 gem");
+                List<String> co = tc.onTabComplete(p, cmd, "zhujian", new String[]{"money", "co"});
+                require(co.equals(List.of("coin", "coins")),
+                        "前缀过滤坏了：money co → " + co);
+            } finally {
+                p.removeAttachment(adminAtt);
             }
-            // 带前缀时要真的过滤，而不是无论输入什么都全给
-            require(tab.apply("money", "co").equals(List.of("coin")),
-                    "前缀过滤坏了：money co → " + tab.apply("money", "co"));
-            require(tab.apply("gem", "s").equals(List.of("socket", "smelt")),
-                    "前缀过滤坏了：gem s → " + tab.apply("gem", "s"));
         });
 
         add(g, "强化上限按品质逐级提高：粗糙 < … < 神话，且神话封顶 99", () -> {
@@ -4870,10 +4975,11 @@ public final class SelfTestSuite {
             String base = durabilityLineText(sword);
             require(base != null, "找不到耐久行");
             // 档内小伤：PDC 实时更新，但耐久行保持原样（没重写 Lore）。
-            // v2.23 起档宽可配（settings.durability-lore-step，默认 5%），档内判定按实际档宽算：
+            // v2.23 起档宽可配（settings.durability-lore-step 百分比 + v2.23.5 的绝对上限），
+            // 判定统一走 ItemFactory.durabilityBandWidth，别在这里抄一份公式。
             // 基线取「档中间」（满耐久是档顶，掉 1 点就可能跨档），再打 1 点小伤仍在同一档
-            int step = Math.max(1, plugin.settings().durabilityLoreStep());
-            int bandWidth = Math.max(2, max * step / 100);
+            int bandWidth = plugin.items().durabilityBandWidth(max);
+            require(bandWidth >= 2, "档宽太小（" + bandWidth + "），档内用例不成立");
             int anchor = max - bandWidth / 2;
             plugin.items().setDurability(sword, sword.getItemMeta(), anchor);
             base = durabilityLineText(sword);
@@ -4883,6 +4989,24 @@ public final class SelfTestSuite {
             // 跨档大伤：耐久行才重写
             plugin.items().setDurability(sword, sword.getItemMeta(), max / 2);
             require(!durabilityLineText(sword).equals(base), "跨档没有重写耐久行");
+        });
+
+        add(g, "几千点耐久的剑：掉 5 点 Lore 数字就要动（不再要砍 195 刀才跳）", () -> {
+            ItemStack sword = sampleSword();
+            require(sword != null, "造不出铁剑");
+            int max = plugin.items().maxDurabilityOf(sword);
+            require(max >= 20, "样本剑耐久太小：" + max);
+            // 档宽必须是「点数」而不是「永远按百分比」——这就是 v2.23.5 之前
+            // 「内置耐久看起来不掉」的根因：5% × 3900 = 195 点才刷一次数字
+            int width = plugin.items().durabilityBandWidth(max);
+            require(width <= 5, "大耐久品的显示档宽仍然过粗：" + width + " 点（max=" + max + "）");
+            plugin.items().setDurability(sword, sword.getItemMeta(), max);
+            String full = durabilityLineText(sword);
+            require(full != null, "找不到耐久行");
+            plugin.items().setDurability(sword, sword.getItemMeta(), max - width);
+            require(!durabilityLineText(sword).equals(full),
+                    "掉 " + width + " 点耐久后 Lore 数字没变（显示档宽 " + width + "）");
+            require(plugin.items().durabilityOf(sword) == max - width, "PDC 没跟上 Lore");
         });
 
         add(g, "耐久崩刃提示按状态翻转，归零返回性不变", () -> {

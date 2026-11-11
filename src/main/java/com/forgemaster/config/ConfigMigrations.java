@@ -69,7 +69,7 @@ public final class ConfigMigrations {
      * 那个 step 对已在运行的服务器**永远不会执行**（steps 17/18/19 的教训各写了一遍，
      * 详见 step19 的注释）。v2.23.1 加 step22 时从 12 抬到 13，加 step23（战力评分）时再抬到 14，加 step24（属性天花板）时抬到 15。</p>
      */
-    public static final int CURRENT_VERSION = 19;
+    public static final int CURRENT_VERSION = 20;
 
     private ConfigMigrations() {
     }
@@ -108,6 +108,7 @@ public final class ConfigMigrations {
         step26LegacyRepair(plugin, cfg);
         step27Enchant(plugin, cfg);
         step28MechanicEnchant(plugin, cfg);
+        step29DurabilityLoreCap(plugin, cfg);
         cfg.set("config-version", CURRENT_VERSION);
         plugin.saveConfig();
     }
@@ -1268,6 +1269,25 @@ public final class ConfigMigrations {
      * <p>只摘 {@code enchant.caps.*} 里的旧机制键，不碰 {@code enchant.defs.*}
      * （defs 是服主可能自己调过的东西）。</p>
      */
+    /**
+     * 2.23.5：耐久 Lore 的显示档宽加一层绝对上限。
+     *
+     * <p>问题的形状：档宽原来只有百分比（默认 5%），对几千点耐久的剑来说
+     * 就是「要砍 195 刀 Lore 上的数字才动一次」——玩家砍完一只怪，
+     * 看到的还是满耐久，自然会报「内置耐久不掉 / 是不是加了无法破坏」。</p>
+     *
+     * <p>修法：百分比之外再夹一个「最多 N 点」的上限（默认 5 点）。
+     * 这里只补键，不动服主已调过的 {@code durability-lore-step}；
+     * 键已存在时 putIfAbsent 语义，一个字都不碰。</p>
+     */
+    private static void step29DurabilityLoreCap(ForgingMasterPlugin plugin, FileConfiguration cfg) {
+        if (!cfg.contains("settings.durability-lore-max-points")) {
+            cfg.set("settings.durability-lore-max-points", 5);
+            plugin.getLogger().info("[migrate] step29：补上 settings.durability-lore-max-points（默认 5）"
+                    + " —— 几千点耐久的剑不会再「数字不动」");
+        }
+    }
+
     private static void step28MechanicEnchant(ForgingMasterPlugin plugin, FileConfiguration cfg) {
         YamlConfiguration disk;
         try {
