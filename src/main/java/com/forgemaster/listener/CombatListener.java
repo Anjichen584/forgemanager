@@ -163,6 +163,17 @@ public final class CombatListener implements Listener {
         double lifesteal = pdc.getOrDefault(Keys.LIFESTEAL, PersistentDataType.DOUBLE, 0.0);
         int fireTicks = pdc.getOrDefault(Keys.FIRE_TICKS, PersistentDataType.INTEGER, 0);
 
+        // 原创附魔（v2.23.2）：武器侧的伤害 / 吸血 / 点燃加成。
+        // 全部**加法汇总后再夹**（EnchantEffects 内部只夹一次），且夹子比 combat.limits 更紧 ——
+        // 附魔只能在伤害预算里分一小块，不能顶穿上限。
+        var enchCaps = com.forgemaster.enchant.EnchantEffects.Caps.fromConfig(plugin.getConfig());
+        var enchEntries = com.forgemaster.enchant.EnchantItem.of(plugin, weapon);
+        var enchWeapon = plugin.enchantEffects().weapon(enchEntries, enchCaps);
+        lifesteal += enchWeapon.lifestealAdd();
+        if (enchWeapon.fireAddSeconds() > 0) {
+            fireTicks += (int) Math.round(enchWeapon.fireAddSeconds() * 20);
+        }
+
         // 崩刃：耐久见底的剑只是一把普通剑
         int durability = pdc.getOrDefault(Keys.DURABILITY, PersistentDataType.INTEGER, -1);
         if (durability == 0) {
@@ -204,6 +215,23 @@ public final class CombatListener implements Listener {
         //
         // v2.23.1 修 P2-D：本次实际伤害统一收在 dealt 里，吸血只认它，不再二次读 getFinalDamage()
         double dealt = event.getDamage();
+        // 原创附魔的伤害倍率（v2.23.2）：夹在暴击之前 —— 它和暴击一样属于「本插件加成」，
+        // 必须一起被下面的 DamageBudget 管住。放在夹子之后就等于给它开了后门。
+        if (enchWeapon.damageMul() > 1.0 || enchWeapon.comboStacks() > 0) {
+            boolean monster = event.getEntity() instanceof org.bukkit.entity.Monster;
+            double hpRatio = 1.0;
+            if (event.getEntity() instanceof org.bukkit.entity.LivingEntity livingTarget) {
+                var attr = livingTarget.getAttribute(org.bukkit.attribute.Attribute.MAX_HEALTH);
+                double maxHp = attr == null ? 20.0 : attr.getValue();
+                hpRatio = maxHp <= 0 ? 1.0 : Math.max(0, Math.min(1.0, livingTarget.getHealth() / maxHp));
+            }
+            // 连击层数：本刀之前已经连了几刀（第一刀是 0）
+            long comboWindow = plugin.getConfig().getLong("enchant.caps.combo-window-ms", 4000L);
+            int combos = com.forgemaster.enchant.ComboTracker.consecutive(
+                    player, event.getEntity(), comboWindow, Math.max(1, enchCaps.comboStacks()));
+            dealt *= plugin.enchantEffects().hitMultiplier(enchEntries, enchCaps,
+                    monster, hpRatio, combos);
+        }
         var crit = com.forgemaster.combat.Crit.fromConfig(plugin, critChance, critDamage);
         if (crit.roll(ThreadLocalRandom.current())) {
             dealt = dealt * crit.multiplier();

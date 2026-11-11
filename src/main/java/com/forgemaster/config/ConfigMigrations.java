@@ -69,7 +69,7 @@ public final class ConfigMigrations {
      * 那个 step 对已在运行的服务器**永远不会执行**（steps 17/18/19 的教训各写了一遍，
      * 详见 step19 的注释）。v2.23.1 加 step22 时从 12 抬到 13，加 step23（战力评分）时再抬到 14，加 step24（属性天花板）时抬到 15。</p>
      */
-    public static final int CURRENT_VERSION = 17;
+    public static final int CURRENT_VERSION = 18;
 
     private ConfigMigrations() {
     }
@@ -106,6 +106,7 @@ public final class ConfigMigrations {
         step24BaseTolerance(plugin, cfg);
         step25DamageBudget(plugin, cfg);
         step26LegacyRepair(plugin, cfg);
+        step27Enchant(plugin, cfg);
         cfg.set("config-version", CURRENT_VERSION);
         plugin.saveConfig();
     }
@@ -1213,6 +1214,78 @@ public final class ConfigMigrations {
                 "修过之后告诉玩家，否则玩家只会觉得数值莫名其妙少了"));
         if (written > 0) {
             plugin.getLogger().info("配置迁移 step26：补上 legacy-repair（存量物品收敛）3 键");
+        }
+    }
+
+    /**
+     * step27（v2.23.2）：原创附魔台的配置骨架。
+     *
+     * <p>只补**骨架**（caps / cost / guard / max-per-item），不逐条补 {@code defs.*}：
+     * 15 条附魔的默认定义在 {@link com.forgemaster.enchant.EnchantRegistry#defaults()} 里，
+     * config 缺键时注册表直接回落到代码定义。这样做的原因是 ——
+     * 如果迁移脚本往服主的 config 里塞 15 条 {@code defs}，
+     * 以后我们调整某条附魔的默认数值，老服永远不会跟上（盘上已经有一份「旧默认」了）。</p>
+     *
+     * <p>反之，caps 这类**上限**必须落盘：服主要看得见上限是多少，才谈得上自己调。</p>
+     */
+    private static void step27Enchant(ForgingMasterPlugin plugin, FileConfiguration cfg) {
+        YamlConfiguration disk;
+        try {
+            disk = YamlConfiguration.loadConfiguration(
+                    new java.io.File(plugin.getDataFolder(), "config.yml"));
+        } catch (RuntimeException ex) {
+            disk = new YamlConfiguration();
+        }
+        int written = 0;
+        // 费用
+        written += putIfAbsent(cfg, disk, "enchant.cost.base-coin", 40L, java.util.List.of(
+                "附魔台每次操作的固定费用"));
+        written += putIfAbsent(cfg, disk, "enchant.cost.coin-per-level", 60L, java.util.List.of(
+                "每升一级额外加多少费用"));
+        written += putIfAbsent(cfg, disk, "enchant.cost.ore-per-level", 4, java.util.List.of(
+                "升一级消耗几个矿（按等级翻倍：4 / 8 / 16 ...）"));
+        written += putIfAbsent(cfg, disk, "enchant.max-per-item", 4, java.util.List.of(
+                "一件装备最多几条原创附魔；同一条重复上书只升级不占条数"));
+        // 上限（比 combat.limits 更紧，是「最后一道」之上的第一道）
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-damage-bonus", 0.25, java.util.List.of(
+                "原创附魔伤害总加成封顶（全部加法汇总后再夹，默认 +25%）"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-lifesteal-add", 0.10, java.util.List.of(
+                "吸血加成封顶，之后还会再吃 combat.limits.max-lifesteal-pct"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-fire-seconds", 4.0, java.util.List.of(
+                "点燃加成封顶（秒），之后还会再吃 combat.limits.max-fire-seconds"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-attack-speed", 0.08, java.util.List.of(
+                "攻速加成封顶，之后还会再吃 compat.attack-speed-cap"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-damage-reduce", 0.10, java.util.List.of(
+                "减伤加成封顶，之后还会再吃 combat.limits.max-damage-reduce"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-bonus-health", 8.0, java.util.List.of(
+                "气血加成封顶，之后还会再吃 combat.limits.max-bonus-health"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-thorns", 0.15, java.util.List.of(
+                "荆棘反弹百分比封顶"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-thorns-flat", 2.0, java.util.List.of(
+                "荆棘单次反弹的绝对上限（防高伤反杀）"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-fire-resist", 0.30, java.util.List.of(
+                "御火：火焰伤害额外减免封顶"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-exp-bonus", 0.50, java.util.List.of(
+                "聚灵：经验加成封顶"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-coin-bonus", 0.15, java.util.List.of(
+                "匠运：剑币产出加成封顶"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-drop-chance", 0.35, java.util.List.of(
+                "采掘：挖矿额外掉落几率封顶（每次只多掉 1 份）"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.execute-threshold", 0.25, java.util.List.of(
+                "斩首：目标血量低于这个比例时才吃加成"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.combo-stacks", 3, java.util.List.of(
+                "连击：最多叠几层"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.combo-window-ms", 4000L, java.util.List.of(
+                "连击：两刀间隔超过这个毫秒数就重新计数"));
+        // 守卫
+        written += putIfAbsent(cfg, disk, "enchant.guard.enabled", true, java.util.List.of(
+                "附魔白名单守卫：拦在附魔台与铁砧，只作用于本插件的锻造品"));
+        written += putIfAbsent(cfg, disk, "enchant.guard.vanilla-whitelist",
+                java.util.List.of(), java.util.List.of(
+                        "允许的原版附魔 key（如 sharpness / protection）",
+                        "留空 = 全部原版附魔都允许；想收紧时再列"));
+        if (written > 0) {
+            plugin.getLogger().info("配置迁移 step27：补上 enchant（原创附魔台）" + written + " 键");
         }
     }
 

@@ -74,6 +74,8 @@ public final class NumericSim {
 
         double worstHits = Double.MAX_VALUE;
         double worstHealPct = 0;
+        // 满配的「每一击实际伤害」，用来算「再加满附魔之后还超不超上限」
+        double worstHit = 0;
         for (Bot b : bots) {
             DamageBudget.Result r = DamageBudget.simulateHit(
                     b.attackAttr(), PLAYER_BASE, b.critChance(), b.critDamage(),
@@ -83,6 +85,7 @@ public final class NumericSim {
             if (b.name().startsWith("满配") || b.name().startsWith("极端")) {
                 worstHits = Math.min(worstHits, hitsCrit);
                 worstHealPct = Math.max(worstHealPct, healPct);
+                worstHit = Math.max(worstHit, r.finalHit());
             }
             System.out.printf(Locale.ROOT,
                     "  %-22s %8.1f %8.1f %7.0f%% %7.2f %8.1f %7s %8.1f %7.1f%n",
@@ -121,9 +124,71 @@ public final class NumericSim {
         fail += check("无限预算时不夹", DamageBudget.clampHit(9999, DamageBudget.Limits.unlimited()) == 9999,
                 "unlimited 直通");
 
+        // ---------------------------------------------------------------- 原创附魔（v2.23.2）
+        //
+        // 这一组的命题只有一个：把 15 条原创附魔全部堆到满级、还叠上最有利的条件
+        // （打敌对生物 + 目标残血 + 连击满层），最终伤害**仍然**被 combat.limits 管住。
+        //
+        // 附魔自己有一道 +25% 的封顶；就算它全给满，满配 59.8 变成 74.75，
+        // 再进 DamageBudget.clampHit 还是要落回 60。这就是「两道夹子」的意义。
+        System.out.println();
+        System.out.println("原创附魔（全满级最坏情况）");
+        System.out.println("-".repeat(112));
+        var enchCaps = com.forgemaster.enchant.EnchantEffects.Caps.defaults();
+        var fx = new com.forgemaster.enchant.EnchantEffects();
+        java.util.List<com.forgemaster.enchant.EnchantEffects.Entry> maxed = maxedEnchants();
+
+        double enchMul = fx.hitMultiplier(maxed, enchCaps, true, 0.01, enchCaps.comboStacks());
+        var enchWeapon = fx.weapon(maxed, enchCaps);
+        var enchArmor = fx.armor(maxed, enchCaps);
+        System.out.printf(Locale.ROOT,
+                "  伤害倍率 %.3f（封顶 %.2f）｜吸血 +%.1f%%｜点燃 +%.1fs｜攻速 +%.1f%%%n",
+                enchMul, 1.0 + enchCaps.maxDamageBonus(), enchWeapon.lifestealAdd() * 100,
+                enchWeapon.fireAddSeconds(), enchWeapon.attackSpeedAdd() * 100);
+        System.out.printf(Locale.ROOT,
+                "  减伤 +%.1f%%｜气血 +%.1f｜荆棘 %.1f%%（单次≤%.0f）｜御火 %.1f%%%n",
+                enchArmor.reduceAdd() * 100, enchArmor.healthAdd(),
+                enchArmor.thornsPct() * 100, enchArmor.thornsFlat(), enchArmor.fireResist() * 100);
+        System.out.printf(Locale.ROOT, "  经验 ×%.2f｜剑币 ×%.2f｜挖矿额外掉落 %.1f%%%n",
+                fx.expMul(maxed, enchCaps), fx.coinMul(maxed, enchCaps),
+                fx.dropChance(maxed, enchCaps) * 100);
+
+        // 满配 + 全满附魔，再过伤害夹子
+        double withEnch = worstHit * enchMul;
+        double afterBudget = DamageBudget.clampHit(withEnch, budget);
+        double hitsWithEnch = Math.ceil(WARDEN_HP / afterBudget);
+        System.out.printf(Locale.ROOT,
+                "  满配 %.1f × 附魔 %.3f = %.1f → 夹子后 %.1f → 坚守者 %.1f 刀%n",
+                worstHit, enchMul, withEnch, afterBudget, hitsWithEnch);
+        System.out.println("-".repeat(112));
+        System.out.println();
+
+        fail += check("附魔伤害总加成不超过 +25%", enchMul <= 1.0 + enchCaps.maxDamageBonus() + 1e-9,
+                fmt(enchMul) + " 倍");
+        fail += check("附魔吸血加成不超过 +10%", enchWeapon.lifestealAdd() <= enchCaps.maxLifestealAdd() + 1e-9,
+                fmt(enchWeapon.lifestealAdd() * 100) + "%");
+        fail += check("附魔点燃加成不超过 +4 秒", enchWeapon.fireAddSeconds() <= enchCaps.maxFireSeconds() + 1e-9,
+                fmt(enchWeapon.fireAddSeconds()) + " 秒");
+        fail += check("附魔减伤加成不超过 +10%", enchArmor.reduceAdd() <= enchCaps.maxReduce() + 1e-9,
+                fmt(enchArmor.reduceAdd() * 100) + "%");
+        fail += check("附魔气血加成不超过 +8", enchArmor.healthAdd() <= enchCaps.maxHealth() + 1e-9,
+                fmt(enchArmor.healthAdd()));
+        fail += check("满配 + 满附魔仍在伤害上限内", afterBudget <= budget.maxHitDamage() + 1e-9,
+                fmt(afterBudget) + " ≤ " + fmt(budget.maxHitDamage()));
+        fail += check("满配 + 满附魔仍要 8 刀以上打死坚守者", hitsWithEnch >= 8.0,
+                fmt(hitsWithEnch) + " 刀");
+        fail += check("附魔加成是加法（8 条相加不再乘一次）",
+                Math.abs(fx.hitMultiplier(twoEnchants(), enchCaps, false, 1.0, 0)
+                        - (1.0 + EDGE_PER + PIERCE_PER)) < 1e-9,
+                "两条 1 级 = +" + fmt((EDGE_PER + PIERCE_PER) * 100) + "%");
+        fail += check("四件护甲合并后减伤只夹一次",
+                fx.mergeArmor(java.util.List.of(enchArmor, enchArmor, enchArmor, enchArmor), enchCaps)
+                        .reduceAdd() <= enchCaps.maxReduce() + 1e-9,
+                "四件合计 ≤ " + fmt(enchCaps.maxReduce() * 100) + "%");
+
         System.out.println();
         if (fail == 0) {
-            System.out.println("  结论：全部通过（" + (10) + " 项断言）");
+            System.out.println("  结论：全部通过（" + (10 + 9) + " 项断言，含原创附魔 9 项）");
         } else {
             System.out.println("  结论：有 " + fail + " 项超标，需要调数值");
         }
@@ -133,6 +198,36 @@ public final class NumericSim {
     private static int check(String name, boolean ok, String detail) {
         System.out.println("  [" + (ok ? "PASS" : "FAIL") + "] " + name + " —— " + detail);
         return ok ? 0 : 1;
+    }
+
+    // ---------------------------------------------------------------- 原创附魔造数据
+
+    /** 锋锐 / 破甲 的每级值，用来验证「加法而非乘法」（与 EnchantRegistry.defaults() 一致） */
+    private static final double EDGE_PER = 0.015;
+    private static final double PIERCE_PER = 0.012;
+
+    /**
+     * 把 15 条原创附魔全部拉到满级。
+     *
+     * <p>这里**故意不从 config 读**：这条断言要独立于服主的配置存在。
+     * 如果哪天服主把某条 per-level 调到离谱，这里立刻会红，从而在开服前就发现。</p>
+     */
+    private static java.util.List<com.forgemaster.enchant.EnchantEffects.Entry> maxedEnchants() {
+        var out = new java.util.ArrayList<com.forgemaster.enchant.EnchantEffects.Entry>();
+        for (var def : com.forgemaster.enchant.EnchantRegistry.defaults()) {
+            out.add(new com.forgemaster.enchant.EnchantEffects.Entry(def, def.maxLevel()));
+        }
+        return out;
+    }
+
+    private static java.util.List<com.forgemaster.enchant.EnchantEffects.Entry> twoEnchants() {
+        var edge = com.forgemaster.enchant.EnchantRegistry.defaults().stream()
+                .filter(d -> d.id().equals("edge")).findFirst().orElseThrow();
+        var pierce = com.forgemaster.enchant.EnchantRegistry.defaults().stream()
+                .filter(d -> d.id().equals("pierce")).findFirst().orElseThrow();
+        return java.util.List.of(
+                new com.forgemaster.enchant.EnchantEffects.Entry(edge, 1),
+                new com.forgemaster.enchant.EnchantEffects.Entry(pierce, 1));
     }
 
     private static String fmt(double v) {

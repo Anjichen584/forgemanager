@@ -223,6 +223,21 @@ public static NamespacedKey SPIRIT_DISPLAY_BONUS;
      */
     public static NamespacedKey RELIC_SET_CD;
 
+    /**
+     * 原创附魔（v2.23.2）：{@code id:level|id:level}。
+     *
+     * <p>和 {@link #ENCHANTS}（已镶进孔的原版附魔）分开存是刻意的：
+     * 原版附魔的 id 一定能在 {@code Registry.ENCHANTMENT} 里查到，
+     * 原创 id 查不到，混在一张表里会让 {@code EnchantEntry.decode} 把原创条目当脏数据丢掉。</p>
+     */
+    public static NamespacedKey CUSTOM_ENCH;
+
+    /** 原创附魔书标记：这本书是附魔台产出的（防盗版：改 Lore 造不出这个 byte） */
+    public static NamespacedKey ENCH_BOOK;
+
+    /** 附魔台会话标识 */
+    public static NamespacedKey ENCH_SESSION;
+
     private Keys() {
     }
 
@@ -314,5 +329,13 @@ public static NamespacedKey SPIRIT_DISPLAY_BONUS;
 
         // ---- 拓展第二档：套装效果 2.0 ----
         RELIC_SET_CD = new NamespacedKey(plugin, "fm_set_cd");
+
+        // ---- 原创附魔（v2.23.2）----
+        /** 原创附魔：{@code id:level|id:level}，与原版附魔的 {@link #ENCHANTS} 分开存 */
+        CUSTOM_ENCH = new NamespacedKey(plugin, "fm_custom_ench");
+        /** 附魔书成品标记：这本书是附魔台出来的原创附魔书 */
+        ENCH_BOOK = new NamespacedKey(plugin, "fm_ench_book");
+        /** 附魔台会话（防跨玩家复用界面） */
+        ENCH_SESSION = new NamespacedKey(plugin, "fm_ench_session");
     }
 }

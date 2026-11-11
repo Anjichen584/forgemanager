@@ -265,6 +265,67 @@ legacy-repair:
   # 修过之后是否告诉玩家（建议开着，否则玩家只会觉得数值莫名其妙少了）
   notify-player: true
 
+# ============================================================================
+# 原创附魔（v2.23.2）
+# ============================================================================
+#
+# 服主的诉求是「再限制一层」：本插件的装备上只允许原版附魔 + 这里定义的原创附魔。
+# 15 条原创附魔全部走「加法汇总 + 单一夹子」，附魔只是伤害预算内部的一小块，
+# 不可能把 combat.limits 的上限顶穿。
+#
+# 改 defs.<id> 之下任何一项都会在 /zhujian reload 后立刻生效；
+# 想彻底禁掉一条，把 enabled 设 false（物品上已存在的该附魔会显示成裸 id，效果消失）。
+enchant:
+  # 附魔台相关
+  cost:
+    # 每次附魔的固定费用
+    base-coin: 40
+    # 每升一级额外加多少费用
+    coin-per-level: 60
+    # 升一级要消耗几个矿（按等级翻倍：4 / 8 / 16 ...）
+    ore-per-level: 4
+  # 一件装备最多能带几条原创附魔（重复上书只升级，不占条数）
+  max-per-item: 4
+  # 附魔自己的上限 —— 全部比 combat.limits 更紧，是「最后一道」之上的第一道
+  caps:
+    max-damage-bonus: 0.25
+    max-lifesteal-add: 0.10
+    max-fire-seconds: 4.0
+    max-attack-speed: 0.08
+    max-damage-reduce: 0.10
+    max-bonus-health: 8.0
+    max-thorns: 0.15
+    max-thorns-flat: 2.0
+    max-fire-resist: 0.30
+    max-exp-bonus: 0.50
+    max-coin-bonus: 0.15
+    max-drop-chance: 0.35
+    execute-threshold: 0.25
+    combo-stacks: 3
+    combo-window-ms: 4000
+  # 白名单守卫：拦在附魔台与铁砧，只管本插件的锻造品
+  guard:
+    enabled: true
+    # 允许的原版附魔（按 key 写，如 sharpness / protection）。
+    # 留空 = 全部原版附魔都允许；只有想收紧时才列。
+    vanilla-whitelist: []
+  defs:
+    edge:        { enabled: true, max-level: 5, per-level: 0.015, weight: 100 }
+    pierce:      { enabled: true, max-level: 5, per-level: 0.012, weight: 90 }
+    swift:       { enabled: true, max-level: 4, per-level: 0.015, weight: 80 }
+    soulsip:     { enabled: true, max-level: 4, per-level: 0.015, weight: 70 }
+    ember:       { enabled: true, max-level: 3, per-level: 0.6,   weight: 70 }
+    slayer:      { enabled: true, max-level: 5, per-level: 0.02,  weight: 90 }
+    execute:     { enabled: true, max-level: 5, per-level: 0.03,  weight: 45 }
+    combo:       { enabled: true, max-level: 3, per-level: 0.01,  weight: 60 }
+    bulwark:     { enabled: true, max-level: 5, per-level: 0.015, weight: 100 }
+    thorns:      { enabled: true, max-level: 4, per-level: 0.03,  weight: 60 }
+    fortitude:   { enabled: true, max-level: 5, per-level: 1.5,   weight: 80 }
+    emberward:   { enabled: true, max-level: 4, per-level: 0.06,  weight: 55 }
+    lorekeeper:  { enabled: true, max-level: 5, per-level: 0.08,  weight: 75 }
+    prospector:  { enabled: true, max-level: 5, per-level: 0.06,  weight: 65 }
+    fortunes:    { enabled: true, max-level: 5, per-level: 0.02,  weight: 50 }
+
 metrics:
   enabled: true
   top-n: 10                      # 报表里每类理由显示前几条，其余合并成「其它 N 项」

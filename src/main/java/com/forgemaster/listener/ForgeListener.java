@@ -415,12 +415,48 @@ public final class ForgeListener implements Listener {
         // 只取词条减伤那份（套装部分归它用）；本监听器的优先级与结算逻辑不变。
         double reduce = com.forgemaster.affix.EquipmentDamageScan
                 .scan(player, event, null).affixReduce();
-        if (reduce <= 0) {
-            return;
+
+        // 原创附魔的护甲侧（v2.23.2）：坚壁减伤 / 御火 / 荆棘。
+        // 四件护甲各自读、合并后**只夹一次**，不是各自夹完相加（四件各 10% 就成了 40%）。
+        var enchCaps = com.forgemaster.enchant.EnchantEffects.Caps.fromConfig(plugin.getConfig());
+        var armorParts = new java.util.ArrayList<com.forgemaster.enchant.EnchantEffects.Armor>(4);
+        for (org.bukkit.inventory.ItemStack piece : player.getInventory().getArmorContents()) {
+            if (piece == null || piece.getType().isAir()) {
+                continue;
+            }
+            var entries = com.forgemaster.enchant.EnchantItem.of(plugin, piece);
+            if (!entries.isEmpty()) {
+                armorParts.add(plugin.enchantEffects().armor(entries, enchCaps));
+            }
         }
-        // 四件套叠满也不会完全免疫，最多减 60%
-        reduce = Math.min(0.6, reduce);
-        event.setDamage(event.getDamage() * (1.0 - reduce));
+        var enchArmor = plugin.enchantEffects().mergeArmor(armorParts, enchCaps);
+        reduce += enchArmor.reduceAdd();
+
+        // 御火：只对火源伤害额外减（不然它就变成一条万能减伤）
+        boolean fire = event.getCause() == org.bukkit.event.entity.EntityDamageEvent.DamageCause.FIRE
+                || event.getCause() == org.bukkit.event.entity.EntityDamageEvent.DamageCause.FIRE_TICK
+                || event.getCause() == org.bukkit.event.entity.EntityDamageEvent.DamageCause.LAVA
+                || event.getCause() == org.bukkit.event.entity.EntityDamageEvent.DamageCause.HOT_FLOOR;
+        if (fire) {
+            reduce += enchArmor.fireResist();
+        }
+
+        if (reduce > 0) {
+            // 四件套叠满也不会完全免疫，最多减 60%
+            reduce = Math.min(0.6, reduce);
+            event.setDamage(event.getDamage() * (1.0 - reduce));
+        }
+
+        // 荆棘：反弹受到的一部分伤害给攻击者，单次有绝对值上限（防「高伤反杀」）
+        if (enchArmor.thornsPct() > 0
+                && event instanceof org.bukkit.event.entity.EntityDamageByEntityEvent byEntity
+                && byEntity.getDamager() instanceof org.bukkit.entity.LivingEntity attacker
+                && !attacker.equals(player)) {
+            double reflect = Math.min(event.getDamage() * enchArmor.thornsPct(), enchArmor.thornsFlat());
+            if (reflect > 0) {
+                attacker.damage(reflect, player);
+            }
+        }
     }
 
     @EventHandler

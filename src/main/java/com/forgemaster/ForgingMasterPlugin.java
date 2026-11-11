@@ -108,6 +108,11 @@ public final class ForgingMasterPlugin extends JavaPlugin {
     private com.forgemaster.webhook.WebhookService webhook;
     /** 存量物品收敛（v2.23.1）：上线扫描与 fixattrs 命令共用 */
     private com.forgemaster.compat.LegacyItemRepair legacyRepair;
+    /** 原创附魔注册表 + 附魔台业务 + 纯函数效果计算（v2.23.2） */
+    private com.forgemaster.enchant.EnchantRegistry enchants;
+    private com.forgemaster.enchant.EnchantService enchantTable;
+    private final com.forgemaster.enchant.EnchantEffects enchantEffects =
+            new com.forgemaster.enchant.EnchantEffects();
     /** 黑市（每日轮换特价）与每日签到：共用一份 daily-data.yml 日期态 */
     private com.forgemaster.blackmarket.DailyStore dailyStore;
     private com.forgemaster.blackmarket.BlackmarketService blackmarket;
@@ -235,6 +240,11 @@ public final class ForgingMasterPlugin extends JavaPlugin {
         webhook = new com.forgemaster.webhook.WebhookService(this);
         legacyRepair = new com.forgemaster.compat.LegacyItemRepair(this);
         Bukkit.getPluginManager().registerEvents(new com.forgemaster.compat.LegacyRepairListener(this, legacyRepair), this);
+        // 原创附魔（v2.23.2）：注册表必须在 config 迁移之后建，否则读到的还是老配置
+        enchants = new com.forgemaster.enchant.EnchantRegistry(this);
+        enchantTable = new com.forgemaster.enchant.EnchantService(this);
+        Bukkit.getPluginManager().registerEvents(new com.forgemaster.enchant.EnchantListener(this), this);
+        Bukkit.getPluginManager().registerEvents(new com.forgemaster.enchant.EnchantGuardListener(this), this);
         webhook.start();
         // 剑冢秘境（tombrun）：依赖 tombs（残影档案复用）与 seasonPass（通关登记），构造即挂监听与心跳
         tombrun = new com.forgemaster.tombrun.TombRunService(this, tombs);
@@ -584,6 +594,9 @@ public final class ForgingMasterPlugin extends JavaPlugin {
             "combat.limits.max-bonus-health", "combat.limits.max-fire-seconds",
             // v2.23.1：存量物品收敛（上线自动扫）
             "legacy-repair.on-join", "legacy-repair.on-join-delay-ticks", "legacy-repair.notify-player",
+            // v2.23.2：原创附魔台（只校验骨架键；defs.* 缺了会回落到代码里的默认定义）
+            "enchant.cost.base-coin", "enchant.cost.coin-per-level", "enchant.cost.ore-per-level",
+            "enchant.max-per-item", "enchant.guard.enabled", "enchant.caps.max-damage-bonus",
             // v2.20 剑体成长曲线：砧上剑身大小读这几个键，缺了走默认值不影响运行
             // （v2.22.1：手上悬浮剑 / 护甲体型放大已移除，offset-* 与 player-scale 键下线）
             "strengthen.big-sword.enabled",
@@ -634,6 +647,8 @@ public final class ForgingMasterPlugin extends JavaPlugin {
             com.forgemaster.contests.ContestGuiRouter.reset();
         // ReforgeMenu 的静态 listenerReady 也要清：不清的话重载后重铸界面点不动（v2.23.1）
         com.forgemaster.gui.ReforgeMenu.reset();
+        // 附魔台路由同理（v2.23.2）：不清的话重载后附魔台完全没反应
+        com.forgemaster.enchant.EnchantRouter.reset();
         } catch (RuntimeException ex) {
             getLogger().warning("复位大赛界面路由失败: " + ex.getMessage());
         }
@@ -892,6 +907,21 @@ public final class ForgingMasterPlugin extends JavaPlugin {
     /** 存量物品收敛（v2.23.1）：命令 / 上线 / 容器扫描三条路共用这一份逻辑 */
     public com.forgemaster.compat.LegacyItemRepair legacyRepair() {
         return legacyRepair;
+    }
+
+    /** 原创附魔注册表（v2.23.2）：解析 / 随机 / 部位过滤都走它 */
+    public com.forgemaster.enchant.EnchantRegistry enchants() {
+        return enchants;
+    }
+
+    /** 附魔台业务：plan（预览）/ apply（点按钮）/ applyBook（右键上书） */
+    public com.forgemaster.enchant.EnchantService enchantTable() {
+        return enchantTable;
+    }
+
+    /** 原创附魔效果计算（纯函数，无状态，可安全共享一份） */
+    public com.forgemaster.enchant.EnchantEffects enchantEffects() {
+        return enchantEffects;
     }
 
     /**

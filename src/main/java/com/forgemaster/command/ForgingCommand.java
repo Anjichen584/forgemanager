@@ -95,6 +95,8 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             case "grade", "cailiao" -> grade(sender, args);
             case "gem", "baoshi", "baoshitai" -> gem(sender, args);
             case "enchant", "fumo", "fumoshuxiang" -> enchant(sender, args);
+            // 原创附魔台（v2.23.2）：跟上面的宝石镶嵌是两回事，刻意用不同的子命令
+            case "ench", "fumotai", "yuangchuang" -> enchTable(sender, args);
             case "strengthen", "qianghua", "duanzao", "duanzaodengji" -> strengthen(sender, args);
             case "hammer", "chongchui", "tiechui" -> hammer(sender);
             case "evolve", "tuibian", "jinhua", "jieduan" -> evolve(sender, args);
@@ -932,6 +934,76 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             }
         }
         plugin.gems().inlayEnchant(p);
+    }
+
+    // ------------------------------------------------------------ 原创附魔台（v2.23.2）
+
+    /**
+     * {@code /zhujian ench [list|book <id> [等级]]}
+     *
+     * <ul>
+     *   <li>不带参数 / {@code open}：打开附魔台界面</li>
+     *   <li>{@code list}：列出全部原创附魔与当前数值上限</li>
+     *   <li>{@code book <id> [lv]}：给自己发一本（需要 {@code forgemaster.admin}）</li>
+     * </ul>
+     */
+    private void enchTable(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player p)) {
+            Msg.prefix(sender, "<red>要在游戏里用。</red>");
+            return;
+        }
+        if (plugin.enchantTable() == null || plugin.enchants() == null) {
+            Msg.prefix(p, "<red>附魔系统没有初始化。</red>");
+            return;
+        }
+        String sub = args.length >= 2 ? args[1].toLowerCase(java.util.Locale.ROOT) : "open";
+
+        if (sub.equals("list") || sub.equals("liebiao")) {
+            Msg.prefix(p, "<#a78bfa>原创附魔 <dark_gray>| <gray>共 <white>"
+                    + plugin.enchants().size() + "</white> 条");
+            for (var def : plugin.enchants().all()) {
+                Msg.send(p, "<dark_gray>· <white>" + def.id() + "</white> <gray>"
+                        + def.display() + " <dark_gray>[<gray>" + def.slot().label()
+                        + "<dark_gray>] <dark_gray>1~" + def.maxLevel()
+                        + " <dark_gray>(" + def.valueText(def.maxLevel()) + " 满级)");
+            }
+            return;
+        }
+
+        if (sub.equals("book") || sub.equals("shu")) {
+            if (!p.hasPermission("forgemaster.admin")) {
+                Msg.prefix(p, "<red>需要管理员权限。</red>");
+                return;
+            }
+            if (args.length < 3) {
+                Msg.prefix(p, "<red>用法: /zhujian ench book <id> [等级]");
+                return;
+            }
+            var def = plugin.enchants().get(args[2]);
+            if (def == null) {
+                Msg.prefix(p, "<red>没有这条附魔: <white>" + args[2]);
+                return;
+            }
+            int lv = 1;
+            if (args.length >= 4) {
+                try {
+                    lv = Math.max(1, Math.min(Integer.parseInt(args[3]), def.maxLevel()));
+                } catch (NumberFormatException ignored) {
+                    lv = 1;
+                }
+            }
+            var book = com.forgemaster.enchant.EnchantItem.book(plugin,
+                    new com.forgemaster.enchant.EnchantEffects.Entry(def, lv));
+            var left = p.getInventory().addItem(book);
+            for (var drop : left.values()) {
+                p.getWorld().dropItemNaturally(p.getLocation(), drop);
+            }
+            Msg.prefix(p, "<#a78bfa>已发放 <white>" + def.display() + " "
+                    + com.forgemaster.enchant.EnchantItem.roman(lv));
+            return;
+        }
+
+        com.forgemaster.enchant.EnchantGui.open(plugin, p);
     }
 
     // ------------------------------------------------------------ 锻造等级
@@ -3230,6 +3302,18 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
                     args.length == 2 ? filter(List.of("set", "show", "del"), args[1]) : List.of();
             case "enchant", "fumo", "fumoshuxiang" ->
                     args.length == 2 ? filter(List.of("extract"), args[1]) : List.of();
+            // 原创附魔台（v2.23.2）：book 的第三段补全成附魔 id
+            case "ench", "fumotai", "yuangchuang" -> {
+                if (args.length == 2) {
+                    yield filter(List.of("open", "list", "book"), args[1]);
+                }
+                if (args.length == 3 && args[1].equalsIgnoreCase("book")) {
+                    yield filter(plugin.enchants() == null ? List.of()
+                            : plugin.enchants().all().stream()
+                            .map(com.forgemaster.enchant.CustomEnchant::id).toList(), args[2]);
+                }
+                yield List.of();
+            }
             case "dissolve", "jiapo", "fenjie" ->
                     args.length == 2 ? filter(List.of("confirm"), args[1]) : List.of();
             case "imprint", "cifu" ->
@@ -3261,7 +3345,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
                 "master", "accept", "guild", "hanghui", "spirit", "tomb", "tombrun", "mijing",
                 "achievements", "auction", "order", "dingdan",
                 "strengthen", "hammer",
-                "enchant", "talent", "evolve", "contract", "shangjin", "gem", "money", "forge", "event",
+                "enchant", "ench", "fumotai", "talent", "evolve", "contract", "shangjin", "gem", "money", "forge", "event",
                 "dissolve", "imprint", "collection", "shoucang", "tujian", "title", "chenghao"));
         if (sender.hasPermission("forgemaster.admin")) {
             subs.addAll(List.of("give", "reload", "selftest", "season", "backup", "restore",

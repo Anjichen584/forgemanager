@@ -43,6 +43,7 @@ public enum CoinReason {
     STRENGTHEN("strengthen", "强化费", Flow.CONSUME),
     EVOLVE("evolve", "蜕变费", Flow.CONSUME),
     GEM("gem", "宝石台", Flow.CONSUME),
+    ENCHANT("enchant", "附魔台", Flow.CONSUME),
     REFORGE("reforge", "重铸费", Flow.CONSUME),
     IMPRINT("imprint", "词条符", Flow.CONSUME),
     DISSOLVE("dissolve", "剑魄分解", Flow.CONSUME),
