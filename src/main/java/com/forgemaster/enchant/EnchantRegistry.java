@@ -84,13 +84,21 @@ public final class EnchantRegistry {
                 new CustomEnchant("vigil", "守夜", 5, CustomEnchant.Kind.REGEN,
                         CustomEnchant.Slot.ARMOR, 0.5, 90,
                         "脱战五秒后每两秒回 %v"),
+                // v2.25 切片一：被打后 4 秒内增伤 —— 奖励「敢挨打」的换血打法，与淬锋（不挨打）互补
+                new CustomEnchant("rage", "血怒", 4, CustomEnchant.Kind.RAGE,
+                        CustomEnchant.Slot.ARMOR, 0.03, 65,
+                        "受伤后四秒内攻击伤害 %v"),
                 // ---------------------------------------------------------- 通用：改变作息的
                 new CustomEnchant("salvage", "拾遗", 5, CustomEnchant.Kind.SALVAGE,
                         CustomEnchant.Slot.ANY, 0.06, 75,
                         "采掘时 %v 几率另得经验"),
                 new CustomEnchant("insight", "望气", 5, CustomEnchant.Kind.SENSE,
                         CustomEnchant.Slot.ANY, 2.0, 65,
-                        "每数秒察知 %v 内敌踪")
+                        "每数秒察知 %v 内敌踪"),
+                // v2.25 切片一：虚拟耐久掷骰豁免 —— 只护插件那本耐久账，原版本体 unbreakable 无账可掉
+                new CustomEnchant("stout", "坚韧", 5, CustomEnchant.Kind.STOUT,
+                        CustomEnchant.Slot.ANY, 0.08, 85,
+                        "虚拟耐久 %v 几率不掉")
         );
     }
 

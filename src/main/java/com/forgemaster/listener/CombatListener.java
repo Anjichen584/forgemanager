@@ -28,12 +28,31 @@ import java.util.concurrent.ThreadLocalRandom;
  */
 public final class CombatListener implements Listener {
 
+    /** 坚韧动作栏提示的限频窗口：10 秒一条 */
+    private static final long STOUT_HINT_THROTTLE_MS = 10_000L;
+
     private final ForgingMasterPlugin plugin;
     /** 护甲扣账节流：玩家 UUID → 上次扣账时间戳。窗口内的连续伤害（火焰 tick 等）只扣一次 */
     private final java.util.Map<java.util.UUID, Long> lastArmorWear = new java.util.HashMap<>();
+    /** 坚韧提示节流：玩家 UUID → 上次动作栏提示时刻（10 秒一次，防连击/火焰 tick 刷屏） */
+    private final java.util.Map<java.util.UUID, Long> lastStoutHint = new java.util.HashMap<>();
 
     public CombatListener(ForgingMasterPlugin plugin) {
         this.plugin = plugin;
+    }
+
+    /** 坚韧掷骰命中的动作栏轻提示：同一玩家 10 秒最多一条（防刷屏，口径同守夜/望气的节流） */
+    private void stoutHint(Player player) {
+        long now = System.currentTimeMillis();
+        Long last = lastStoutHint.get(player.getUniqueId());
+        if (last != null && now - last < STOUT_HINT_THROTTLE_MS) {
+            return;
+        }
+        if (lastStoutHint.size() > 512) {
+            lastStoutHint.entrySet().removeIf(e -> now - e.getValue() > 30_000);
+        }
+        lastStoutHint.put(player.getUniqueId(), now);
+        player.sendActionBar(com.forgemaster.util.Msg.mm("<#7fd4ff>坚韧：未磨损"));
     }
 
     /**
@@ -91,6 +110,29 @@ public final class CombatListener implements Listener {
 
         var inv = player.getInventory();
         ItemStack[] pieces = inv.getArmorContents();
+        // 坚韧（v2.25 切片一）：护甲扣账前掷骰。该玩家四件甲的坚韧合并取大
+        // （走 merge 口径——两件各 8% 取 8% 而不是 16%，合并后再过一次全局夹子），
+        // 掷骰命中则这一整次伤害不掉虚拟耐久；只护插件这本账，与武器侧同一份上限。
+        var enchCaps = com.forgemaster.enchant.EnchantEffects.Caps.fromConfig(plugin.getConfig());
+        java.util.List<com.forgemaster.enchant.EnchantEffects.Mechanics> armorParts =
+                new java.util.ArrayList<>();
+        for (ItemStack piece : pieces) {
+            if (piece == null || piece.getType().isAir()) {
+                continue;
+            }
+            var entries = com.forgemaster.enchant.EnchantItem.of(plugin, piece);
+            if (!entries.isEmpty()) {
+                armorParts.add(plugin.enchantEffects().of(entries, enchCaps));
+            }
+        }
+        var armorMech = armorParts.isEmpty()
+                ? com.forgemaster.enchant.EnchantEffects.Mechanics.none()
+                : plugin.enchantEffects().merge(armorParts, enchCaps);
+        if (armorMech.stoutChance() > 0 && ThreadLocalRandom.current().nextDouble()
+                < plugin.enchantEffects().stoutSkipChance(armorMech, enchCaps)) {
+            stoutHint(player);
+            return;
+        }
         for (int i = 0; i < pieces.length && i < 4; i++) {
             ItemStack piece = pieces[i];
             if (piece == null || piece.getType().isAir() || !plugin.items().isForged(piece)) {
@@ -200,9 +242,15 @@ public final class CombatListener implements Listener {
                 player, event.getEntity(), enchCaps.retaliateMs())) {
             enchBonus += fullMech.retaliate();
         }
-        // 兜底：即便配置被改成离谱的值，这一击的附魔增伤也越不过「四项上限之和」
+        // 血怒（v2.25 切片一）：自己被打后 rage-window-ms 内的攻击增伤 —— 与淬锋
+        // 互补（淬锋要求没挨打，血怒奖励敢挨打的换血打法）。窗口判定读
+        // EnchantState 的时间戳，比例在 rageBonus 里夹；与回响一样在兜底夹子之前并入。
+        boolean inRage = com.forgemaster.enchant.EnchantState.rageRemaining(
+                player, enchCaps.rageWindowMs()) > 0;
+        enchBonus += plugin.enchantEffects().rageBonus(fullMech, enchCaps, inRage);
+        // 兜底：即便配置被改成离谱的值，这一击的附魔增伤也越不过「各项上限之和」
         enchBonus = Math.min(enchBonus, enchCaps.maxLoneWolf() + enchCaps.maxCharge()
-                + enchCaps.maxMarkBonus() + enchCaps.maxRetaliate());
+                + enchCaps.maxMarkBonus() + enchCaps.maxRetaliate() + enchCaps.maxRage());
 
         // 崩刃：耐久见底的剑只是一把普通剑
         int durability = pdc.getOrDefault(Keys.DURABILITY, PersistentDataType.INTEGER, -1);
@@ -213,6 +261,12 @@ public final class CombatListener implements Listener {
         }
 
         if (plugin.settings().durabilityEnabled() && durability > 0) {
+            // 坚韧（v2.25 切片一）：主手武器扣账前掷骰，命中则这次不掉虚拟耐久。
+            // 只护插件这本虚拟耐久账——原版本体耐久 unbreakable 封死，本来就没有第二本账可掉。
+            if (fullMech.stoutChance() > 0 && ThreadLocalRandom.current().nextDouble()
+                    < plugin.enchantEffects().stoutSkipChance(fullMech, enchCaps)) {
+                stoutHint(player);
+            } else {
             // 复用上面已持有的 meta：命中热路径上不再二次 getItemMeta
             boolean broken = plugin.items().setDurability(weapon, meta, durability - plugin.settings().durabilityLossPerHit());
             if (broken) {
@@ -226,6 +280,7 @@ public final class CombatListener implements Listener {
                 player.sendActionBar(com.forgemaster.util.Msg.mm(
                         "<#ff9a3c>剑刃钝了 <dark_gray>| <gray>耐久 " + (durability - plugin.settings().durabilityLossPerHit())
                                 + " <dark_gray>· <white>/zhujian repair"));
+            }
             }
         }
 

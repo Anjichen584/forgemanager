@@ -343,6 +343,11 @@ enchant:
     max-streak-stacks: 5        # 最多叠几层
     # 饮命（v2.24 切片一）：击杀回虚拟耐久；崩刃（耐久 ≤ 0）的剑不回，研磨仍是唯一出路
     max-dur-leech: 3.0          # 单次击杀最多回几 点
+    # 血怒（v2.25 切片一）：被打后窗口内的攻击增伤；窗口外归零在结算侧兜底
+    max-rage: 0.12              # 最多 +12%（每级 +3% × 4 级）
+    rage-window-ms: 4000        # 被打后多少毫秒内有效
+    # 坚韧（v2.25 切片一）：虚拟耐久掷骰豁免，只护插件那本耐久账（原版本体 unbreakable）
+    max-stout-chance: 0.40      # 单次免磨损几率最多 40%（每级 8% × 5 级）
   # 白名单守卫：拦在附魔台与铁砧，只管本插件的锻造品
   guard:
     enabled: true
@@ -367,6 +372,9 @@ enchant:
     # v2.24 切片一新增两条（机制型原创附魔）
     temper:    { enabled: true, max-level: 5, per-level: 0.04, weight: 80 }  # 淬锋：每层 +4% 伤害，最多 5 层，挨打清零
     siphon:    { enabled: true, max-level: 5, per-level: 0.5,  weight: 70 }  # 饮命：击杀回 0.5 点/级 耐久（上限 3 点，崩刃不回）
+    # v2.25 切片一新增两条（机制型原创附魔）
+    rage:      { enabled: true, max-level: 4, per-level: 0.03, weight: 65 }  # 血怒：被打后 4 秒内攻击 +3%/级（上限 12%）
+    stout:     { enabled: true, max-level: 5, per-level: 0.08, weight: 85 }  # 坚韧：虚拟耐久 8%/级 几率不掉（上限 40%）
 
 metrics:
   enabled: true
@@ -501,6 +509,16 @@ strengthen:
     hits: 10
     attempts: 3
     success-bonus: 0.10
+  # ---- 强化保险（v2.25 切片二）----
+  # /zhujian strengthen insure 切换本人保险态（无参查状态由命令层接线）。
+  # 开启后每次落锤额外付 fee-per-strike 保险费；这一锤把剑锤碎了时，按 refund-ratio
+  # 返还该锤材料的折价（材料按 materials.*.price ÷ 单次锻耗费料估单价，剑币返还）。
+  # 守恒口径：保险费收了不退；退款只含该锤材料、不含剑币手续费；
+  # 护胚符 / 凤凰灰救回来的不算碎。保险态为会话级（退服即失效）。
+  insure:
+    fee-per-strike: 200    # 每锤保险费（剑币，负数按 0）
+    refund-ratio: 0.5      # 碎剑时返还材料折价的比例（代码夹进 [0, 0.8]）
+    enabled: true          # 保险总开关
   # 剑魂传承：+N 的剑碎了，下一把新铸的剑自带 floor(N × rate) 级（免费，不超 cap）
   # v2.19.1：0.25/+10 → 0.35/+20。碎剑是高段常态，回收太弱等于每次碎都从零再爬。
   inherit:
@@ -1743,6 +1761,13 @@ spirit:
     radius: 2.5            # 波及半径（格）
     cooldown-ms: 6000      # 每玩家冷却（毫秒）
     min-tier: 3            # 灵性档位下限（第几档起，0 起）
+  # ---- 灵契重抽（v2.25 切片二）----
+  # 灵性满档的锻造剑可花剑币重抽灵契词条：保留灵性与剑名，按 max-extra-affixes 重掷整批，
+  # 旧的灵契从 Lore / 属性 modifier / 聚合 PDC 干净摘除后再抽。每日限 daily-limit 次，
+  # 次数记在剑的 PDC 上（跟剑走，换号不重置）。/zhujian spirit reroll [confirm]
+  reroll:
+    cost: 2000             # 每次重抽费用（剑币，负数按 0 = 免费）
+    daily-limit: 1         # 每把剑每天可重抽几次（夹进 [1, 99]）
   # ---- 剑灵显形（拓展第三档）----
   # 灵性达标且已命名的剑在主手玩家肩侧显形为一枚 ItemDisplay 浮游体（绕身环绕）。
   display:

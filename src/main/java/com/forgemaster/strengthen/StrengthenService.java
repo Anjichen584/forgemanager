@@ -9,12 +9,16 @@ import com.forgemaster.quality.Quality;
 import com.forgemaster.season.SeasonManager;
 import com.forgemaster.util.Keys;
 import com.forgemaster.util.Msg;
+import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Sound;
 import org.bukkit.attribute.Attribute;
 import org.bukkit.attribute.AttributeModifier;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.EquipmentSlotGroup;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -23,7 +27,10 @@ import org.bukkit.persistence.PersistentDataType;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Random;
+import java.util.UUID;
 
 /**
  * 锻造等级（强化）。
@@ -63,8 +70,25 @@ public final class StrengthenService {
     private final ForgingMasterPlugin plugin;
     private final Random random = new Random();
 
+    /**
+     * 强化保险态（v2.25 切片二）：玩家 uuid → 是否开启。
+     *
+     * <p><b>会话级</b>，刻意不落盘：保险挂在「人」而不是「剑」上，玩家 PDC 会跟着
+     * 换号 / 借号走，等于送一个跨号的常驻 buff；StatsStore 是公共禁区。退服即清
+     * （构造时挂的监听），服关自然全清。想要长期保障就每次上线重新开一次——
+     * 这是有意为之的代价，不是遗漏。</p>
+     */
+    private final Map<UUID, Boolean> insured = new HashMap<>();
+
     public StrengthenService(ForgingMasterPlugin plugin) {
         this.plugin = plugin;
+        // 保险态只在在线时有意义：退服即清，防「下线关保险、上线还在扣费」的幽灵状态
+        Bukkit.getPluginManager().registerEvents(new Listener() {
+            @EventHandler
+            public void onQuit(PlayerQuitEvent event) {
+                insured.remove(event.getPlayer().getUniqueId());
+            }
+        }, plugin);
     }
 
     // ------------------------------------------------------------ 读
@@ -942,6 +966,125 @@ public final class StrengthenService {
         return level >= 0 && furnaceOf(item) >= furnaceNeed(level);
     }
 
+    // ------------------------------------------------------------ 强化保险（v2.25 切片二）
+
+    /**
+     * 强化保险：开启后每次落锤额外付一笔保险费；这一锤把剑<b>真碎</b>了时，
+     * 按 {@code refund-ratio} 返还该锤材料的折价（剑币）。
+     *
+     * <p>守恒口径：保险费收了不退（没碎等于买了平安）；碎剑退款只含该锤材料、
+     * 不含剑币手续费——手续费买的是落锤资格，材料才是被保险物。
+     * 护胚符 / 凤凰灰 / 基石护体把「碎」救回来的情况不算碎，不触发理赔。</p>
+     */
+
+    /** 保险总开关（strengthen.insure.enabled） */
+    public boolean insureEnabled() {
+        return plugin.settings().flag("strengthen.insure.enabled", true);
+    }
+
+    /** 保险费夹取：[0, +∞)，配置写负数按 0 处理（免费保险总比拒保安全） */
+    public static long clampInsureFee(long v) {
+        return Math.max(0, v);
+    }
+
+    /** 每锤保险费（已夹取） */
+    public long insureFee() {
+        return clampInsureFee(plugin.settings().longOf("strengthen.insure.fee-per-strike", 200));
+    }
+
+    /** refund-ratio 夹取：[0, 0.8]。上限 0.8：材料折价不能倒挂成「碎了比卖出更赚」 */
+    public static double clampRefundRatio(double v) {
+        return Math.max(0, Math.min(0.8, v));
+    }
+
+    /** 碎剑理赔比例（已夹取） */
+    public double insureRefundRatio() {
+        return clampRefundRatio(plugin.settings().num("strengthen.insure.refund-ratio", 0.5));
+    }
+
+    /** 该玩家当前是否开着保险态（会话级，见 {@link #insured} 的说明） */
+    public boolean isInsured(java.util.UUID playerId) {
+        return playerId != null && Boolean.TRUE.equals(insured.get(playerId));
+    }
+
+    /** 直接写保险态（toggle / 自检用；退服由监听清理） */
+    public void setInsured(java.util.UUID playerId, boolean value) {
+        if (playerId == null) {
+            return;
+        }
+        if (value) {
+            insured.put(playerId, Boolean.TRUE);
+        } else {
+            insured.remove(playerId);
+        }
+    }
+
+    /** 清掉某玩家的保险态（自检 / 兜底清理用） */
+    public void clearInsure(java.util.UUID playerId) {
+        if (playerId != null) {
+            insured.remove(playerId);
+        }
+    }
+
+    /** 清空全部保险态并返回清掉的条数（服关兜底 / 自检用） */
+    public int clearAllInsured() {
+        int n = insured.size();
+        insured.clear();
+        return n;
+    }
+
+    /**
+     * 切换本人保险态（{@code /zhujian strengthen insure} 的入口；命令层由 ForgingCommand 接线）。
+     *
+     * @return 切换后的状态（true = 已开启）
+     */
+    public boolean insureToggle(Player player) {
+        boolean now = !isInsured(player.getUniqueId());
+        setInsured(player.getUniqueId(), now);
+        if (now) {
+            Msg.prefix(player, "<green>强化保险已开启</green> <gray>· 每次落锤额外付 <yellow>" + insureFee()
+                    + "</yellow> 剑币保险费；这一锤把剑锤碎了时，返还该锤材料折价的 <white>"
+                    + Msg.fmt(insureRefundRatio() * 100, 0) + "%</white>（剑币）。</gray>");
+            Msg.prefix(player, "<dark_gray>保险费不退；退款不含剑币手续费；本态为会话级，退服后需重新开启。</dark_gray>");
+        } else {
+            Msg.prefix(player, "<gray>强化保险已关闭，之后落锤不再收保险费。</gray>");
+        }
+        return now;
+    }
+
+    /**
+     * 纯函数：碎剑理赔额 = 该锤材料折价 × 理赔比例。
+     *
+     * <p>单价、数量、比例任一非正都返回 0；比例先过 {@link #clampRefundRatio}。</p>
+     */
+    public static long insuranceRefund(long materialUnitPrice, int matUsed, double ratio) {
+        if (materialUnitPrice <= 0 || matUsed <= 0) {
+            return 0;
+        }
+        double r = clampRefundRatio(ratio);
+        if (r <= 0) {
+            return 0;
+        }
+        return Math.max(0, Math.round(materialUnitPrice * (double) matUsed * r));
+    }
+
+    /**
+     * 材料单价：锻造费（materials.*.price，ForgeManager 收的同一笔）÷ 单次锻造耗料数。
+     *
+     * <p>为什么这么算：MaterialGrades 本身没有单价表，而材料最权威的定价就是
+     * 配置里「锻一件要多少钱、吃几个料」——相除即得单价，与锻造收费同一条价格体系。
+     * 理赔以剑币结算（wallet.give），所以不用剑尘那套品质折算法（那是剑魄的价值，
+     * 不是材料的）。</p>
+     */
+    private long materialUnitPrice(ForgeMaterial mat) {
+        if (mat == null) {
+            return 0;
+        }
+        long price = mat.price();
+        int perCraft = Math.max(1, mat.costAmount());
+        return price <= 0 ? 0 : Math.max(0, price / perCraft);
+    }
+
     // ------------------------------------------------------------ 履历计数
 
     /** 累计失败次数（履历） */
@@ -1108,14 +1251,22 @@ public final class StrengthenService {
                 }
             }
         }
+        // ---- 强化保险（v2.25 切片二）----
+        // 保险态开着就按锤收费：余额判定按「手续费 + 保险费」一起算，避免
+        // 「手续费扣成功、保险费扣失败」的半截账。这一锤 REFUSED 则什么都不收。
+        boolean insuredNow = insureEnabled() && isInsured(player.getUniqueId());
+        long insureFee = insuredNow ? insureFee() : 0;
+
         long coins = plugin.stats().coins(player.getUniqueId());
-        if (coins < cost) {
+        if (coins < cost + insureFee) {
             // 剑币 ≠ 服务器金币：强化花的是插件内置剑币（锻造赚来的），
             // 服主给了 Vault/CMI 的钱照样不够，所以这里直接把正确命令写出来。
-            return refused(item, "<red>剑币不够：需要 <white>" + cost + "</white>，你只有 <white>"
-                    + coins + "</white>。"
+            return refused(item, "<red>剑币不够：需要 <white>" + (cost + insureFee) + "</white>"
+                    + (insureFee > 0 ? "<gray>（含强化保险费 " + insureFee + "）</gray>" : "")
+                    + "，你只有 <white>" + coins + "</white>。"
                     + "<newline><dark_gray>剑币靠锻造赚；管理员发放：<white>/zhujian money coin give "
-                    + player.getName() + " " + cost + "</white>");
+                    + player.getName() + " " + (cost + insureFee) + "</white>"
+                    + (insureFee > 0 ? " · 或先 /zhujian strengthen insure 关掉保险" : "") + "</dark_gray>");
         }
 
         // ---- 这一锤的判定方式：炉火必成 / 无损连击 / 常规明牌 ----
@@ -1142,6 +1293,10 @@ public final class StrengthenService {
 
         // ---- 扣费（扣了就不再退，空锤也照吃）----
         plugin.stats().takeCoins(player.getUniqueId(), cost, CoinReason.STRENGTHEN);
+        // 保险费单独走 Wallet 收口：买的是「这一锤的碎剑理赔资格」，收了就不退
+        if (insureFee > 0) {
+            plugin.wallet().take(player, insureFee, CoinReason.OTHER_OUT);
+        }
         if (costItem != null) {
             // 材料只扣实有的那部分，差额由剑尘补（dustUse 在材料检查段已经算好）
             MaterialGrades.consume(player, costItem, need - dustUse);
@@ -1161,7 +1316,9 @@ public final class StrengthenService {
         String costText = costItem == null
                 ? " · 没有材料消耗"
                 : " · 花掉 " + matUsed + " 个 " + MaterialGrades.pretty(costItem)
-                        + (dustUse > 0 ? " + 剑尘 " + dustUse : "");
+                        + (dustUse > 0 ? " + 剑尘 " + dustUse : "")
+                        // 保险费如实进账单：收了要让玩家看到，账才对得上
+                        + (insureFee > 0 ? " · 保险费 " + insureFee : "");
         if (kindle) {
             Charm.take(player, Charm.KINDLE, 1);
         }
@@ -1235,7 +1392,7 @@ public final class StrengthenService {
                     + (catchupPct > 0 ? "<green>（赛季追赶 +" + catchupPct + "%）</green>" : "")
                     + (kindlePct > 0 ? "（旺火符 +" + kindlePct + "%）" : "")
                     + costText
-                    + " + " + cost + " 剑币"
+                    + " + " + (cost + insureFee) + " 剑币"
                     + "<newline>" + oddsText
                     + "<newline>" + comboText(newCombo, threshold) + "</dark_gray>";
             return new StrikeResult(tier, level, next, cap, newCombo, threshold,
@@ -1281,11 +1438,24 @@ public final class StrengthenService {
                     removeFromInventory(player, item);
                 }
                 player.playSound(player.getLocation(), Sound.ENTITY_ITEM_BREAK, 1.0f, 0.55f);
+                // 保险理赔（v2.25 切片二）：只有「真碎」这一条路触发——护胚符 / 凤凰灰
+                // 救回来的不算碎。退款 = 该锤材料折价 × refund-ratio，只含材料、
+                // 不含剑币手续费与保险费（保险费买的是这次理赔资格，收了就不退）。
+                String insureNote = "";
+                if (insuredNow) {
+                    long refund = insuranceRefund(materialUnitPrice(mat), matUsed, insureRefundRatio());
+                    if (refund > 0) {
+                        plugin.wallet().give(player, refund, CoinReason.OTHER_IN);
+                        insureNote = "<newline><#9f7aea>强化保险</#9f7aea> <gray>理赔 <white>" + refund
+                                + "</white> 剑币 <dark_gray>（该锤 " + matUsed + " 个材料的折价 × "
+                                + Msg.fmt(insureRefundRatio() * 100, 0) + "%，保险费与手续费不退）</dark_gray></gray>";
+                    }
+                }
                 return new StrikeResult(Tier.BREAK, level, level, cap, comboNow, threshold,
                         false, true, cost, matUsed,
                         head + "<dark_gray>，剑胚碎了"
                                 + (tombId == null ? "" : "，残骸已收入剑冢留档 <white>" + tombId + "</white>") + "。"
-                                + tail);
+                                + tail + insureNote);
             }
             Charm.take(player, Charm.TALISMAN, 1);
             int leftTalisman = Charm.count(player, Charm.TALISMAN);

@@ -57,6 +57,10 @@ public record CustomEnchant(String id, String display, int maxLevel, Kind kind, 
      *       它奖励的是「不挨打地输出」，与无伤跑位打法绑定，受伤清零让白嫖不可能</td></tr>
      *   <tr><td>饮命（击杀回耐久）</td><td>经验修补</td><td>经验修补是「经验换原版耐久」；饮命是「击杀
      *       直接回虚拟耐久」，且崩刃的剑不回 —— 死剑不能靠杀怪自愈，研磨仍是唯一出路</td></tr>
+     *   <tr><td>血怒（受击增伤窗）</td><td>无</td><td>原版没有「被打之后一段时间内打人更痛」的窗口；
+     *       它与淬锋构成一对镜像：淬锋怕挨打，血怒吃挨打</td></tr>
+     *   <tr><td>坚韧（耐久掷骰豁免）</td><td>耐久</td><td>耐久 III 只是降低期望磨损，照样必掉；
+     *       坚韧是整次豁免的掷骰，且只管插件虚拟耐久那本账</td></tr>
      * </table>
      */
     public enum Kind {
@@ -96,7 +100,20 @@ public record CustomEnchant(String id, String display, int maxLevel, Kind kind, 
          * perLevel = 每级回复点数。**崩刃（耐久 ≤ 0）的剑不回**——
          * 否则死了还能喝血复活耐久，「崩刃必须研磨」的红线就被绕过去了。
          */
-        DUR_LEECH
+        DUR_LEECH,
+        /**
+         * 血怒（v2.25 切片一）：受伤后窗口内自己的攻击增伤。perLevel = 每级增伤比例。
+         * 与淬锋互补：淬锋奖励「不挨打地输出」，血怒奖励「敢挨打的换血打法」——
+         * 原版没有任何「被打反而变强」的临时窗口机制。
+         */
+        RAGE,
+        /**
+         * 坚韧（v2.25 切片一）：每次虚拟耐久要扣账时掷骰，命中则这次不掉。
+         * perLevel = 每级免磨损几率。与原版「耐久」附魔的区别：耐久 III 是降低
+         * 掉耐久的期望值（还是必掉），坚韧是概率性整次豁免，且只护**插件虚拟
+         * 耐久账**——原版本体耐久本来就 unbreakable 封死，没有可保护的第二本账。
+         */
+        STOUT
     }
 
     /** 适用部位 */
@@ -126,7 +143,7 @@ public record CustomEnchant(String id, String display, int maxLevel, Kind kind, 
     public String valueText(int level) {
         double v = at(level);
         return switch (kind) {
-            case SPLASH, LONE_WOLF, CHARGE, MARK, RETALIATE, DELAY_DAMAGE, SALVAGE, STREAK ->
+            case SPLASH, LONE_WOLF, CHARGE, MARK, RETALIATE, DELAY_DAMAGE, SALVAGE, STREAK, RAGE ->
                     "+" + trim(v * 100) + "%";
             case PYRE -> trim(v) + " 点";
             case HAMPER -> trim(v) + " 秒";
@@ -134,6 +151,7 @@ public record CustomEnchant(String id, String display, int maxLevel, Kind kind, 
             case CHEAT_DEATH -> "+" + trim(v * 100) + "% 生命";
             case SENSE -> trim(v) + " 格";
             case DUR_LEECH -> trim(v) + " 点";
+            case STOUT -> "+" + trim(v * 100) + "% 几率";
         };
     }
 

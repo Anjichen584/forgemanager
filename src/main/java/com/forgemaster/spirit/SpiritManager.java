@@ -33,6 +33,7 @@ import org.bukkit.persistence.PersistentDataType;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -130,8 +131,17 @@ public final class SpiritManager implements Listener {
 
     /** 该档位应有的灵契词条数：第 2 档起每档 1 条，受 max-extra-affixes 限制 */
     public int slotsOf(int tier) {
-        int cap = Math.max(0, plugin.settings().intOf("spirit.max-extra-affixes", 2));
-        return Math.min(cap, Math.max(0, tier - 1));
+        return slotsForTier(tier, Math.max(0, plugin.settings().intOf("spirit.max-extra-affixes", 2)));
+    }
+
+    /**
+     * 档位 → 灵契条数的纯函数（重抽守恒的基准：重抽前后都按它补满）。
+     *
+     * <p>抽出静态版是为了让自检能不依赖配置直接断言「重抽前后条数守恒」：
+     * 摘掉几条就补回几条，条数永远等于 {@code min(cap, max(0, tier-1))}。</p>
+     */
+    public static int slotsForTier(int tier, int cap) {
+        return Math.min(Math.max(0, cap), Math.max(0, tier - 1));
     }
 
     // ------------------------------------------------------------ 灵击（v2.24 切片二）
@@ -203,6 +213,347 @@ public final class SpiritManager implements Listener {
     public long surgeCooldownRemaining(UUID playerId, long nowMillis) {
         Long until = surgeCooldowns.get(playerId);
         return until == null ? 0 : Math.max(0, until - nowMillis);
+    }
+
+    // ------------------------------------------------------------ 灵契重抽（v2.25 切片二）
+
+    /**
+     * 灵契重抽：灵性满档的锻造剑花剑币把灵契词条整批重掷一次（保留灵性与剑名），
+     * 每天限 {@code spirit.reroll.daily-limit} 次，次数记在剑的 PDC 上（跟剑走，换号不重置）。
+     *
+     * <p>守恒口径：旧的灵契从 Lore / 属性 modifier / 聚合 PDC / {@code affix_list}
+     * 四处干净摘除后，按 {@link #slotsForTier} 补满同样条数——条数只由档位与
+     * {@code max-extra-affixes} 决定，重抽不改变灵契总量。</p>
+     */
+
+    /** Lore 里灵契行的识别前缀（grantAffix 写行时的同一份字面量） */
+    private static final String SPIRIT_LORE_TAG = "◆ 灵契";
+    /** 灵契属性词条的 modifier 键前缀（grantAffix 写键的同一份规则） */
+    private static final String SPIRIT_MOD_PREFIX = "fm_spirit_";
+
+    /** 重抽费用夹取：[0, +∞)，配置写负数按免费处理而不是拒绝执行 */
+    public static long clampRerollCost(long v) {
+        return Math.max(0, v);
+    }
+
+    /** 每日次数夹取：[1, 99]。配置写 0 会把功能永久锁死，按 1 次兜底 */
+    public static int clampRerollDailyLimit(int v) {
+        return Math.max(1, Math.min(99, v));
+    }
+
+    /** 重抽费用（已夹取） */
+    public long rerollCost() {
+        return clampRerollCost(plugin.settings().longOf("spirit.reroll.cost", 2000));
+    }
+
+    /** 每日重抽次数上限（已夹取） */
+    public int rerollDailyLimit() {
+        return clampRerollDailyLimit(plugin.settings().intOf("spirit.reroll.daily-limit", 1));
+    }
+
+    /**
+     * 纯函数：这把剑今天还能不能重抽。
+     *
+     * <p>PDC 上的戳格式是 {@code yyyy-MM-dd|当日已用次数}；日期不是今天 = 次数已随
+     * 新的一天作废。计数解析不动（手改 PDC / 旧数据）按「已用完」处理——
+     * 宁可让玩家等一天，也不让脏数据白送一次重抽。</p>
+     */
+    public static boolean canRerollToday(String stored, String today, int limit) {
+        if (limit <= 0) {
+            return false;
+        }
+        if (stored == null || stored.isBlank()) {
+            return true;
+        }
+        int bar = stored.indexOf('|');
+        String date = bar < 0 ? stored : stored.substring(0, bar);
+        if (!date.equals(today)) {
+            return true;
+        }
+        int count = limit; // 解析不动按已用完：与 nextRerollStamp 的写入格式互为镜像
+        if (bar >= 0) {
+            try {
+                count = Integer.parseInt(stored.substring(bar + 1).trim());
+            } catch (NumberFormatException ex) {
+                // 保持 limit（已用完）
+            }
+        }
+        return count < limit;
+    }
+
+    /**
+     * 纯函数：重抽之后的下一个日期戳。
+     *
+     * <p>同一天累加计数（封顶 limit，超出不再涨，防止配置调小后旧计数爆表）；
+     * 跨天从 1 重新起算。</p>
+     */
+    public static String nextRerollStamp(String stored, String today, int limit) {
+        int count = 0;
+        if (stored != null && stored.startsWith(today + "|")) {
+            try {
+                count = Integer.parseInt(stored.substring(today.length() + 1).trim());
+            } catch (NumberFormatException ex) {
+                count = 0;
+            }
+        }
+        int cap = Math.max(1, limit);
+        return today + "|" + Math.min(Math.max(0, count) + 1, cap);
+    }
+
+    /**
+     * 纯函数：从 {@code affix_list}（锻造词条与灵契混存一张表）里只摘掉灵契那几个 id。
+     *
+     * <p>锻造词条的顺序与内容原样保留——重抽只动灵契，不动淬火词条。</p>
+     */
+    public static String removeSpiritIds(String csv, java.util.Collection<String> remove) {
+        if (csv == null || csv.isBlank() || remove == null || remove.isEmpty()) {
+            return csv == null ? "" : csv;
+        }
+        Set<String> rm = new HashSet<>();
+        for (String s : remove) {
+            rm.add(s.trim().toLowerCase(Locale.ROOT));
+        }
+        List<String> kept = new ArrayList<>();
+        for (String part : csv.split(",")) {
+            String t = part.trim();
+            if (t.isEmpty() || rm.contains(t.toLowerCase(Locale.ROOT))) {
+                continue;
+            }
+            kept.add(t);
+        }
+        return String.join(",", kept);
+    }
+
+    /** 重抽主流程；confirm = 是否已过二次确认（第一次调用只给预览） */
+    private void reroll(Player player, boolean confirm) {
+        ItemStack hand = heldSword(player);
+        if (hand == null) {
+            return;
+        }
+        // 与 feed 同款：先把挂账灵性冲进这把剑，避免随后改 PDC 让挂账找不到原剑
+        flushPending(player, hand);
+        int value = spiritOf(hand);
+        int max = maxValue();
+        if (value < max) {
+            Msg.prefix(player, "<red>灵契重抽只对灵性满档（<white>" + max + "</white>）的剑开放，"
+                    + "这把还差 <white>" + (max - value) + "</white> 点灵性。</red>");
+            return;
+        }
+        int slots = slotsOf(tierOf(value));
+        if (slots <= 0) {
+            Msg.prefix(player, "<red>这一档还没有灵契词条（第 2 档起才有），没东西可重抽。</red>");
+            return;
+        }
+        ItemMeta meta = hand.getItemMeta();
+        if (meta == null) {
+            return;
+        }
+        int limit = rerollDailyLimit();
+        String today = java.time.LocalDate.now().toString();
+        String stored = meta.getPersistentDataContainer()
+                .get(Keys.SPIRIT_REROLL_DATE, PersistentDataType.STRING);
+        if (!canRerollToday(stored, today, limit)) {
+            Msg.prefix(player, "<red>这把剑今天已经重抽过灵契了（每日限 <white>" + limit
+                    + "</white> 次），明天再来。</red>");
+            return;
+        }
+        long cost = rerollCost();
+
+        if (!confirm) {
+            // 预览：只描述，不扣钱、不动剑（照 dissolve / talent reset 的两段式确认）
+            int pool = rerollPoolSize(meta);
+            int used = usedToday(stored, today);
+            Msg.send(player, "<dark_gray>──── <gradient:#b06bff:#4ea8ff><bold>灵契重抽</bold></gradient> <dark_gray>────");
+            Msg.send(player, "<gray>将保留灵性（<#b06bff>" + tierName(tierOf(value)) + "</#b06bff>）与剑名，"
+                    + "重掷 <white>" + slots + "</white> 条灵契词条。");
+            Msg.send(player, "<gray>候选池: <white>" + pool + "</white> 条"
+                    + "<dark_gray>（自动排除锻造词条与本剑已有词条，同名不重复）</dark_gray>");
+            Msg.send(player, "<gray>费用: <yellow>" + cost + "</yellow> 剑币 <gray>· 今日剩余次数: <white>"
+                    + Math.max(0, limit - used) + "</white><dark_gray>/" + limit + "</dark_gray>");
+            Msg.prefix(player, "<gray>确认请再执行：<white>/zhujian spirit reroll confirm</white>");
+            return;
+        }
+
+        // ---- 扣费（Wallet 收口，与 feed 同一套账本）----
+        if (!plugin.wallet().take(player, cost, com.forgemaster.econ.CoinReason.OTHER_OUT)) {
+            Msg.prefix(player, "<red>重抽需要 <white>" + cost + "</white> 剑币，你不够。</red>");
+            return;
+        }
+
+        // 1) 旧灵契干净摘除（Lore 行 + modifier + 聚合 PDC + affix_list）
+        List<String> removed = stripSpiritAffixes(meta);
+        // 2) 沿既有灵契抽取路径（grantAffix）补满同条数：条数守恒由 slotsForTier 保证
+        int granted = 0;
+        for (int i = 0; i < slots; i++) {
+            if (!grantAffix(meta)) {
+                break; // 词条池被本剑占满：宁可少给也不重复同名，文案里如实说
+            }
+            granted++;
+        }
+        // 3) 记日期戳（跟剑走）
+        meta.getPersistentDataContainer().set(Keys.SPIRIT_REROLL_DATE,
+                PersistentDataType.STRING, nextRerollStamp(stored, today, limit));
+        refreshLines(meta, value, max);
+        com.forgemaster.util.Attrs.apply(hand, meta);
+        player.getInventory().setItemInMainHand(hand);
+        player.playSound(player.getLocation(), Sound.BLOCK_ENCHANTMENT_TABLE_USE, 0.9f, 1.3f);
+        Msg.prefix(player, "<#b06bff>灵契重抽完成</#b06bff> <gray>· 摘除 <white>" + removed.size()
+                + "</white> 条，重新刻入 <white>" + granted + "</white> 条"
+                + (granted < slots ? "<red>（候选池被占满，没抽满）</red>" : "")
+                + " <dark_gray>· 花费 " + cost + " 剑币 · 今日剩余 "
+                + Math.max(0, limit - usedToday(nextRerollStamp(stored, today, limit), today)) + "/" + limit
+                + "</dark_gray></gray>");
+    }
+
+    /** 今天已经用掉的重抽次数（只给展示用；判断一律走 canRerollToday） */
+    private static int usedToday(String stored, String today) {
+        if (stored == null || !stored.startsWith(today + "|")) {
+            return 0;
+        }
+        try {
+            return Math.max(0, Integer.parseInt(stored.substring(today.length() + 1).trim()));
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
+    }
+
+    /** 候选池大小：本剑 affix_list 之外的词条数（与 grantAffix 的排除规则同一口径） */
+    private int rerollPoolSize(ItemMeta meta) {
+        if (plugin.affixes() == null) {
+            return 0;
+        }
+        Set<String> have = new HashSet<>();
+        String csv = meta.getPersistentDataContainer()
+                .getOrDefault(Keys.AFFIX_LIST, PersistentDataType.STRING, "");
+        for (String part : csv.split(",")) {
+            if (!part.isBlank()) {
+                have.add(part.trim().toLowerCase(Locale.ROOT));
+            }
+        }
+        int pool = 0;
+        for (Affix a : plugin.affixes().all()) {
+            if (!have.contains(a.id().toLowerCase(Locale.ROOT))) {
+                pool++;
+            }
+        }
+        return pool;
+    }
+
+    /**
+     * 把剑上所有灵契词条摘干净：Lore「◆ 灵契」行、{@code fm_spirit_*} 属性 modifier、
+     * 聚合 PDC 的负差量、{@code affix_list} 里的灵契 id。
+     *
+     * <p>为什么以 Lore 行为账本：affix_list 里锻造词条与灵契混存一张表，分不出谁是
+     * 灵契；只有 Lore 行带「◆ 灵契」标记。摘除前从行文本反查词条 id 与数值，
+     * 反查得到数值才做聚合负差量（与 Reforge 摘词条同一条保守口径：
+     * 读不到旧值就只摘 modifier，不误扣宝石的份额）。</p>
+     *
+     * @return 摘掉的灵契 id 列表（小写）
+     */
+    private List<String> stripSpiritAffixes(ItemMeta meta) {
+        List<Component> lore = meta.lore() == null ? new ArrayList<>() : new ArrayList<>(meta.lore());
+        com.forgemaster.affix.AffixRegistry registry = plugin.affixes();
+        List<String> removed = new ArrayList<>();
+        PersistentDataContainer pdc = meta.getPersistentDataContainer();
+        for (Component c : lore) {
+            String plain = Msg.plain(c).trim();
+            if (!plain.startsWith(SPIRIT_LORE_TAG)) {
+                continue;
+            }
+            String rest = plain.substring(SPIRIT_LORE_TAG.length()).trim();
+            Affix matched = null;
+            Double value = null;
+            if (registry != null) {
+                for (Affix a : registry.all()) {
+                    String head = "▪ " + a.display() + " ";
+                    if (rest.startsWith(head)) {
+                        matched = a;
+                        value = parseShownValue(rest.substring(head.length()).trim(), a.percent());
+                        break;
+                    }
+                }
+            }
+            if (matched == null) {
+                continue; // 注册表里已经删掉的词条：行稍后整行清掉，数值无从反查就不动聚合
+            }
+            // modifier：灵契用独立键名 fm_spirit_<id>，与锻造词条 / 基础属性键不重叠
+            if (matched.kind() == Affix.Kind.ATTRIBUTE && matched.attribute() != null) {
+                String key = SPIRIT_MOD_PREFIX + matched.id().toLowerCase(Locale.ROOT);
+                Collection<AttributeModifier> mods = meta.getAttributeModifiers(matched.attribute());
+                if (mods != null) {
+                    for (AttributeModifier m : new ArrayList<>(mods)) {
+                        if (m.getKey() != null && key.equals(m.getKey().getKey())) {
+                            meta.removeAttributeModifier(matched.attribute(), m);
+                        }
+                    }
+                }
+            }
+            // 聚合 PDC 做负差量：与 grantAffix 的累加互为逆运算（宝石 / 锻造词条份额不动）
+            if (value != null) {
+                switch (matched.kind()) {
+                    case CRIT_CHANCE -> bumpDouble(pdc, Keys.CRIT_CHANCE, -value);
+                    case CRIT_DAMAGE -> bumpDouble(pdc, Keys.CRIT_DAMAGE, -value);
+                    case LIFESTEAL -> bumpDouble(pdc, Keys.LIFESTEAL, -value);
+                    case FIRE -> bumpInt(pdc, Keys.FIRE_TICKS, -(int) Math.round(value) * 20);
+                    default -> {
+                        // ATTRIBUTE 与 v2.24 新词条在 grantAffix 里就不落聚合账，摘除自然无账可逆
+                    }
+                }
+            }
+            removed.add(matched.id().toLowerCase(Locale.ROOT));
+        }
+        if (removed.isEmpty()) {
+            return removed;
+        }
+        lore.removeIf(c -> Msg.plain(c).trim().startsWith(SPIRIT_LORE_TAG));
+        meta.lore(lore);
+        String csv = pdc.getOrDefault(Keys.AFFIX_LIST, PersistentDataType.STRING, "");
+        pdc.set(Keys.AFFIX_LIST, PersistentDataType.STRING, removeSpiritIds(csv, removed));
+        return removed;
+    }
+
+    /** Lore 行里「+12%」/「+1.5 单位」→ 数值（百分比词条换算成小数；读不出返回 null） */
+    private static Double parseShownValue(String rest, boolean percent) {
+        if (rest.isEmpty() || rest.charAt(0) != '+') {
+            return null;
+        }
+        StringBuilder num = new StringBuilder();
+        for (int i = 1; i < rest.length(); i++) {
+            char ch = rest.charAt(i);
+            if (Character.isDigit(ch) || ch == '.') {
+                num.append(ch);
+            } else {
+                break;
+            }
+        }
+        if (num.isEmpty()) {
+            return null;
+        }
+        try {
+            double shown = Double.parseDouble(num.toString());
+            return percent ? shown / 100.0 : shown;
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    /** 聚合 PDC 的 double 负差量（夹 0 下限，与 Reforge 同款） */
+    private static void bumpDouble(PersistentDataContainer pdc, NamespacedKey key, double delta) {
+        if (Math.abs(delta) < 1e-9) {
+            return;
+        }
+        double cur = pdc.getOrDefault(key, PersistentDataType.DOUBLE, 0.0);
+        pdc.set(key, PersistentDataType.DOUBLE,
+                Math.round(Math.max(0, cur + delta) * 100.0) / 100.0);
+    }
+
+    /** 聚合 PDC 的 int 负差量（夹 0 下限） */
+    private static void bumpInt(PersistentDataContainer pdc, NamespacedKey key, int delta) {
+        if (delta == 0) {
+            return;
+        }
+        int cur = pdc.getOrDefault(key, PersistentDataType.INTEGER, 0);
+        pdc.set(key, PersistentDataType.INTEGER, Math.max(0, cur + delta));
     }
 
     // ------------------------------------------------------------ 读写
@@ -612,6 +963,8 @@ public final class SpiritManager implements Listener {
                 }
                 rename(player, String.join(" ", Arrays.copyOfRange(args, 2, args.length)).trim());
             }
+            // 灵契重抽（v2.25 切片二）：无参 = 预览，confirm = 真执行（两段式确认）
+            case "reroll" -> reroll(player, args.length >= 3 && isConfirmWord(args[2]));
             // 剑灵显形（拓展第三档）：走独立的 spiritdisplay 服务，只在这里加转发分支
             case "show" -> {
                 if (plugin.spiritDisplay() != null) {
@@ -623,8 +976,13 @@ public final class SpiritManager implements Listener {
                     plugin.spiritDisplay().hide(player);
                 }
             }
-            default -> Msg.prefix(player, "<gray>用法: <white>/zhujian spirit [info|feed|name <剑名>|show|hide]</white>");
+            default -> Msg.prefix(player, "<gray>用法: <white>/zhujian spirit [info|feed|name <剑名>|reroll [confirm]|show|hide]</white>");
         }
+    }
+
+    /** confirm 的两种写法（照 dissolve / talent reset 的惯例） */
+    private static boolean isConfirmWord(String s) {
+        return "confirm".equalsIgnoreCase(s) || "queren".equalsIgnoreCase(s);
     }
 
     private ItemStack heldSword(Player player) {
@@ -654,6 +1012,10 @@ public final class SpiritManager implements Listener {
         Msg.send(player, "<gray>灵性: <#b06bff>" + tierName(tier) + " <white>" + value + "<dark_gray>/" + max
                 + " <gray>· " + next);
         Msg.send(player, "<gray>本档应有灵契词条: <white>" + slotsOf(tier) + "</white> 条");
+        if (value >= max && slotsOf(tier) > 0) {
+            Msg.send(player, "<gray>灵契重抽: <white>/zhujian spirit reroll</white> <dark_gray>（"
+                    + rerollCost() + " 剑币 · 每日 " + rerollDailyLimit() + " 次）</dark_gray>");
+        }
         Msg.send(player, "<dark_gray>击中敌人自动养灵；<white>/zhujian spirit feed</white> 花剑币喂养，"
                 + "<white>/zhujian spirit name <剑名></white> 起名。");
     }

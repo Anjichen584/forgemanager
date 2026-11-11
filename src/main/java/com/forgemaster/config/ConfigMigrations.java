@@ -69,7 +69,7 @@ public final class ConfigMigrations {
      * 那个 step 对已在运行的服务器**永远不会执行**（steps 17/18/19 的教训各写了一遍，
      * 详见 step19 的注释）。v2.23.1 加 step22 时从 12 抬到 13，加 step23（战力评分）时再抬到 14，加 step24（属性天花板）时抬到 15。</p>
      */
-    public static final int CURRENT_VERSION = 21;
+    public static final int CURRENT_VERSION = 22;
 
     private ConfigMigrations() {
     }
@@ -110,6 +110,7 @@ public final class ConfigMigrations {
         step28MechanicEnchant(plugin, cfg);
         step29DurabilityLoreCap(plugin, cfg);
         step30Expansion24(plugin, cfg);
+        step31Expansion25(plugin, cfg);
         cfg.set("config-version", CURRENT_VERSION);
         plugin.saveConfig();
     }
@@ -1281,6 +1282,40 @@ public final class ConfigMigrations {
      * 这里只补键，不动服主已调过的 {@code durability-lore-step}；
      * 键已存在时 putIfAbsent 语义，一个字都不碰。</p>
      */
+    /**
+     * step31（v2.25 拓展）：血怒/坚韧附魔上限、灵契重抽、强化保险三段新键。
+     * 与 step30 同口径：contains 判断，只补缺，绝不覆盖服主已有值。
+     */
+    private static void step31Expansion25(ForgingMasterPlugin plugin, FileConfiguration cfg) {
+        int written = 0;
+        for (String[] kv : new String[][]{
+                {"enchant.caps.max-rage", "0.12"},
+                {"enchant.caps.rage-window-ms", "4000"},
+                {"enchant.caps.max-stout-chance", "0.40"},
+                {"enchant.defs.rage.enabled", "true"},
+                {"enchant.defs.rage.max-level", "4"},
+                {"enchant.defs.rage.per-level", "0.03"},
+                {"enchant.defs.rage.weight", "65"},
+                {"enchant.defs.stout.enabled", "true"},
+                {"enchant.defs.stout.max-level", "5"},
+                {"enchant.defs.stout.per-level", "0.08"},
+                {"enchant.defs.stout.weight", "85"},
+                {"spirit.reroll.cost", "2000"},
+                {"spirit.reroll.daily-limit", "1"},
+                {"strengthen.insure.enabled", "true"},
+                {"strengthen.insure.fee-per-strike", "200"},
+                {"strengthen.insure.refund-ratio", "0.5"}}) {
+            if (!cfg.contains(kv[0])) {
+                cfg.set(kv[0], typed(kv[1]));
+                written++;
+            }
+        }
+        if (written > 0) {
+            plugin.getLogger().info("[migrate] step31：v2.25 拓展补键 " + written
+                    + " 组（血怒/坚韧上限与定义、灵契重抽、强化保险）");
+        }
+    }
+
     /**
      * step30（v2.24 拓展）：把两个切片的新键补进老配置。全部有代码默认，
      * 缺键不迁移也能跑 —— 这里补键只是让服主在 config.yml 里看得到、能改。

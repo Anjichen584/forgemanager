@@ -347,6 +347,10 @@ public final class EnchantListener implements Listener {
         // 也要清——机制口径是「受到任何伤害就归零」，晚一步都可能让层数跨事件漏清。
         // ignoreCancelled = true：被盾牌完全挡下的伤害不算受伤，不清层。
         EnchantState.clearStreak(player);
+        // ---- 血怒（v2.25 切片一）：受击即记窗口起点。与 clearStreak 同位同口径：
+        // 同样被盾牌完全挡下的伤害不算「挨打」，不续窗。只记时间戳、不判机制 ——
+        // 之后结算侧（CombatListener.onHit）拿 rageRemaining 对窗口即可。
+        EnchantState.noteDamaged(player);
         EnchantEffects.Caps caps = caps();
         EnchantEffects.Mechanics m = playerMechanics(player);
         if (!m.any()) {

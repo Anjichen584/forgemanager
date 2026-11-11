@@ -55,6 +55,8 @@ public final class EnchantState {
         final java.util.Set<UUID> branded = new java.util.HashSet<>();
         /** 淬锋（v2.24 切片一）：当前锋锐层数。命中 +1、受击清零，不落盘 */
         int streakStacks;
+        /** 血怒（v2.25 切片一）：最后一次受伤的时刻（0 = 从没被打过） */
+        long lastDamagedAt;
 
         Data() {
         }
@@ -174,6 +176,36 @@ public final class EnchantState {
         if (d != null) {
             d.streakStacks = 0;
         }
+    }
+
+    // ------------------------------------------------------------ 血怒（v2.25 切片一）
+
+    /**
+     * 记一次受伤（血怒窗口起点）。
+     *
+     * <p>任何伤害都算 —— 机制的卖点是「敢挨打」，毒 / 火 tick 这类环境伤害同样续窗；
+     * 与淬锋「受击清零」挂在同一个钩子上，玩家只需要记一套受击口径。
+     * 只记时间戳不判机制：哪怕此刻身上没带血怒甲也记（时间戳本身就是
+     * 「最后一次挨打的时刻」，之后换上血怒甲也在口径内），还省一次 mechanics 判空。</p>
+     */
+    public static void noteDamaged(Player player) {
+        if (player == null) {
+            return;
+        }
+        of(player).lastDamagedAt = System.currentTimeMillis();
+    }
+
+    /** 血怒窗口还剩多少毫秒（0 = 不在窗口内 / 从没被打过） */
+    public static long rageRemaining(Player player, long windowMs) {
+        if (player == null) {
+            return 0;
+        }
+        Data d = MAP.get(player.getUniqueId());
+        if (d == null || d.lastDamagedAt <= 0) {
+            return 0;
+        }
+        long left = Math.max(0, windowMs) - (System.currentTimeMillis() - d.lastDamagedAt);
+        return Math.max(0, left);
     }
 
     // ------------------------------------------------------------ 替身

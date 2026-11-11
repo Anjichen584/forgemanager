@@ -1043,6 +1043,12 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             return;
         }
 
+        // /zhujian strengthen insure —— 强化保险开关（v2.25，会话级，不需要主手拿剑）
+        if (sub.equals("insure") || sub.equals("baoxian")) {
+            plugin.strengthen().insureToggle(p);
+            return;
+        }
+
         // /zhujian strengthen plan <目标等级> [模拟局数] —— 强化规划器（v2.23）
         if (sub.equals("plan") || sub.equals("guihua")) {
             if (item == null || item.getType().isAir() || service.levelOf(item) < 0) {
@@ -3936,7 +3942,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
 
     private List<String> tabImprint(String[] args) {
         if (args.length == 2) {
-            return filter(List.of("merge", "hecheng", "he"), args[1]);
+            return filter(List.of("merge", "hecheng", "he", "insure", "baoxian"), args[1]); // v2.25：补全含保险开关
         }
         return List.of();
     }

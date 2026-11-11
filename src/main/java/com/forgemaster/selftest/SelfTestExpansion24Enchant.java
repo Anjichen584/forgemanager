@@ -173,12 +173,12 @@ public final class SelfTestExpansion24Enchant {
     /** 造一个只有淬锋参数的 Mechanics（绕过私有 with*，直接用公开 record 构造） */
     private static com.forgemaster.enchant.EnchantEffects.Mechanics bigStreakMechanics(double perLevel) {
         return new com.forgemaster.enchant.EnchantEffects.Mechanics(
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, perLevel, 0);
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, perLevel, 0, 0, 0);
     }
 
     /** 造一个只有饮命参数的 Mechanics */
     private static com.forgemaster.enchant.EnchantEffects.Mechanics bigDurLeechMechanics(double durLeech) {
         return new com.forgemaster.enchant.EnchantEffects.Mechanics(
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, durLeech);
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, durLeech, 0, 0);
     }
 }

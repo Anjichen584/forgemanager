@@ -58,6 +58,14 @@ public final class Keys {
     /** 处决：目标血量低于阈值时的增伤比例（0-1 小数，已过 max-execute 夹子） */
     public static NamespacedKey EXECUTE;
 
+    // ---- v2.25 切片二：灵契重抽 ----
+    /**
+     * 灵契重抽的日期戳（打在<b>物品</b>上，值 = {@code yyyy-MM-dd|当日已重抽次数}）。
+     *
+     * <p>跟剑走而不是跟玩家走：换号 / 借号都不重置每日次数，剑与剑之间互不影响。</p>
+     */
+    public static NamespacedKey SPIRIT_REROLL_DATE;
+
     // ---- v2.2 宝石 ----
     /** 宝石物品标记 */
     public static NamespacedKey GEM;
@@ -276,6 +284,9 @@ public static NamespacedKey SPIRIT_DISPLAY_BONUS;
         DAMAGE_REDUCE = new NamespacedKey(plugin, "damage_reduce");
         CHILL_TICKS = new NamespacedKey(plugin, "chill_ticks");
         EXECUTE = new NamespacedKey(plugin, "execute");
+        // ---- v2.25 切片二：灵契重抽 ----
+        SPIRIT_REROLL_DATE = new NamespacedKey(plugin, "spirit_reroll_date");
+
         GEM = new NamespacedKey(plugin, "gem");
         GEM_TYPE = new NamespacedKey(plugin, "gem_type");
         GEM_VALUE = new NamespacedKey(plugin, "gem_value");
