@@ -66,6 +66,11 @@ public final class BountyManager {
     // ------------------------------------------------------------ v2.23.1 落盘
 
     /** 读回「上次的日期 + 已领名单」；坏数据当空处理，不影响启动 */
+    /** v2.25.1：公开读档入口（restore 的 reloadAllSilently 用，覆盖后按盘重建内存） */
+    public void reload() {
+        load();
+    }
+
     private void load() {
         if (!file.exists()) {
             return;

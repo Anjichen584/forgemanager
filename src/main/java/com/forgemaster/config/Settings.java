@@ -342,6 +342,18 @@ public final class Settings {
         return got.isEmpty() ? def : got;
     }
 
+    /**
+     * v2.25.1 修 P2（审计轮3-B8）：与 {@link #strList} 的区别是「故意清空」语义 ——
+     * 键存在（哪怕是空列表）就原样返回，只有键不存在才回退默认。池类键
+     * （armor-pool 等）用它：服主写 [] 想禁用整池时不再被静默回滚成默认。
+     */
+    public java.util.List<String> strListExact(String path, java.util.List<String> def) {
+        if (cfg == null || !cfg.contains(path)) {
+            return def;
+        }
+        return cfg.getStringList(path);
+    }
+
     /** 读 double 列表（估值曲线这类有序数值表）；缺省返回 def */
     public java.util.List<Double> numList(String path, java.util.List<Double> def) {
         if (cfg == null) {

@@ -1305,7 +1305,7 @@ public final class ConfigMigrations {
                 {"strengthen.insure.enabled", "true"},
                 {"strengthen.insure.fee-per-strike", "200"},
                 {"strengthen.insure.refund-ratio", "0.5"}}) {
-            if (!cfg.contains(kv[0])) {
+            if (!existsOnDisk(plugin, kv[0])) {
                 cfg.set(kv[0], typed(kv[1]));
                 written++;
             }
@@ -1339,13 +1339,13 @@ public final class ConfigMigrations {
                 {"combat.caps.max-chill-ticks", "40"},
                 {"combat.caps.max-execute", "0.30"},
                 {"combat.caps.execute-threshold", "0.15"}}) {
-            if (!cfg.contains(kv[0])) {
+            if (!existsOnDisk(plugin, kv[0])) {
                 cfg.set(kv[0], typed(kv[1]));
                 written++;
             }
         }
         // 词条两条（模板整段；缺哪段补哪段）
-        if (!cfg.contains("affixes.chill")) {
+        if (!existsOnDisk(plugin, "affixes.chill")) {
             cfg.set("affixes.chill.display", "冰噬");
             cfg.set("affixes.chill.kind", "CHILL");
             cfg.set("affixes.chill.min", 1);
@@ -1354,7 +1354,7 @@ public final class ConfigMigrations {
             cfg.set("affixes.chill.weight", 10);
             written++;
         }
-        if (!cfg.contains("affixes.execute")) {
+        if (!existsOnDisk(plugin, "affixes.execute")) {
             cfg.set("affixes.execute.display", "处决");
             cfg.set("affixes.execute.kind", "EXECUTE");
             cfg.set("affixes.execute.min", 0.06);
@@ -1382,7 +1382,7 @@ public final class ConfigMigrations {
                 {"redeem.coin-max", "500"},
                 {"redeem.charms.talisman", "40"},
                 {"redeem.charms.steady", "60"}}) {
-            if (!cfg.contains(kv[0])) {
+            if (!existsOnDisk(plugin, kv[0])) {
                 cfg.set(kv[0], typed(kv[1]));
                 written++;
             }
@@ -1409,11 +1409,20 @@ public final class ConfigMigrations {
     }
 
     private static void step29DurabilityLoreCap(ForgingMasterPlugin plugin, FileConfiguration cfg) {
-        if (!cfg.contains("settings.durability-lore-max-points")) {
+        // v2.25.1 修 P2（审计轮3-B3）：existsOnDisk 判定 —— cfg.contains 会顺 defaults
+        // 答「有」（jar 内 config.yml 已带这些键），整套补键变成恒 no-op 死代码
+        if (!existsOnDisk(plugin, "settings.durability-lore-max-points")) {
             cfg.set("settings.durability-lore-max-points", 5);
             plugin.getLogger().info("[migrate] step29：补上 settings.durability-lore-max-points（默认 5）"
                     + " —— 几千点耐久的剑不会再「数字不动」");
         }
+    }
+
+    /** v2.25.1：键是否真的写在了盘上的 config.yml（不含 jar 内默认段） */
+    private static boolean existsOnDisk(ForgingMasterPlugin plugin, String path) {
+        YamlConfiguration disk = YamlConfiguration.loadConfiguration(
+                new java.io.File(plugin.getDataFolder(), "config.yml"));
+        return disk.contains(path);
     }
 
     private static void step28MechanicEnchant(ForgingMasterPlugin plugin, FileConfiguration cfg) {

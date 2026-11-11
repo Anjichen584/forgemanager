@@ -37,6 +37,17 @@ public final class ReforgeMenuHolder implements InventoryHolder {
     /** 确认批次号：进入 / 取消 / 确认都 +1，延迟任务靠它判断自己是否过期 */
     private int token = 0;
 
+    /** v2.25.1：界面主人（「点击者 = 界面主人」契约，与 ForgeHolder/ContractHolder 同款） */
+    private final java.util.UUID owner;
+
+    public ReforgeMenuHolder(java.util.UUID owner) {
+        this.owner = owner == null ? java.util.UUID.randomUUID() : owner;
+    }
+
+    public java.util.UUID owner() {
+        return owner;
+    }
+
     public void inventory(Inventory inventory) {
         this.inventory = inventory;
     }

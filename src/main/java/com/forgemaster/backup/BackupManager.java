@@ -83,6 +83,12 @@ public final class BackupManager {
      * @return 新备份的目录 id；无存档可备份时返回 null
      */
     public synchronized String backup(String prefix) throws IOException {
+        // v2.25.1 修 P2（审计轮3-B6）：/zhujian backup 原来不冲刷 —— 备份抓的是
+        // 「缺最近 30 秒内存进度」的旧盘。与 restore 同款：先把脏数据落盘再备份。
+        if (prefix == null || !prefix.equals(PRE_RESTORE_PREFIX)) {
+            // restore 自己已经先 flushAll（避免重复冲刷），只有独立备份需要补
+            flushAll("备份前");
+        }
         File dataDir = plugin.getDataFolder();
         List<String> present = new ArrayList<>();
         for (String f : SAVE_FILES) {
@@ -295,8 +301,14 @@ public final class BackupManager {
         swallow("回档后", "daily-data.yml", () -> plugin.dailyStore().load());
         swallow("回档后", "season.yml", () -> plugin.seasons().loadState());
         swallow("回档后", "hall-strengthen.yml", () -> plugin.hallOfFame().strengthen().load());
-        // 铁砧会话与悬赏已领名单没有公开 reload：它们要么是瞬时态（砧位上的剑),
-        // 要么在构造期读盘（bounty-data.yml）。这两项靠「回档后重启」兜底，见返回文案。
+        // v2.25.1 修 P1（审计轮3-B2）：铁砧与悬赏此前自称「没有公开 reload」——
+        // 实际 AnvilForgeManager.loadFrom(File) 是 public，BountyManager 补了 reload()。
+        // 这两份被异步冲刷（砧位 5 秒）或领赏（变更即存）整文件回写，必须重建。
+        java.io.File anvilsFile = new java.io.File(plugin.getDataFolder(), "anvils.yml");
+        if (anvilsFile.isFile()) {
+            swallow("回档后", "anvils.yml", () -> plugin.anvilForge().loadFrom(anvilsFile));
+        }
+        swallow("回档后", "bounty-data.yml", () -> plugin.bounties().reload());
     }
 
     /** 单个模块的存/读失败只记一行日志，不中断整个回档 */

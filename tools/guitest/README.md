@@ -19,6 +19,11 @@ node durability-check.js  # 内置耐久真机对照：give 一把 -> 连击 -> 
 node reach-check.js   # v2.23.6 回归：武器一刀只掉 1 点（横扫不再重复扣账）
 node armor-dur.js     # v2.23.6 回归：锻造护甲挨打掉虚拟耐久（ARMOR 修正量取绝对值）
 node v24-check.js    # v2.24 抽查：ench list / redeem / guild fund（bot 在线回执）
+node probe-windows.js  # v2.25 探针：开窗链路逐级打印窗口标题与聊天回执
+
+> **过期脚本警示**：deep.js / chain.js 里「/zhujian forge 开主菜单」「星熔点击链」等
+> 断言是 v2.2x 旧界面口径（主菜单入口早已改为无参 /zhujian，forge 是极限锻造子命令），
+> 跑出来的「没有窗口」是脚本过期，不是插件回归 —— GUI 契约以 fulltest.js 为准。
 node st-run.js     # 起一个 bot 在线后跑 /zhujian selftest，只打摘要与可疑行
 node rq.js "list" "zhujian config check"   # 纯 RCON 发命令（不需要 bot）
 ```

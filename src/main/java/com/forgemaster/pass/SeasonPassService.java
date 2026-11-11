@@ -534,7 +534,7 @@ public final class SeasonPassService {
         }
         var wallet = plugin.wallet();
         long cost = premiumCost;
-        if (cost > 0 && !wallet.take(player, cost, com.forgemaster.econ.CoinReason.OTHER_OUT)) {
+        if (cost > 0 && !wallet.take(player, cost, com.forgemaster.econ.CoinReason.PASS_PREMIUM)) {
             Msg.prefix(player, "<red>剑币不够。</red> 解锁付费轨要 <#ffd166>" + wallet.format(cost)
                     + "</#ffd166><gray>，你只有 </gray>" + wallet.format(wallet.coins(player)) + "<gray>。</gray>");
             player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_VILLAGER_NO, 0.8f, 1.0f);

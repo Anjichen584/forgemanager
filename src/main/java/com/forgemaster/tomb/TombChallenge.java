@@ -469,6 +469,12 @@ public final class TombChallenge implements Listener {
 
     // ------------------------------------------------------------ 胜负
 
+    /** v2.25.1 修 P2（审计轮3-7）：冷却表退服清理（条目只增不减的约定面） */
+    @EventHandler
+    public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) {
+        cooldowns.remove(event.getPlayer().getUniqueId());
+    }
+
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onShadowDeath(EntityDeathEvent event) {
         LivingEntity dead = event.getEntity();

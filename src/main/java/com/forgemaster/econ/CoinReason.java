@@ -36,6 +36,8 @@ public enum CoinReason {
     CONTRACT("contract", "龙税贡品", Flow.PRODUCE),
     /** v2.24 声望兑换所：拿声望换剑币（单列才看得出「声望变现」的量） */
     REDEEM("redeem", "声望兑换", Flow.PRODUCE),
+    /** v2.25.1：保险理赔（语义是退款而非真实产出，报表与 REFUND 并列单列） */
+    INSURE_PAYOUT("insure-payout", "强化保险理赔", Flow.PRODUCE),
     /** 退款 / 回滚（拍卖流拍、扣款失败回退、订单断线续做）——不算真实产出，报表里单列 */
     REFUND("refund", "退款回滚", Flow.PRODUCE),
     OTHER_IN("other-in", "其它产出", Flow.PRODUCE),
@@ -63,6 +65,12 @@ public enum CoinReason {
     GUILD("guild", "行会", Flow.CONSUME),
     /** v2.25：专精洗点（从 OTHER_OUT 分出来，报表看得出洗点总量） */
     TALENT_RESET("talent-reset", "天赋洗点", Flow.CONSUME),
+    /** v2.25.1：强化保险费（每锤） */
+    INSURE_FEE("insure-fee", "强化保险费", Flow.CONSUME),
+    /** v2.25.1：剑灵喂养 / 灵契重抽（从 OTHER_OUT 分出来） */
+    SPIRIT("spirit", "剑灵喂养", Flow.CONSUME),
+    /** v2.25.1：赛季通行证付费轨买断 */
+    PASS_PREMIUM("pass-premium", "通行证买断", Flow.CONSUME),
     OTHER_OUT("other-out", "其它消耗", Flow.CONSUME);
 
     /** 钱往哪个方向走 */

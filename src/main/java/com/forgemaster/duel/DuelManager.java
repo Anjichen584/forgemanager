@@ -33,6 +33,9 @@ public final class DuelManager {
 
         public Double aScore;
         public Double bScore;
+        /** v2.25.1 修 P1（审计轮3-2）：已交卷标记 —— 交卷后不允许再锻再报，最后一锻覆盖旧分=无限刷分 */
+        public boolean reportedA;
+        public boolean reportedB;
 
         /** 主手武器锻造等级：发起邀请时记录，应战时取「两次里较大的那个」防换剑绕判定 */
         public int aLevel;
@@ -291,6 +294,11 @@ public final class DuelManager {
         if (m == null) {
             return null;
         }
+        // v2.25.1 修 P1（审计轮3-2）：自己已交卷的场不再绑定 —— 交卷后继续锻新剑
+        // 报分会被 report 拒掉，但绑定本身就该断开，避免玩家误以为还在比试。
+        if (m.a.equals(session.uuid()) ? m.reportedA : m.reportedB) {
+            return null;
+        }
         session.duelId(m.id);
         session.seed(m.seed);
         return m;
@@ -309,9 +317,21 @@ public final class DuelManager {
         if (m == null) {
             return null;
         }
-        if (m.a.equals(session.uuid())) {
+        boolean sideA = m.a.equals(session.uuid());
+        if (sideA ? m.reportedA : m.reportedB) {
+            // 已交卷再锻再报 = 无限刷分（声望 +25 与赛季通都挂胜负）
+            Player dup = Bukkit.getPlayer(session.uuid());
+            if (dup != null) {
+                dup.sendMessage(Msg.mm(Msg.PREFIX + "<red>本场比试你已经交过卷了，这把成绩不计。</red>"));
+            }
+            session.duelId(null);
+            return null;
+        }
+        if (sideA) {
+            m.reportedA = true;
             m.aScore = session.finalScore();
         } else {
+            m.reportedB = true;
             m.bScore = session.finalScore();
         }
         if (!m.ready()) {

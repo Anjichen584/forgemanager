@@ -103,7 +103,7 @@ public final class TombGuardAffixes {
 
     /** 词缀池：过滤到已知 id 白名单，去重保序；配置没写用默认池 */
     public List<String> pool() {
-        return filterPool(plugin.settings().strList("tomb-guard-affix.pool", DEFAULT_POOL));
+        return filterPool(plugin.settings().strListExact("tomb-guard-affix.pool", DEFAULT_POOL));
     }
 
     /** 每只至多挂几条：负数归 0，超池按池大小收 */

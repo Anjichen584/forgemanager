@@ -82,6 +82,9 @@ public final class SpiritManager implements Listener {
     private final Random random = new Random();
     /** 每玩家一条待落账灵性；命中热路径只动这里，冲刷时才碰物品 */
     private final Map<UUID, PendingSpirit> pending = new HashMap<>();
+
+    /** v2.25.1：待确认的灵契重抽（uuid → 预览时写进剑 PDC 的 nonce），confirm 校验同一把剑 */
+    private final Map<UUID, Integer> pendingReroll = new HashMap<>();
     /** 灵击冷却：玩家 uuid → 解禁时刻毫秒。仅内存，重启即丢（冷却不值得落盘） */
     private final Map<UUID, Long> surgeCooldowns = new HashMap<>();
 
@@ -359,10 +362,19 @@ public final class SpiritManager implements Listener {
         }
         long cost = rerollCost();
 
+        // v2.25.1 修 P1（审计轮3-3①）：confirm 与预览绑定同一把剑 —— 预览时在剑 PDC
+        // 写一次性 nonce 并记在内存，confirm 校验主手 PDC 的 nonce 一致才执行，
+        // 换了剑（另一把满灵性的）nonce 对不上，不会拿 A 的预览去改 B。
+        int nonce = java.util.concurrent.ThreadLocalRandom.current().nextInt();
         if (!confirm) {
             // 预览：只描述，不扣钱、不动剑（照 dissolve / talent reset 的两段式确认）
             int pool = rerollPoolSize(meta);
             int used = usedToday(stored, today);
+            meta.getPersistentDataContainer().set(Keys.SPIRIT_REROLL_NONCE,
+                    PersistentDataType.INTEGER, nonce);
+            com.forgemaster.util.Attrs.apply(hand, meta);
+            player.getInventory().setItemInMainHand(hand);
+            pendingReroll.put(player.getUniqueId(), nonce);
             Msg.send(player, "<dark_gray>──── <gradient:#b06bff:#4ea8ff><bold>灵契重抽</bold></gradient> <dark_gray>────");
             Msg.send(player, "<gray>将保留灵性（<#b06bff>" + tierName(tierOf(value)) + "</#b06bff>）与剑名，"
                     + "重掷 <white>" + slots + "</white> 条灵契词条。");
@@ -374,9 +386,72 @@ public final class SpiritManager implements Listener {
             return;
         }
 
+        // ---- confirm 与预览绑定校验（换剑 / 他人代点都会对不上 nonce）----
+        Integer expected = pendingReroll.remove(player.getUniqueId());
+        Integer stored2 = null;
+        try {
+            Integer n = meta.getPersistentDataContainer()
+                    .get(Keys.SPIRIT_REROLL_NONCE, PersistentDataType.INTEGER);
+            stored2 = n;
+        } catch (Exception ex) {
+            stored2 = null;
+        }
+        if (expected == null || !expected.equals(stored2)) {
+            Msg.prefix(player, "<red>先看一遍预览（<white>/zhujian spirit reroll</white>）再确认，"
+                    + "且确认时手里必须是预览那把剑。</red>");
+            return;
+        }
+
+        // ---- 池子预检（v2.25.1 修 P1 审计轮3-3②）：摘掉旧灵契后候选池如果
+        // 补不满 slots 条，直接拒绝 —— 原来是先扣钱、先摘光、抽不满也不退款，
+        // 满锻造词条的剑会净丢全部灵契且当日次数被烧掉。
+        // 灵契 id 从 Lore 行识别（与 stripSpiritAffixes 同一匹配口径），affix_list 里两者混存
+        java.util.Set<String> spiritIds = new HashSet<>();
+        var reg = plugin.affixes();
+        if (meta.lore() != null && reg != null) {
+            for (Component c : meta.lore()) {
+                String plain = Msg.plain(c).trim();
+                if (!plain.startsWith(SPIRIT_LORE_TAG)) {
+                    continue;
+                }
+                String rest = plain.substring(SPIRIT_LORE_TAG.length()).trim();
+                for (com.forgemaster.affix.Affix a : reg.all()) {
+                    if (rest.startsWith("▪ " + a.display() + " ")) {
+                        spiritIds.add(a.id().toLowerCase(java.util.Locale.ROOT));
+                        break;
+                    }
+                }
+            }
+        }
+        String affixList = meta.getPersistentDataContainer()
+                .get(com.forgemaster.util.Keys.AFFIX_LIST, PersistentDataType.STRING);
+        java.util.Set<String> kept = new HashSet<>();
+        if (affixList != null) {
+            for (String id : affixList.split("\\|")) {
+                String t = id.trim();
+                if (!t.isEmpty() && !spiritIds.contains(t.toLowerCase(java.util.Locale.ROOT))) {
+                    kept.add(t.toLowerCase(java.util.Locale.ROOT));
+                }
+            }
+        }
+        int poolAfterStrip = 0;
+        for (com.forgemaster.affix.Affix a : plugin.affixes().all()) {
+            if (!kept.contains(a.id().toLowerCase(java.util.Locale.ROOT))) {
+                poolAfterStrip++;
+            }
+        }
+        if (poolAfterStrip < slots) {
+            pendingReroll.put(player.getUniqueId(), expected); // 次数不烧，允许再确认
+            Msg.prefix(player, "<red>候选池不够：摘掉旧灵契后只剩 <white>" + poolAfterStrip
+                    + "</white> 条可选，补不满 <white>" + slots + "</white> 条灵契。"
+                    + "锻造词条太多的剑先去重铸或剥离。</red>");
+            return;
+        }
+
         // ---- 扣费（Wallet 收口，与 feed 同一套账本）----
-        if (!plugin.wallet().take(player, cost, com.forgemaster.econ.CoinReason.OTHER_OUT)) {
+        if (!plugin.wallet().take(player, cost, com.forgemaster.econ.CoinReason.SPIRIT)) {
             Msg.prefix(player, "<red>重抽需要 <white>" + cost + "</white> 剑币，你不够。</red>");
+            pendingReroll.put(player.getUniqueId(), expected);
             return;
         }
 
@@ -389,6 +464,15 @@ public final class SpiritManager implements Listener {
                 break; // 词条池被本剑占满：宁可少给也不重复同名，文案里如实说
             }
             granted++;
+        }
+        if (granted < slots) {
+            // 理论到不了（上面预检过）；真到了就退款 + 不写日期戳，宁可不赚这笔
+            plugin.wallet().give(player, cost, com.forgemaster.econ.CoinReason.REFUND);
+            com.forgemaster.util.Attrs.apply(hand, meta);
+            player.getInventory().setItemInMainHand(hand);
+            Msg.prefix(player, "<red>词条授予异常（授予 " + granted + "/" + slots
+                    + "），费用已全额退回，今日次数未消耗。</red>");
+            return;
         }
         // 3) 记日期戳（跟剑走）
         meta.getPersistentDataContainer().set(Keys.SPIRIT_REROLL_DATE,
@@ -1034,7 +1118,7 @@ public final class SpiritManager implements Listener {
         long cost = Math.max(0, plugin.settings().intOf("spirit.feed-coin-cost", 10));
         // v2.23.7：扣款走 Wallet 收口（coin-sinks=server 时与 Vault 同账本），
         // 直连 stats().takeCoins 会造成「黑市扣金币、喂养扣剑币」两本账分裂
-        if (!plugin.wallet().take(player, cost, com.forgemaster.econ.CoinReason.OTHER_OUT)) {
+        if (!plugin.wallet().take(player, cost, com.forgemaster.econ.CoinReason.SPIRIT)) {
             Msg.prefix(player, "<red>喂养需要 <white>" + cost + "</white> 剑币，你不够。</red>");
             return;
         }

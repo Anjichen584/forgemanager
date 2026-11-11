@@ -412,7 +412,7 @@ public final class Reforge {
             }
         }
         List<String> pool = armor
-                ? plugin.settings().strList("reforge.armor-pool", new ArrayList<>(DEFAULT_ARMOR_POOL))
+                ? plugin.settings().strListExact("reforge.armor-pool", new ArrayList<>(DEFAULT_ARMOR_POOL))
                 : quenchPool(plugin, meta);
 
         LinkedHashSet<Affix> out = new LinkedHashSet<>();

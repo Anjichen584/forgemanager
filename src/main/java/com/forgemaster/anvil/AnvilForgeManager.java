@@ -409,6 +409,11 @@ public final class AnvilForgeManager {
         AnvilForgeSession lastSession = null;
 
         for (int i = 1; i <= max; i++) {
+            // v2.25.1 修 P2（审计轮3-8）：批量最长 50 锤，慢服下结算 IO 可跨多个 tick，
+            // 玩家中途退服时继续扣钱只是白扣 —— 每锤开头哨兵，退服即安静收尾。
+            if (!player.isOnline()) {
+                break;
+            }
             AnvilForgeSession cur = sessionAt(block);
             if (cur == null) {
                 // 砧位在循环中途没了（并发拆砧 / 超时回收）：按碎了收尾，不再补锤

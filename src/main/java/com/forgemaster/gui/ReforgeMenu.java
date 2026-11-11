@@ -179,7 +179,7 @@ public final class ReforgeMenu {
 
     /** 只造界面不打开（自检里可以直接拿它断言槽位） */
     public static Inventory build(ForgingMasterPlugin plugin, Player player) {
-        ReforgeMenuHolder holder = new ReforgeMenuHolder();
+        ReforgeMenuHolder holder = new ReforgeMenuHolder(player.getUniqueId());
         Inventory inv = Bukkit.createInventory(holder, SIZE, Msg.mm(TITLE));
         holder.inventory(inv);
         render(plugin, player, holder);
@@ -683,6 +683,12 @@ public final class ReforgeMenu {
                     return;
                 }
                 if (!(event.getWhoClicked() instanceof Player player)) {
+                    return;
+                }
+                // v2.25.1 修 P2（审计轮3-6）：点击者 = 界面主人（/invsee 类与共享容器
+                // 的威胁模型，ForgeListener 72-76 行写明）。不匹配：cancel + 踢出。
+                if (!player.getUniqueId().equals(reforgeHolder.owner())) {
+                    Bukkit.getScheduler().runTask(plugin, (Runnable) player::closeInventory);
                     return;
                 }
                 Inventory clicked = event.getClickedInventory();

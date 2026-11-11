@@ -820,7 +820,7 @@ public final class ForgeMenu {
     // ---------------------------------------------------------------- 宝石台
 
     public Inventory buildGemBench(Player player) {
-        GemMenuHolder holder = new GemMenuHolder();
+        GemMenuHolder holder = new GemMenuHolder(player.getUniqueId());
         Inventory inv = org.bukkit.Bukkit.createInventory(holder, MENU_SIZE,
                 Msg.mm("<dark_gray>铸剑大师 <dark_gray>| <#b06bff>宝石台"));
         holder.inventory(inv);

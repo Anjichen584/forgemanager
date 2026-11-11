@@ -1257,16 +1257,22 @@ public final class StrengthenService {
         boolean insuredNow = insureEnabled() && isInsured(player.getUniqueId());
         long insureFee = insuredNow ? insureFee() : 0;
 
+        // v2.25.1 修 P1（审计轮3-1）：余额预检拆回各自账本。原来把「剑币手续费 +
+        // Wallet 保险费」加在一起只查剑币账 —— coin-sinks=server 时保险费走 Vault，
+        // 剑币够 Vault 不够的玩家被误拒，反过来剑币不够 Vault 富余的又漏收。
         long coins = plugin.stats().coins(player.getUniqueId());
-        if (coins < cost + insureFee) {
+        if (coins < cost) {
             // 剑币 ≠ 服务器金币：强化花的是插件内置剑币（锻造赚来的），
             // 服主给了 Vault/CMI 的钱照样不够，所以这里直接把正确命令写出来。
-            return refused(item, "<red>剑币不够：需要 <white>" + (cost + insureFee) + "</white>"
-                    + (insureFee > 0 ? "<gray>（含强化保险费 " + insureFee + "）</gray>" : "")
+            return refused(item, "<red>剑币不够：需要 <white>" + cost + "</white>"
                     + "，你只有 <white>" + coins + "</white>。"
                     + "<newline><dark_gray>剑币靠锻造赚；管理员发放：<white>/zhujian money coin give "
-                    + player.getName() + " " + (cost + insureFee) + "</white>"
+                    + player.getName() + " " + cost + "</white>"
                     + (insureFee > 0 ? " · 或先 /zhujian strengthen insure 关掉保险" : "") + "</dark_gray>");
+        }
+        if (insureFee > 0 && !plugin.wallet().has(player, insureFee)) {
+            return refused(item, "<red>保险费不够：本锤要 <white>" + insureFee + "</white>（服务器经济），"
+                    + "<white>/zhujian strengthen insure</white> 关掉保险后再落锤。</red>");
         }
 
         // ---- 这一锤的判定方式：炉火必成 / 无损连击 / 常规明牌 ----
@@ -1293,9 +1299,15 @@ public final class StrengthenService {
 
         // ---- 扣费（扣了就不再退，空锤也照吃）----
         plugin.stats().takeCoins(player.getUniqueId(), cost, CoinReason.STRENGTHEN);
-        // 保险费单独走 Wallet 收口：买的是「这一锤的碎剑理赔资格」，收了就不退
+        // 保险费单独走 Wallet 收口：买的是「这一锤的碎剑理赔资格」，收了就不退。
+        // v2.25.1 修 P1（审计轮3-1）：take 的返回值原来被丢弃 —— coin-sinks=server
+        // 且 Vault 余额不足时保费静默没收、理赔资格却还在，真碎时 wallet.give 向
+        // Vault 打款 = 凭空铸币。没收成功才有资格；没收成功也不中断本锤。
         if (insureFee > 0) {
-            plugin.wallet().take(player, insureFee, CoinReason.OTHER_OUT);
+            if (!plugin.wallet().take(player, insureFee, CoinReason.INSURE_FEE)) {
+                insuredNow = false;
+                Msg.prefix(player, "<red>保险费没收成功，本锤无理赔资格（保险态保留）。</red>");
+            }
         }
         if (costItem != null) {
             // 材料只扣实有的那部分，差额由剑尘补（dustUse 在材料检查段已经算好）
@@ -1445,7 +1457,7 @@ public final class StrengthenService {
                 if (insuredNow) {
                     long refund = insuranceRefund(materialUnitPrice(mat), matUsed, insureRefundRatio());
                     if (refund > 0) {
-                        plugin.wallet().give(player, refund, CoinReason.OTHER_IN);
+                        plugin.wallet().give(player, refund, CoinReason.INSURE_PAYOUT);
                         insureNote = "<newline><#9f7aea>强化保险</#9f7aea> <gray>理赔 <white>" + refund
                                 + "</white> 剑币 <dark_gray>（该锤 " + matUsed + " 个材料的折价 × "
                                 + Msg.fmt(insureRefundRatio() * 100, 0) + "%，保险费与手续费不退）</dark_gray></gray>";

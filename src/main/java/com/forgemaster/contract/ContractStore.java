@@ -41,6 +41,9 @@ public final class ContractStore {
     private volatile long lastSettledFullDay = -1;
     /** 有未落盘的变更时为真；异步冲刷任务只在它为真时才写文件（审计 #7） */
     private volatile boolean dirty;
+    /** v2.25.1 修 P2（审计轮3-B4）：写盘代数 —— markDirty 在写盘窗口内自增，写完
+     * 只在代数没变时才清脏（AnvilForgeManager 同款），杜绝「窗口内变更被吞」。 */
+    private volatile long dirtySeq;
     private int flushTaskId = -1;
 
     public ContractStore(Plugin plugin) {
@@ -113,6 +116,7 @@ public final class ContractStore {
 
     /** 标记有未落盘的变更；真正的写盘交给低频异步冲刷（审计 #7） */
     public void markDirty() {
+        dirtySeq++;
         dirty = true;
     }
 
@@ -141,9 +145,13 @@ public final class ContractStore {
             yml.set(base + ".pick-pending", r.pickPending == null ? "" : r.pickPending);
         }
         try {
+            long seq = dirtySeq;
             yml.save(file);
-            // 写盘期间变更走 markDirty 只翻 volatile 标记，写完清脏不会漏账
-            dirty = false;
+            // v2.25.1：写盘窗口内若有 markDirty（seq 已前进），保持脏让下一次冲刷重写；
+            // 旧注释「清脏不会漏账」对变更侧不成立 —— Run 对象是主线程直改的，不进本锁
+            if (seq == dirtySeq) {
+                dirty = false;
+            }
         } catch (IOException ex) {
             plugin.getLogger().warning("contract.yml 写入失败: " + ex.getMessage());
         }

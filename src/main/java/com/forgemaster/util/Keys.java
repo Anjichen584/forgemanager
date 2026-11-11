@@ -65,6 +65,8 @@ public final class Keys {
      * <p>跟剑走而不是跟玩家走：换号 / 借号都不重置每日次数，剑与剑之间互不影响。</p>
      */
     public static NamespacedKey SPIRIT_REROLL_DATE;
+    /** v2.25.1：灵契重抽的预览-确认绑定（预览写 nonce，confirm 校验同一把剑） */
+    public static NamespacedKey SPIRIT_REROLL_NONCE;
 
     // ---- v2.2 宝石 ----
     /** 宝石物品标记 */
@@ -273,6 +275,7 @@ public static NamespacedKey SPIRIT_DISPLAY_BONUS;
         DURABILITY = new NamespacedKey(plugin, "durability");
         DURABILITY_MAX = new NamespacedKey(plugin, "durability_max");
         REPAIR_COUNT = new NamespacedKey(plugin, "repair_count");
+        SPIRIT_REROLL_NONCE = new NamespacedKey(plugin, "spirit_reroll_nonce");
         GRADE = new NamespacedKey(plugin, "grade");
         USED_GRADE = new NamespacedKey(plugin, "used_grade");
         SPIRIT = new NamespacedKey(plugin, "spirit");

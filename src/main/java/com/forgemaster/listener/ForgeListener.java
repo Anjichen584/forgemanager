@@ -163,6 +163,12 @@ public final class ForgeListener implements Listener {
             if (!(event.getWhoClicked() instanceof Player player)) {
                 return;
             }
+            // v2.25.1 修 P2（审计轮3-4）：补 DOUBLE_CLICK 守卫（其余 12 个 holder 的同款
+            // 防线，BoardHolder 是唯一既有点击副作用又原地重绘的分支 —— 双击第二条包
+            // 会落在重绘后的新列表上，交付玩家没点的另一张委托）
+            if (event.getClick() == ClickType.DOUBLE_CLICK) {
+                return;
+            }
             if (event.getClickedInventory() == null || !event.getClickedInventory().equals(top)) {
                 return;
             }
@@ -171,19 +177,23 @@ public final class ForgeListener implements Listener {
                 player.closeInventory();
                 return;
             }
+            // v2.25.1：重绘一律延后一 tick（openInventory 在点击事件内同步执行会让
+            // 双击的第二条包打在新列表上），与 ReforgeMenu.ClickRouter 同款
+            java.util.function.Consumer<Player> redraw = pl ->
+                    org.bukkit.Bukkit.getScheduler().runTask(plugin, () -> pl.openInventory(plugin.commissions().buildBoard(pl)));
             // 换单：Shift + 点某张委托，退掉它换一张新的
             if (event.getClick().isShiftClick()) {
                 plugin.commissions().reroll(player, slot);
-                player.openInventory(plugin.commissions().buildBoard(player));
+                redraw.accept(player);
                 return;
             }
             if (plugin.commissions().deliver(player, slot)) {
                 player.closeInventory();
-                player.openInventory(plugin.commissions().buildBoard(player));
+                redraw.accept(player);
                 return;
             }
             // 交付失败或点在别处：原地重绘，保证手上物品的满足情况是最新的
-            player.openInventory(plugin.commissions().buildBoard(player));
+            redraw.accept(player);
             return;
         }
 
@@ -220,9 +230,14 @@ public final class ForgeListener implements Listener {
             return;
         }
 
-        if (holder instanceof GemMenuHolder) {
+        if (holder instanceof GemMenuHolder gemHolder) {
             event.setCancelled(true);
             if (!(event.getWhoClicked() instanceof Player player)) {
+                return;
+            }
+            // v2.25.1 修 P2（审计轮3-6）：点击者 = 界面主人，不匹配 cancel + 踢出
+            if (!player.getUniqueId().equals(gemHolder.owner())) {
+                org.bukkit.Bukkit.getScheduler().runTask(plugin, (Runnable) player::closeInventory);
                 return;
             }
             if (event.getClickedInventory() == null || !event.getClickedInventory().equals(top)) {
@@ -448,6 +463,11 @@ public final class ForgeListener implements Listener {
 
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
+        // v2.25.1 修 P2（审计轮3-5）：没开工的临摹锁定原来只在 cancel/discard 清 ——
+        // 必须存在 ForgeSession 才会走到。没开工就下线的玩家重登被锁死在指定剑胚。
+        if (plugin.manuals() != null) {
+            plugin.manuals().cancelCopy(event.getPlayer().getUniqueId());
+        }
         ForgeSession session = manager.session(event.getPlayer());
         if (session != null) {
             manager.cancel(session, null);
