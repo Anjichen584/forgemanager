@@ -416,7 +416,7 @@ public final class ForgeListener implements Listener {
         double reduce = com.forgemaster.affix.EquipmentDamageScan
                 .scan(player, event, null).affixReduce();
 
-        // 原创附魔的护甲侧（v2.23.2）：坚壁减伤 / 御火 / 荆棘。
+        // 原创附魔的护甲侧（v2.23.2）：砥柱减伤 / 辟火 / 荆棘。
         // 四件护甲各自读、合并后**只夹一次**，不是各自夹完相加（四件各 10% 就成了 40%）。
         var enchCaps = com.forgemaster.enchant.EnchantEffects.Caps.fromConfig(plugin.getConfig());
         var armorParts = new java.util.ArrayList<com.forgemaster.enchant.EnchantEffects.Armor>(4);
@@ -432,7 +432,7 @@ public final class ForgeListener implements Listener {
         var enchArmor = plugin.enchantEffects().mergeArmor(armorParts, enchCaps);
         reduce += enchArmor.reduceAdd();
 
-        // 御火：只对火源伤害额外减（不然它就变成一条万能减伤）
+        // 辟火：只对火源伤害额外减（不然它就变成一条万能减伤）
         boolean fire = event.getCause() == org.bukkit.event.entity.EntityDamageEvent.DamageCause.FIRE
                 || event.getCause() == org.bukkit.event.entity.EntityDamageEvent.DamageCause.FIRE_TICK
                 || event.getCause() == org.bukkit.event.entity.EntityDamageEvent.DamageCause.LAVA

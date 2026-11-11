@@ -150,9 +150,12 @@ public final class EnchantItem {
         List<Component> block = new ArrayList<>();
         block.add(line("<gradient:#a78bfa:#4dc3ff>" + BLOCK_PREFIX + "</gradient>"));
         for (EnchantEffects.Entry e : entries) {
+            // desc 里的 %v 换成当前等级的实际数值：让 Lore 自己解释这条附魔干什么，
+            // 而不是只丢一个裸百分比给玩家猜。
+            String desc = e.def().desc() == null ? ""
+                    : e.def().desc().replace("%v", e.def().valueText(e.level()));
             block.add(line("<gray>  · <white>" + e.def().display() + " "
-                    + roman(e.level()) + "</white> <dark_gray>(" + e.def().valueText(e.level())
-                    + ")</dark_gray>"));
+                    + roman(e.level()) + "</white> <dark_gray>" + desc + "</dark_gray>"));
         }
         lore.addAll(block);
         meta.lore(lore);

@@ -225,7 +225,7 @@ public final class CombatListener implements Listener {
                 double maxHp = attr == null ? 20.0 : attr.getValue();
                 hpRatio = maxHp <= 0 ? 1.0 : Math.max(0, Math.min(1.0, livingTarget.getHealth() / maxHp));
             }
-            // 连击层数：本刀之前已经连了几刀（第一刀是 0）
+            // 迭浪层数：本刀之前已经连了几刀（第一刀是 0）
             long comboWindow = plugin.getConfig().getLong("enchant.caps.combo-window-ms", 4000L);
             int combos = com.forgemaster.enchant.ComboTracker.consecutive(
                     player, event.getEntity(), comboWindow, Math.max(1, enchCaps.comboStacks()));

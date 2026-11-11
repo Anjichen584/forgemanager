@@ -23,7 +23,7 @@ import java.util.concurrent.ThreadLocalRandom;
  * <table border="1">
  *   <caption>最坏情况（全满级、全部叠满）</caption>
  *   <tr><th>类别</th><th>理论合计</th><th>{@code enchant.caps} 封顶</th><th>再叠一层</th></tr>
- *   <tr><td>伤害（锋锐+破甲+猎杀+斩首+连击满层）</td><td>+47.5%</td><td>+25%</td><td>—</td></tr>
+ *   <tr><td>伤害（断金+贯札+诛邪+摧枯+迭浪满层）</td><td>+47.5%</td><td>+25%</td><td>—</td></tr>
  *   <tr><td>吸血加成</td><td>+6%</td><td>+10%</td><td>{@code combat.limits} 20%</td></tr>
  *   <tr><td>点燃时长</td><td>+1.8 秒</td><td>+4 秒</td><td>{@code combat.limits} 10 秒</td></tr>
  *   <tr><td>减伤加成（四件合计）</td><td>+30%</td><td>+10%</td><td>{@code combat.limits} 35%</td></tr>
@@ -56,38 +56,41 @@ public final class EnchantRegistry {
     public static List<CustomEnchant> defaults() {
         return List.of(
                 // ---- 武器 ----
-                new CustomEnchant("edge", "锋锐", 5, CustomEnchant.Kind.DAMAGE_MUL,
-                        CustomEnchant.Slot.WEAPON, 0.015, 100, "最终伤害 %v"),
-                new CustomEnchant("pierce", "破甲", 5, CustomEnchant.Kind.ARMOR_PIERCE,
-                        CustomEnchant.Slot.WEAPON, 0.012, 90, "无视护甲，伤害 %v"),
-                new CustomEnchant("swift", "疾风", 4, CustomEnchant.Kind.ATTACK_SPEED,
-                        CustomEnchant.Slot.WEAPON, 0.015, 80, "攻击速度 %v"),
-                new CustomEnchant("soulsip", "噬魂", 4, CustomEnchant.Kind.LIFESTEAL_ADD,
-                        CustomEnchant.Slot.WEAPON, 0.015, 70, "吸血 %v"),
-                new CustomEnchant("ember", "燃烬印记", 3, CustomEnchant.Kind.FIRE_ADD,
-                        CustomEnchant.Slot.WEAPON, 0.6, 70, "点燃 %v"),
-                new CustomEnchant("slayer", "猎杀", 5, CustomEnchant.Kind.VS_MONSTER,
-                        CustomEnchant.Slot.WEAPON, 0.02, 90, "对敌对生物伤害 %v"),
-                new CustomEnchant("execute", "斩首", 5, CustomEnchant.Kind.EXECUTE,
-                        CustomEnchant.Slot.WEAPON, 0.03, 45, "目标残血时伤害 %v"),
-                new CustomEnchant("combo", "连击", 3, CustomEnchant.Kind.COMBO,
-                        CustomEnchant.Slot.WEAPON, 0.01, 60, "连续命中每层 %v"),
+                // 取名口径：全部避开原版附魔的官方中文译名（锋利/穿刺/火焰附加/亡灵杀手/
+                // 荆棘/保护/时运...都不许沾），改走「熔铸工序 + 古兵器 + 天象」这一路。
+                // 「断金」取自《易》「二人同心，其利断金」；「贯札」是札甲之札，贯穿甲片。
+                new CustomEnchant("edge", "断金", 5, CustomEnchant.Kind.DAMAGE_MUL,
+                        CustomEnchant.Slot.WEAPON, 0.015, 100, "锋过之处，伤害 %v"),
+                new CustomEnchant("pierce", "贯札", 5, CustomEnchant.Kind.ARMOR_PIERCE,
+                        CustomEnchant.Slot.WEAPON, 0.012, 90, "穿透甲片，伤害 %v"),
+                new CustomEnchant("swift", "掣电", 4, CustomEnchant.Kind.ATTACK_SPEED,
+                        CustomEnchant.Slot.WEAPON, 0.015, 80, "出鞘如电，攻速 %v"),
+                new CustomEnchant("soulsip", "饮锋", 4, CustomEnchant.Kind.LIFESTEAL_ADD,
+                        CustomEnchant.Slot.WEAPON, 0.015, 70, "刃饮其血，吸血 %v"),
+                new CustomEnchant("ember", "燎原", 3, CustomEnchant.Kind.FIRE_ADD,
+                        CustomEnchant.Slot.WEAPON, 0.6, 70, "星火不熄，点燃 %v"),
+                new CustomEnchant("slayer", "诛邪", 5, CustomEnchant.Kind.VS_MONSTER,
+                        CustomEnchant.Slot.WEAPON, 0.02, 90, "妖祟辟易，伤害 %v"),
+                new CustomEnchant("execute", "摧枯", 5, CustomEnchant.Kind.EXECUTE,
+                        CustomEnchant.Slot.WEAPON, 0.03, 45, "摧枯拉朽，残躯时伤害 %v"),
+                new CustomEnchant("combo", "迭浪", 3, CustomEnchant.Kind.COMBO,
+                        CustomEnchant.Slot.WEAPON, 0.01, 60, "一浪接一浪，每层 %v"),
                 // ---- 护甲 ----
-                new CustomEnchant("bulwark", "坚壁", 5, CustomEnchant.Kind.DAMAGE_REDUCE,
-                        CustomEnchant.Slot.ARMOR, 0.015, 100, "受到伤害减免 %v"),
-                new CustomEnchant("thorns", "荆棘", 4, CustomEnchant.Kind.THORNS,
-                        CustomEnchant.Slot.ARMOR, 0.03, 60, "反弹 %v 伤害"),
-                new CustomEnchant("fortitude", "韧骨", 5, CustomEnchant.Kind.HEALTH_ADD,
-                        CustomEnchant.Slot.ARMOR, 1.5, 80, "生命上限 %v"),
-                new CustomEnchant("emberward", "御火", 4, CustomEnchant.Kind.FIRE_RESIST,
-                        CustomEnchant.Slot.ARMOR, 0.06, 55, "火焰伤害减免 %v"),
+                new CustomEnchant("bulwark", "砥柱", 5, CustomEnchant.Kind.DAMAGE_REDUCE,
+                        CustomEnchant.Slot.ARMOR, 0.015, 100, "中流不移，受伤减免 %v"),
+                new CustomEnchant("thorns", "芒刺", 4, CustomEnchant.Kind.THORNS,
+                        CustomEnchant.Slot.ARMOR, 0.03, 60, "触之则伤，反弹 %v"),
+                new CustomEnchant("fortitude", "培元", 5, CustomEnchant.Kind.HEALTH_ADD,
+                        CustomEnchant.Slot.ARMOR, 1.5, 80, "固本培元，气血 %v"),
+                new CustomEnchant("emberward", "辟火", 4, CustomEnchant.Kind.FIRE_RESIST,
+                        CustomEnchant.Slot.ARMOR, 0.06, 55, "火不能侵，减免 %v"),
                 // ---- 通用 ----
-                new CustomEnchant("lorekeeper", "聚灵", 5, CustomEnchant.Kind.EXP_BONUS,
-                        CustomEnchant.Slot.ANY, 0.08, 75, "经验获取 %v"),
-                new CustomEnchant("prospector", "采掘", 5, CustomEnchant.Kind.DROP_BONUS,
-                        CustomEnchant.Slot.ANY, 0.06, 65, "挖矿额外掉落 %v"),
-                new CustomEnchant("fortunes", "匠运", 5, CustomEnchant.Kind.COIN_BONUS,
-                        CustomEnchant.Slot.ANY, 0.02, 50, "剑币产出 %v")
+                new CustomEnchant("lorekeeper", "通慧", 5, CustomEnchant.Kind.EXP_BONUS,
+                        CustomEnchant.Slot.ANY, 0.08, 75, "见微知著，经验 %v"),
+                new CustomEnchant("prospector", "探脉", 5, CustomEnchant.Kind.DROP_BONUS,
+                        CustomEnchant.Slot.ANY, 0.06, 65, "循脉而知藏，额外掉落 %v"),
+                new CustomEnchant("fortunes", "泉布", 5, CustomEnchant.Kind.COIN_BONUS,
+                        CustomEnchant.Slot.ANY, 0.02, 50, "泉布自至，剑币 %v")
         );
     }
 

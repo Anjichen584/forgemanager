@@ -41,7 +41,7 @@ public final class EnchantEffects {
 
         public static Caps defaults() {
             return new Caps(
-                    0.25,   // 伤害总加成（锋锐+破甲+猎杀+斩首+连击 全部加完的封顶）
+                    0.25,   // 伤害总加成（断金+贯札+诛邪+摧枯+迭浪 全部加完的封顶）
                     0.10,   // 吸血加成
                     4.0,    // 点燃加成（秒）
                     0.08,   // 攻速加成
@@ -49,12 +49,12 @@ public final class EnchantEffects {
                     8.0,    // 生命加成
                     0.15,   // 荆棘百分比
                     2.0,    // 荆棘单次绝对值上限
-                    0.30,   // 御火减免
+                    0.30,   // 辟火减免
                     0.50,   // 经验加成
                     0.15,   // 剑币加成
                     0.35,   // 挖矿额外掉落几率
-                    0.25,   // 斩首触发血量阈值
-                    3);     // 连击最多叠几层
+                    0.25,   // 摧枯触发血量阈值
+                    3);     // 迭浪最多叠几层
         }
 
         public static Caps fromConfig(ConfigurationSection cfg) {
@@ -150,12 +150,12 @@ public final class EnchantEffects {
     /**
      * 武器侧汇总。
      *
-     * @param damageMul     最终伤害倍率（已含锋锐/破甲/猎杀/斩首/连击，**已夹**）
+     * @param damageMul     最终伤害倍率（已含断金/贯札/诛邪/摧枯/迭浪，**已夹**）
      * @param lifestealAdd  吸血加成（还要再过 {@code DamageBudget.lifestealHeal}）
      * @param fireAddSeconds 点燃加成秒数（还要再过 {@code Caps.clampFireTicks}）
      * @param attackSpeedAdd 攻速加成（还要再过 {@code compat.attack-speed-cap}）
-     * @param executeThreshold 斩首触发阈值（血量比例）
-     * @param comboStacks   连击最多几层
+     * @param executeThreshold 摧枯触发阈值（血量比例）
+     * @param comboStacks   迭浪最多几层
      */
     public record Weapon(double damageMul, double lifestealAdd, double fireAddSeconds,
                          double attackSpeedAdd, double executeThreshold, int comboStacks) {
@@ -168,12 +168,12 @@ public final class EnchantEffects {
     /**
      * 按「目标状态」算出这一次命中的伤害倍率。
      *
-     * <p>分开算是因为猎杀只对敌对生物、斩首只在目标残血时生效、连击要按层数。
+     * <p>分开算是因为诛邪只对敌对生物、摧枯只在目标残血时生效、迭浪要按层数。
      * 但<b>总量仍然只夹一次</b> —— 见类注释纪律 2。</p>
      *
      * @param monster  目标是不是敌对生物（Monster）
      * @param hpRatio  目标当前血量比例（0~1；未知传 1.0）
-     * @param combos   当前连击层数（0 表示没叠）
+     * @param combos   当前迭浪层数（0 表示没叠）
      */
     public double hitMultiplier(List<Entry> entries, Caps caps, boolean monster,
                                 double hpRatio, int combos) {

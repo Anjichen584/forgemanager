@@ -480,7 +480,7 @@ public final class ConfigMigrations {
     /**
      * step12（2.19.1）：强化「高段变墙」重定。
      *
-     * <p>实测口径（{@code simulateStats} 的马尔可夫链，裸锤、不含连击/符）：</p>
+     * <p>实测口径（{@code simulateStats} 的马尔可夫链，裸锤、不含迭浪/符）：</p>
      * <pre>
      *   旧值（floar .10 / break.max .30 / damage-share .5）
      *     +60 达成率 0.72%   +72 0.011%（约 9000 把剑）   +99 5e-10（本质不可能）
@@ -1264,19 +1264,19 @@ public final class ConfigMigrations {
         written += putIfAbsent(cfg, disk, "enchant.caps.max-thorns-flat", 2.0, java.util.List.of(
                 "荆棘单次反弹的绝对上限（防高伤反杀）"));
         written += putIfAbsent(cfg, disk, "enchant.caps.max-fire-resist", 0.30, java.util.List.of(
-                "御火：火焰伤害额外减免封顶"));
+                "辟火：火焰伤害额外减免封顶"));
         written += putIfAbsent(cfg, disk, "enchant.caps.max-exp-bonus", 0.50, java.util.List.of(
-                "聚灵：经验加成封顶"));
+                "通慧：经验加成封顶"));
         written += putIfAbsent(cfg, disk, "enchant.caps.max-coin-bonus", 0.15, java.util.List.of(
-                "匠运：剑币产出加成封顶"));
+                "泉布：剑币产出加成封顶"));
         written += putIfAbsent(cfg, disk, "enchant.caps.max-drop-chance", 0.35, java.util.List.of(
-                "采掘：挖矿额外掉落几率封顶（每次只多掉 1 份）"));
+                "探脉：挖矿额外掉落几率封顶（每次只多掉 1 份）"));
         written += putIfAbsent(cfg, disk, "enchant.caps.execute-threshold", 0.25, java.util.List.of(
-                "斩首：目标血量低于这个比例时才吃加成"));
+                "摧枯：目标血量低于这个比例时才吃加成"));
         written += putIfAbsent(cfg, disk, "enchant.caps.combo-stacks", 3, java.util.List.of(
-                "连击：最多叠几层"));
+                "迭浪：最多叠几层"));
         written += putIfAbsent(cfg, disk, "enchant.caps.combo-window-ms", 4000L, java.util.List.of(
-                "连击：两刀间隔超过这个毫秒数就重新计数"));
+                "迭浪：两刀间隔超过这个毫秒数就重新计数"));
         // 守卫
         written += putIfAbsent(cfg, disk, "enchant.guard.enabled", true, java.util.List.of(
                 "附魔白名单守卫：拦在附魔台与铁砧，只作用于本插件的锻造品"));
