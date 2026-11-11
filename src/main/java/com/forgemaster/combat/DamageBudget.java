@@ -95,10 +95,12 @@ public final class DamageBudget {
      * {@code 0.35} / {@code 20.0} / {@code 10.0}，改一处漏两处就是下一个 bug。</p>
      */
     public record Caps(double maxLifesteal, double maxDamageReduce,
-                       double maxBonusHealth, double maxFireSeconds) {
+                       double maxBonusHealth, double maxFireSeconds,
+                       // v2.24 切片一：冰噬减速时长（tick）/ 处决增伤比例
+                       int maxChillTicks, double maxExecute) {
 
         public static Caps defaults() {
-            return new Caps(0.20, 0.35, 20.0, 10.0);
+            return new Caps(0.20, 0.35, 20.0, 10.0, 40, 0.30);
         }
 
         public static Caps fromConfig(org.bukkit.configuration.ConfigurationSection cfg) {
@@ -110,7 +112,11 @@ public final class DamageBudget {
                     cfg.getDouble("combat.limits.max-lifesteal", d.maxLifesteal()),
                     cfg.getDouble("combat.limits.max-damage-reduce", d.maxDamageReduce()),
                     cfg.getDouble("combat.limits.max-bonus-health", d.maxBonusHealth()),
-                    cfg.getDouble("combat.limits.max-fire-seconds", d.maxFireSeconds()));
+                    cfg.getDouble("combat.limits.max-fire-seconds", d.maxFireSeconds()),
+                    // v2.24 切片一：这两个键在 combat.caps 下（与 combat.limits 的旧键分开，
+                    // 是因为「冰噬/处决」是词条产出的新夹子，语义上属于词条口径而不是伤害预算）
+                    Math.max(0, cfg.getInt("combat.caps.max-chill-ticks", d.maxChillTicks())),
+                    cfg.getDouble("combat.caps.max-execute", d.maxExecute()));
         }
 
         /** 夹一个吸血值（&lt;=0 的上限表示不限） */
@@ -128,14 +134,36 @@ public final class DamageBudget {
             return maxBonusHealth <= 0 ? Math.max(0, raw) : Math.max(0, Math.min(raw, maxBonusHealth));
         }
 
-        /** 夹一个点燃 tick 数（输入输出都是 tick） */
-        public int clampFireTicks(int rawTicks) {
-            if (maxFireSeconds <= 0) {
-                return Math.max(0, rawTicks);
-            }
-            int cap = (int) Math.round(maxFireSeconds * 20);
-            return Math.max(0, Math.min(rawTicks, cap));
+    /** 夹一个点燃 tick 数（输入输出都是 tick） */
+    public int clampFireTicks(int rawTicks) {
+        if (maxFireSeconds <= 0) {
+            return Math.max(0, rawTicks);
         }
+        int cap = (int) Math.round(maxFireSeconds * 20);
+        return Math.max(0, Math.min(rawTicks, cap));
+    }
+
+    /**
+     * 夹一个冰噬减速 tick 数（v2.24 切片一，输入输出都是 tick）。
+     *
+     * <p>与 {@link #clampFireTicks(int)} 同模式：写入侧（ItemFactory）与结算侧
+     * （CombatListener）都用这一份上限，存量旧物品在结算处再夹一道。
+     * 上限 ≤ 0 视为「不夹」，与点燃的语义一致。</p>
+     */
+    public int clampChillTicks(int rawTicks) {
+        if (maxChillTicks <= 0) {
+            return Math.max(0, rawTicks);
+        }
+        return Math.max(0, Math.min(rawTicks, maxChillTicks));
+    }
+
+    /** 夹一个处决增伤比例（v2.24 切片一）：词条叠加 + 星陨档缩放之后也不能越过这条线 */
+    public double clampExecute(double raw) {
+        if (maxExecute <= 0) {
+            return Math.max(0, raw);
+        }
+        return Math.max(0, Math.min(raw, maxExecute));
+    }
     }
 
     // ------------------------------------------------------------ 攻击属性

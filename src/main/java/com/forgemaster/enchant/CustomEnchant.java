@@ -53,6 +53,10 @@ public record CustomEnchant(String id, String display, int maxLevel, Kind kind, 
      *   <tr><td>守夜（脱战回复）</td><td>无</td><td>原版回血靠饱食度，与战斗状态无关</td></tr>
      *   <tr><td>拾遗（额外经验）</td><td>经验修补</td><td>经验修补是「经验修耐久」，拾遗是「挖矿多给经验」</td></tr>
      *   <tr><td>望气（侦测）</td><td>无</td><td>原版没有主动侦测附近敌人的机制</td></tr>
+     *   <tr><td>淬锋（连击锋锐）</td><td>无</td><td>原版没有「连续命中叠层、受伤即清」的机制 ——
+     *       它奖励的是「不挨打地输出」，与无伤跑位打法绑定，受伤清零让白嫖不可能</td></tr>
+     *   <tr><td>饮命（击杀回耐久）</td><td>经验修补</td><td>经验修补是「经验换原版耐久」；饮命是「击杀
+     *       直接回虚拟耐久」，且崩刃的剑不回 —— 死剑不能靠杀怪自愈，研磨仍是唯一出路</td></tr>
      * </table>
      */
     public enum Kind {
@@ -79,7 +83,20 @@ public record CustomEnchant(String id, String display, int maxLevel, Kind kind, 
         /** 拾遗：挖掘方块时额外获得经验 */
         SALVAGE,
         /** 望气：周期性提示最近敌对生物的方向与距离 */
-        SENSE
+        SENSE,
+        /**
+         * 淬锋（v2.24 切片一）：连续命中且不受伤时叠「锋锐」层，每层增伤；
+         * 持剑者受到任何伤害立即清零。perLevel = 每层增伤比例。
+         * 与原版最近似的只有「锋利」这种常驻数值——但淬锋是条件叠层 + 一受击归零，
+         * 改变的是「能不能浪」：站撸挨一刀就全没。
+         */
+        STREAK,
+        /**
+         * 饮命（v2.24 切片一）：击杀时按等级回复武器虚拟耐久若干点。
+         * perLevel = 每级回复点数。**崩刃（耐久 ≤ 0）的剑不回**——
+         * 否则死了还能喝血复活耐久，「崩刃必须研磨」的红线就被绕过去了。
+         */
+        DUR_LEECH
     }
 
     /** 适用部位 */
@@ -109,13 +126,14 @@ public record CustomEnchant(String id, String display, int maxLevel, Kind kind, 
     public String valueText(int level) {
         double v = at(level);
         return switch (kind) {
-            case SPLASH, LONE_WOLF, CHARGE, MARK, RETALIATE, DELAY_DAMAGE, SALVAGE ->
+            case SPLASH, LONE_WOLF, CHARGE, MARK, RETALIATE, DELAY_DAMAGE, SALVAGE, STREAK ->
                     "+" + trim(v * 100) + "%";
             case PYRE -> trim(v) + " 点";
             case HAMPER -> trim(v) + " 秒";
             case REGEN -> trim(v) + " 点/次";
             case CHEAT_DEATH -> "+" + trim(v * 100) + "% 生命";
             case SENSE -> trim(v) + " 格";
+            case DUR_LEECH -> trim(v) + " 点";
         };
     }
 

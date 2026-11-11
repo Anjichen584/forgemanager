@@ -21,7 +21,19 @@ public final class Affix {
         /** 点燃（自定义） */
         FIRE,
         /** 受到伤害减免（自定义，装备用） */
-        DAMAGE_REDUCTION
+        DAMAGE_REDUCTION,
+        /**
+         * 冰噬（v2.24 切片一，自定义）：命中附加短暂减速（Slowness II）。
+         * 数值口径与 FIRE 相同——「整秒」，落 PDC 时换算成 tick 并过
+         * {@code combat.caps.max-chill-ticks} 夹子。
+         */
+        CHILL,
+        /**
+         * 处决（v2.24 切片一，自定义）：目标血量比例低于阈值时本击增伤。
+         * 阈值在 {@code combat.caps.execute-threshold}（默认 15%），增伤在暴击之前、
+         * 伤害上限之后被 DamageBudget 结算，不是绕过预算的后门。
+         */
+        EXECUTE
     }
 
     private final String id;
@@ -103,8 +115,8 @@ public final class Affix {
         double raw = half <= 0
                 ? center
                 : center + (random.nextDouble() * 2.0 - 1.0) * half;
-        if (kind == Kind.FIRE) {
-            // 点燃时长按整秒取，别出现 2.23 秒这种
+        if (kind == Kind.FIRE || kind == Kind.CHILL) {
+            // 点燃 / 冰噬时长按整秒取，别出现 2.23 秒这种（冰噬与点燃同一口径，v2.24 切片一）
             return Math.max(1, Math.rint(raw));
         }
         return Math.max(0, Math.round(raw * 100.0) / 100.0);

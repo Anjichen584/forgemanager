@@ -228,8 +228,9 @@ public final class ItemFactory {
         }
         // 词条 → 属性 / PDC
         PersistentDataContainer pdc = meta.getPersistentDataContainer();
-        double crit = 0, critDmg = 0, lifesteal = 0, damageReduce = 0;
+        double crit = 0, critDmg = 0, lifesteal = 0, damageReduce = 0, execute = 0;
         int fire = 0;
+        int chill = 0;
         for (Map.Entry<Affix, Double> e : affixes.entrySet()) {
             Affix affix = e.getKey();
             double value = e.getValue();
@@ -260,6 +261,9 @@ public final class ItemFactory {
                 case CRIT_DAMAGE -> critDmg += value;
                 case LIFESTEAL -> lifesteal += value;
                 case FIRE -> fire += (int) Math.round(value);
+                // v2.24 切片一：冰噬与点燃同一口径（秒 → tick），处决是百分比
+                case CHILL -> chill += (int) Math.round(value);
+                case EXECUTE -> execute += value;
                 case DAMAGE_REDUCTION -> damageReduce += value;
             }
         }
@@ -284,6 +288,11 @@ public final class ItemFactory {
         pdc.set(Keys.LIFESTEAL, PersistentDataType.DOUBLE, round(cappedLifesteal(lifesteal)));
         pdc.set(Keys.FIRE_TICKS, PersistentDataType.INTEGER,
                 caps().clampFireTicks(fire * 20));
+        // v2.24 切片一：冰噬与处决「写入即封顶」——Lore 上写的数就是实战生效的数，
+        // 不留「面板虚高、实战被砍」的老毛病（v2.23.1 的教训）
+        pdc.set(Keys.CHILL_TICKS, PersistentDataType.INTEGER,
+                caps().clampChillTicks(chill * 20));
+        pdc.set(Keys.EXECUTE, PersistentDataType.DOUBLE, round(cappedExecute(execute)));
         pdc.set(Keys.DAMAGE_REDUCE, PersistentDataType.DOUBLE, round(cappedReduce(damageReduce)));
         pdc.set(Keys.AFFIX_LIST, PersistentDataType.STRING, affixIds(affixes));
         pdc.set(Keys.PATTERN, PersistentDataType.STRING, s.pattern());
@@ -340,6 +349,17 @@ public final class ItemFactory {
     /** 单件装备的减伤上限 */
     private double cappedReduce(double raw) {
         return caps().clampReduce(raw);
+    }
+
+    /**
+     * 处决增伤写入前的封顶（v2.24 切片一）。
+     *
+     * <p>上限走 {@link com.forgemaster.combat.DamageBudget.Caps#clampExecute}：
+     * 处决是「残血增伤」，条数多 + 星陨档缩放能把原始值顶到远超设计值，
+     * 与吸血同理必须写入即封顶。</p>
+     */
+    private double cappedExecute(double raw) {
+        return caps().clampExecute(raw);
     }
 
     /**

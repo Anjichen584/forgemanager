@@ -427,6 +427,95 @@ public final class TombManager {
         return String.valueOf(System.currentTimeMillis() % 100000);
     }
 
+    // ------------------------------------------------------------ 冢主温养（v2.24 切片二）
+
+    /**
+     * 温养收益的纯数值层：现有灵性 cur 加 amount，不超过上限 max，返回实际涨了多少。
+     *
+     * <p>单独抽出来是因为自检要在不碰真实物品的情况下钉住「温养不超灵性上限」。</p>
+     */
+    public static int nurtureGain(int cur, int max, int amount) {
+        if (amount <= 0 || max <= 0) {
+            return 0;
+        }
+        return Math.max(0, Math.min(max, cur + amount) - cur);
+    }
+
+    /**
+     * 这条剑冢能不能被温养：崩刃剑（broken 留档 / 快照耐久已打光）与快照缺失的都不行。
+     *
+     * <p>碎剑只是个纪念记录，灵性无处安放；耐久 0 的快照同埋前就已崩刃，温养它等于
+     * 给一把废剑涨灵性。纯查询，无副作用（自检直接造 Tomb 对象钉它）。</p>
+     */
+    public boolean canNurture(Tomb t) {
+        if (t == null || t.broken || t.snapshot == null || t.snapshot.getType().isAir()) {
+            return false;
+        }
+        ItemMeta meta = t.snapshot.getItemMeta();
+        if (meta == null || !meta.getPersistentDataContainer().has(Keys.FORGED, PersistentDataType.BYTE)) {
+            return false;
+        }
+        if (meta instanceof org.bukkit.inventory.meta.Damageable dmg
+                && t.snapshot.getType().getMaxDurability() > 0) {
+            return dmg.getDamage() < t.snapshot.getType().getMaxDurability(); // 耐久 0 = 崩刃
+        }
+        return true;
+    }
+
+    /**
+     * 冢主温养：他人挑战这条剑冢（残影）成功时，给冢主埋着的剑补 {@code tomb.nurture-spirit}
+     * 点灵性（不超过 spirit.max）。
+     *
+     * <p>加灵走 {@link com.forgemaster.spirit.SpiritManager#addSpirit(Player, ItemStack, ItemMeta, int)}
+     * 的离线路径（player 传 null：升档特效与成就计数天然跳过，灵契词条照常刻入），
+     * 改完 meta 写回快照并 markDirty——快照的 PDC 真源就在 TombManager 存储里，
+     * 下次取回 / 残影召唤读到的就是温养后的剑。崩刃剑不温养（{@link #canNurture}）。</p>
+     *
+     * @param t          剑冢条目
+     * @param challenger 挑战者（温养成功的提示对象之一；可为 null，只跳过提示）
+     * @return 实际涨了多少灵性（0 = 没温养：关闭 / 崩刃 / 已满 / 未开启）
+     */
+    public int nurtureSpirit(Tomb t, Player challenger) {
+        if (!enabled() || !canNurture(t) || plugin.spirit() == null) {
+            return 0;
+        }
+        int amount = Math.max(0, plugin.settings().intOf("tomb.nurture-spirit", 5));
+        if (amount <= 0) {
+            return 0;
+        }
+        ItemStack snap = t.snapshot;
+        int before = plugin.spirit().spiritOf(snap);
+        int gained = nurtureGain(before, plugin.spirit().maxValue(), amount);
+        if (gained <= 0) {
+            return 0; // 已满：温养落空，不发提示不标脏
+        }
+        ItemMeta meta = snap.getItemMeta();
+        if (meta == null) {
+            return 0;
+        }
+        if (!plugin.spirit().addSpirit(null, snap, meta, gained)) {
+            return 0;
+        }
+        snap.setItemMeta(meta);
+        markDirty(); // 审计 #8 同款：标脏交 5 秒异步冲刷
+
+        // 冢主在线则提示（不在线跳过——灵性已经写进快照，不会丢）
+        Player owner = t.owner == null ? null : Bukkit.getPlayer(t.owner);
+        if (owner != null) {
+            Msg.prefix(owner, "<#b06bff>你的冢剑「<white>" + t.swordName + "</white>」得到了温养，"
+                    + "灵性 <#b06bff>+" + gained + "</#b06bff>（挑战者 " + challengerName(challenger) + "）。</#b06bff>");
+        }
+        if (challenger != null) {
+            Msg.prefix(challenger, "<gray>温养成功：「<#ffd166>" + t.swordName + "</#ffd166>」的灵性 <#b06bff>+"
+                    + gained + "</#b06bff>，冢主的剑因你而更强。</gray>");
+        }
+        return gained;
+    }
+
+    private static String challengerName(Player challenger) {
+        return challenger == null ? "?" : challenger.getName();
+    }
+
     // ------------------------------------------------------------ 取回
 
     public void take(Player player, String rawId) {

@@ -69,7 +69,7 @@ public final class ConfigMigrations {
      * 那个 step 对已在运行的服务器**永远不会执行**（steps 17/18/19 的教训各写了一遍，
      * 详见 step19 的注释）。v2.23.1 加 step22 时从 12 抬到 13，加 step23（战力评分）时再抬到 14，加 step24（属性天花板）时抬到 15。</p>
      */
-    public static final int CURRENT_VERSION = 20;
+    public static final int CURRENT_VERSION = 21;
 
     private ConfigMigrations() {
     }
@@ -109,6 +109,7 @@ public final class ConfigMigrations {
         step27Enchant(plugin, cfg);
         step28MechanicEnchant(plugin, cfg);
         step29DurabilityLoreCap(plugin, cfg);
+        step30Expansion24(plugin, cfg);
         cfg.set("config-version", CURRENT_VERSION);
         plugin.saveConfig();
     }
@@ -1280,6 +1281,98 @@ public final class ConfigMigrations {
      * 这里只补键，不动服主已调过的 {@code durability-lore-step}；
      * 键已存在时 putIfAbsent 语义，一个字都不碰。</p>
      */
+    /**
+     * step30（v2.24 拓展）：把两个切片的新键补进老配置。全部有代码默认，
+     * 缺键不迁移也能跑 —— 这里补键只是让服主在 config.yml 里看得到、能改。
+     * 口径与 step15 一致：contains 判断，绝不覆盖服主已有的值。
+     */
+    private static void step30Expansion24(ForgingMasterPlugin plugin, FileConfiguration cfg) {
+        int written = 0;
+        // ---- 切片一：附魔/词条新机制
+        for (String[] kv : new String[][]{
+                {"enchant.defs.temper.enabled", "true"},
+                {"enchant.defs.temper.max-level", "5"},
+                {"enchant.defs.temper.per-level", "0.04"},
+                {"enchant.defs.temper.weight", "80"},
+                {"enchant.defs.siphon.enabled", "true"},
+                {"enchant.defs.siphon.max-level", "5"},
+                {"enchant.defs.siphon.per-level", "0.5"},
+                {"enchant.defs.siphon.weight", "70"},
+                {"enchant.caps.max-streak-bonus", "0.20"},
+                {"enchant.caps.max-streak-stacks", "5"},
+                {"enchant.caps.max-dur-leech", "3.0"},
+                {"combat.caps.max-chill-ticks", "40"},
+                {"combat.caps.max-execute", "0.30"},
+                {"combat.caps.execute-threshold", "0.15"}}) {
+            if (!cfg.contains(kv[0])) {
+                cfg.set(kv[0], typed(kv[1]));
+                written++;
+            }
+        }
+        // 词条两条（模板整段；缺哪段补哪段）
+        if (!cfg.contains("affixes.chill")) {
+            cfg.set("affixes.chill.display", "冰噬");
+            cfg.set("affixes.chill.kind", "CHILL");
+            cfg.set("affixes.chill.min", 1);
+            cfg.set("affixes.chill.max", 2);
+            cfg.set("affixes.chill.unit", "秒减速");
+            cfg.set("affixes.chill.weight", 10);
+            written++;
+        }
+        if (!cfg.contains("affixes.execute")) {
+            cfg.set("affixes.execute.display", "处决");
+            cfg.set("affixes.execute.kind", "EXECUTE");
+            cfg.set("affixes.execute.min", 0.06);
+            cfg.set("affixes.execute.max", 0.30);
+            cfg.set("affixes.execute.unit", "残血增伤");
+            cfg.set("affixes.execute.percent", true);
+            cfg.set("affixes.execute.weight", 8);
+            written++;
+        }
+        // ---- 切片二：剑灵灵击 / 冢主温养 / 商会科技 / 声望兑换
+        for (String[] kv : new String[][]{
+                {"spirit.surge.enabled", "true"},
+                {"spirit.surge.chance", "0.08"},
+                {"spirit.surge.damage", "2.0"},
+                {"spirit.surge.radius", "2.5"},
+                {"spirit.surge.cooldown-ms", "6000"},
+                {"spirit.surge.min-tier", "3"},
+                {"tomb.nurture-spirit", "5"},
+                {"guild.tech.cost-base", "2000"},
+                {"guild.tech.cost-per-level", "1500"},
+                {"guild.tech.max-level", "5"},
+                {"guild.tech.discount-per-level", "0.02"},
+                {"guild.tech.success-per-level", "0.01"},
+                {"redeem.coin-rate", "10"},
+                {"redeem.coin-max", "500"},
+                {"redeem.charms.talisman", "40"},
+                {"redeem.charms.steady", "60"}}) {
+            if (!cfg.contains(kv[0])) {
+                cfg.set(kv[0], typed(kv[1]));
+                written++;
+            }
+        }
+        if (written > 0) {
+            plugin.getLogger().info("[migrate] step30：v2.24 拓展补键 " + written
+                    + " 组（淬锋/饮命附魔、冰噬/处决词条、灵击、冢主温养、商会科技、声望兑换）");
+        }
+    }
+
+    /** 迁移值按字符串里有没有小数点/布尔词落成对应类型，避免整段变成字符串 */
+    private static Object typed(String raw) {
+        if (raw.equals("true") || raw.equals("false")) {
+            return Boolean.parseBoolean(raw);
+        }
+        try {
+            if (raw.contains(".")) {
+                return Double.parseDouble(raw);
+            }
+            return Integer.parseInt(raw);
+        } catch (NumberFormatException ex) {
+            return raw;
+        }
+    }
+
     private static void step29DurabilityLoreCap(ForgingMasterPlugin plugin, FileConfiguration cfg) {
         if (!cfg.contains("settings.durability-lore-max-points")) {
             cfg.set("settings.durability-lore-max-points", 5);

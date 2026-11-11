@@ -252,6 +252,16 @@ combat:
     # 点燃时长上限（秒）。叠 5 条燃烬能烧 40 秒，目标早死了，纯属浪费性能
     max-fire-seconds: 10.0
 
+  # ---- 词条新机制上限（v2.24 切片一新增）----
+  # 与上面的 limits（伤害预算）分开：这里是「冰噬/处决」词条的口径。
+  caps:
+    # 冰噬：命中附加减速的时长上限（tick，40 tick = 2 秒）。写入与结算两侧共用
+    max-chill-ticks: 40
+    # 处决：残血增伤比例上限。词条 min/max + 星陨档缩放之后也不能越过这条线
+    max-execute: 0.30
+    # 处决：目标血量比例低于多少时触发（0.15 = 15%）。0 = 关闭处决
+    execute-threshold: 0.15
+
 # ---- 存量物品收敛（v2.23.1 新增）----
 # 版本升级前锻出来的装备里躺着旧数值（攻 73 / 吸血 115% / 点燃 40 秒 / 气血 +41）。
 # 产出侧的夹子只对新锻、再强化的物品生效，玩家挂在墙上供着的那把就永远是旧数。
@@ -328,6 +338,11 @@ enchant:
     # 望气（侦测）：节流，防动作栏每 tick 刷屏
     max-sense-radius: 20.0
     sense-interval-ms: 3000
+    # 淬锋（v2.24 切片一）：连续命中叠层增伤；受击清零在结算侧兜底
+    max-streak-bonus: 0.20      # 满层总增伤上限（每层 +4% × 5 层）
+    max-streak-stacks: 5        # 最多叠几层
+    # 饮命（v2.24 切片一）：击杀回虚拟耐久；崩刃（耐久 ≤ 0）的剑不回，研磨仍是唯一出路
+    max-dur-leech: 3.0          # 单次击杀最多回几 点
   # 白名单守卫：拦在附魔台与铁砧，只管本插件的锻造品
   guard:
     enabled: true
@@ -349,6 +364,9 @@ enchant:
     vigil:     { enabled: true, max-level: 5, per-level: 0.5,  weight: 90 }   # 守夜：每级 +0.5 点/次（上限 2.5）
     salvage:   { enabled: true, max-level: 5, per-level: 0.06, weight: 75 }   # 拾遗：每级 +6% 几率（上限 30%）
     insight:   { enabled: true, max-level: 5, per-level: 2.0,  weight: 65 }   # 望气：每级 +2 格（上限 20 格）
+    # v2.24 切片一新增两条（机制型原创附魔）
+    temper:    { enabled: true, max-level: 5, per-level: 0.04, weight: 80 }  # 淬锋：每层 +4% 伤害，最多 5 层，挨打清零
+    siphon:    { enabled: true, max-level: 5, per-level: 0.5,  weight: 70 }  # 饮命：击杀回 0.5 点/级 耐久（上限 3 点，崩刃不回）
 
 metrics:
   enabled: true
@@ -1193,6 +1211,27 @@ affixes:
     unit: 秒点燃时长
     weight: 10
 
+  # ---- v2.24 切片一：词条新机制（武器向）----
+  # chill / execute 默认不在任何淬火池（pool）里，只走武器兜底池
+  # （ForgeManager.WEAPON_AFFIX_POOL 已含这两条）与重铸；想进某个淬火池，
+  # 在下面 quench.<id>.pool 里加上 chill / execute 即可。
+  chill:
+    display: 冰噬
+    kind: CHILL
+    min: 1
+    max: 2
+    unit: 秒减速
+    weight: 10
+
+  execute:
+    display: 处决
+    kind: EXECUTE
+    min: 0.06
+    max: 0.30
+    unit: 残血增伤
+    percent: true
+    weight: 8
+
   knockback:
     display: 震荡
     kind: ATTRIBUTE
@@ -1382,6 +1421,33 @@ guild:
   upgrade-cost: 2000
   upgrade-size: 2              # 每次扩容 +2 人
   upgrade-max: 3               # 最多扩 3 次
+  # ---- 商会基金与科技（v2.24 切片二）----
+  # 成员 /zhujian guild fund donate <数量> 向基金捐剑币（wallet 收口，只进不退，退会不退款）；
+  # 会长 /zhujian guild tech buy <techId> 花基金升级科技，价格逐级递增：
+  # 第 L→L+1 级 = cost-base + cost-per-level × L。
+  # 科技两条线各 max-level 级封顶（代码硬上限 5）：
+  #   forge-discount  锻造费 -2%/级（代码上限 10%）
+  #   forge-success   锻造成功率 +1%/级（代码上限 5%）
+  # 效果查询口：GuildService.forgeFeeMultiplier(uuid) / forgeSuccessBonus(uuid)
+  # （ForgeManager 落点一行调用，收口时接入）
+  tech:
+    cost-base: 2000            # 1 级价格
+    cost-per-level: 1500       # 每级递增
+    max-level: 5               # 科技等级上限（代码硬上限 5）
+    discount-per-level: 0.02   # forge-discount 每级锻造费折扣
+    success-per-level: 0.01    # forge-success 每级成功率加成
+
+# ------------------------------------------------------------
+# 声望兑换所（v2.24 切片二）：/zhujian redeem（别名 duihuan / huan）
+# 声望换剑币与保底护胚类符；扣减走 StatsStore.spendReputation（不足拒付），
+# 发钱走 Wallet 收口，不新开账本。
+# ------------------------------------------------------------
+redeem:
+  coin-rate: 10          # 1 声望 = 10 剑币
+  coin-max: 500          # 单次最多兑换的声望数
+  charms:                # 可兑换的符 → 各自声望价（id 用 Charm 标准小写 id）
+    talisman: 40         # 护胚符
+    steady: 60           # 稳胚符
 
 # ------------------------------------------------------------
 # 环境修正（w7-env）：天气 + 时辰，开局时固化进 EnvContext，整局使用同一份
@@ -1665,6 +1731,18 @@ spirit:
   tiers: [0, 50, 150, 400, 900]
   # 各档名称，与 tiers 一一对应
   tier-names: [初醒, 通灵, 凝魄, 化灵, 神器]
+  # ---- 剑灵灵击（v2.24 切片二）----
+  # 灵性 ≥ min-tier 档（spirit.tiers 第几档起，0 起）的锻造剑击杀时几率「灵体出鞘」：
+  # 尸体位置 radius 内的怪物受 damage 点无归因伤害（不触发暴击/吸血/耐久链，
+  # 口径同烬狱的「炸怪不炸玩家」），玩家不受伤。每玩家冷却 cooldown-ms。
+  # 代码上限：chance≤0.15、damage≤4.0、radius≤3.0、cooldown-ms≥3000、min-tier≥1
+  surge:
+    enabled: true
+    chance: 0.08           # 触发概率
+    damage: 2.0            # 每只怪受到的伤害
+    radius: 2.5            # 波及半径（格）
+    cooldown-ms: 6000      # 每玩家冷却（毫秒）
+    min-tier: 3            # 灵性档位下限（第几档起，0 起）
   # ---- 剑灵显形（拓展第三档）----
   # 灵性达标且已命名的剑在主手玩家肩侧显形为一枚 ItemDisplay 浮游体（绕身环绕）。
   display:
@@ -1690,6 +1768,11 @@ tomb:
   challenge-win-coins: 120        # 复刻成功奖励剑币
   challenge-win-reputation: 20    # 复刻成功奖励声望
   challenge-lose-reputation: 5    # 复刻失败扣除声望
+  # ---- 冢主温养（v2.24 切片二）----
+  # 他人挑战这条剑冢（残影）成功时，冢主埋着的剑 +N 灵性（不超过 spirit.max）。
+  # 崩刃剑（broken 留档 / 快照耐久 0）不温养；挑战者与冢主各收一条提示，
+  # 全服广播追加「冢主的剑得到了温养 +N」。
+  nurture-spirit: 5
   # ---- 残影挑战（v2.7）：把剑冢记录变成一场实战 ----
   # 召唤原剑主人的残影，按原剑的强化等级与品质缩放血量与攻击。
   # /zhujian tomb challenge <编号> 现在走这条路；旧的「配方复刻掷骰」保留为 recipeChallenge() 但不再挂命令。

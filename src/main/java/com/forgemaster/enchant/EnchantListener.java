@@ -205,10 +205,14 @@ public final class EnchantListener implements Listener {
     }
 
     /**
-     * 烬狱：击杀时尸身爆燃。
+     * 烬狱：击杀时尸身爆燃；饮命：击杀回复武器虚拟耐久（v2.24 切片一）。
      *
      * <p>只对「玩家击杀」生效（{@code getEntity().getKiller()}），
      * 不然怪物互殴也会炸，服务器会莫名其妙满天爆炸。</p>
+     *
+     * <p>饮命的防崩红线：**崩刃（耐久 ≤ 0）的剑不回**。虚拟耐久见底的剑已经
+     * 被判定为「属性失效，需要研磨」，如果还能靠杀怪喝血复活耐久，
+     * 「崩刃必须研磨」这条经济红线就被绕过去了——死剑不能自愈。</p>
      */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onKill(EntityDeathEvent event) {
@@ -220,7 +224,34 @@ public final class EnchantListener implements Listener {
         EnchantState.clearMark(event.getEntity());
 
         EnchantEffects.Caps caps = caps();
-        EnchantEffects.Mechanics m = mechanicsOf(killer.getInventory().getItemInMainHand());
+        ItemStack weapon = killer.getInventory().getItemInMainHand();
+        EnchantEffects.Mechanics m = mechanicsOf(weapon);
+
+        // ---- 饮命：击杀回虚拟耐久（烬狱同款位置）
+        double leech = fx().durLeechGain(m, caps);
+        if (leech > 0) {
+            int cur = plugin.items().durabilityOf(weapon);
+            if (cur > 0) {
+                // 只在耐久为正时回：崩刃的剑不喝血
+                int max = plugin.items().maxDurabilityOf(weapon);
+                if (max > 0) {
+                    // 小数点按四舍五入落账（0.5 点/级 → L1 起每杀回 1 点），总量仍被
+                    // caps.max-dur-leech 与 durability_max 双重封顶
+                    int gain = (int) Math.round(leech);
+                    if (gain > 0) {
+                        int next = Math.min(cur + gain, max);
+                        if (next > cur) {
+                            plugin.items().setDurability(weapon, next);
+                            killer.sendActionBar(Msg.mm(
+                                    "<#4ee36b>剑身饮命 <dark_gray>| <gray>耐久 +" + (next - cur)));
+                            killer.getWorld().playSound(killer.getLocation(),
+                                    org.bukkit.Sound.BLOCK_AMETHYST_BLOCK_CHIME, 0.8f, 1.4f);
+                        }
+                    }
+                }
+            }
+        }
+
         double pyre = fx().pyreDamage(m, caps);
         if (pyre <= 0) {
             return;
@@ -311,6 +342,11 @@ public final class EnchantListener implements Listener {
         if (!(event.getEntity() instanceof Player player)) {
             return;
         }
+        // ---- 淬锋：受击即清零（v2.24 切片一）。
+        // 放在 mechanics 判空之前：哪怕玩家此刻身上没有任何附魔（比如刚卸下淬锋剑）
+        // 也要清——机制口径是「受到任何伤害就归零」，晚一步都可能让层数跨事件漏清。
+        // ignoreCancelled = true：被盾牌完全挡下的伤害不算受伤，不清层。
+        EnchantState.clearStreak(player);
         EnchantEffects.Caps caps = caps();
         EnchantEffects.Mechanics m = playerMechanics(player);
         if (!m.any()) {

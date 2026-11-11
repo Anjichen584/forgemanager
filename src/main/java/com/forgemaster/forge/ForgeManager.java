@@ -116,7 +116,9 @@ public final class ForgeManager {
      */
     public static final List<String> WEAPON_AFFIX_POOL = List.of(
             "attack_damage", "attack_speed", "crit_chance", "crit_damage",
-            "lifesteal", "fire", "knockback", "reach");
+            "lifesteal", "fire", "knockback", "reach",
+            // v2.24 拓展：冰噬（命中减速）/ 处决（残血增伤），定义见 config.yml affixes 段
+            "chill", "execute");
 
     public ForgeManager(ForgingMasterPlugin plugin) {
         this.plugin = plugin;
@@ -334,6 +336,9 @@ public final class ForgeManager {
         // 耗材与锻造费：先查齐，再扣钱，最后扣料（扣料失败会退钱）
         MaterialGrade usedGrade = MaterialGrade.COMMON;
         long price = material.price();
+        // v2.24 商会科技 forge-discount：会员锻造费打折（GuildService 内已封顶 10%）
+        price = Math.max(0, Math.round(price
+                * plugin.guilds().forgeFeeMultiplier(player.getUniqueId())));
         if (settings.consumeCost() && !material.costs().isEmpty()) {
             for (Map.Entry<Material, Integer> cost : material.costs().entrySet()) {
                 int have = MaterialGrades.totalCount(player, cost.getKey());
@@ -2000,7 +2005,11 @@ public final class ForgeManager {
      * 爆了：材料计 riskLost、断连锻链、会话结束，返回 true 让调用方停止本阶段。
      */
     private boolean maybeExplode(ForgeSession s, Player p, String stageName) {
-        if (!s.risk() || random.nextDouble() >= RiskMode.explodeChance(plugin)) {
+        // v2.24 商会科技 forge-success：会员炸剑概率降低（骰阈值上抬，
+        // GuildService 内已封顶 +5%；非极限锻造不受影响）
+        double explodeAt = RiskMode.explodeChance(plugin)
+                - plugin.guilds().forgeSuccessBonus(s.uuid());
+        if (!s.risk() || random.nextDouble() >= Math.max(0.0, explodeAt)) {
             return false;
         }
         s.finished(true);

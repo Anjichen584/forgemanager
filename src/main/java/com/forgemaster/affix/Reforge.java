@@ -540,6 +540,8 @@ public final class Reforge {
         PersistentDataContainer pdc = meta.getPersistentDataContainer();
         double dCrit = 0, dCritDmg = 0, dSteal = 0, dReduce = 0;
         int dFire = 0;
+        int dChill = 0;
+        double dExecute = 0;
         // 旧值读不到（Lore 被别的插件洗过）就只加不减：宁可多给一点，也不误扣宝石的份额
         if (oldValue != null) {
             double v = oldValue;
@@ -558,6 +560,10 @@ public final class Reforge {
             case CRIT_DAMAGE -> dCritDmg += newValue;
             case LIFESTEAL -> dSteal += newValue;
             case FIRE -> dFire += (int) Math.round(newValue) * 20;
+            // v2.24 切片一收口：冰噬 / 处决的 PDC 聚合增量。原来落 default 空分支，
+            // 重铸抽出这两条会「Lore 有词条、PDC 没账」，实战完全无效
+            case CHILL -> dChill += (int) Math.round(newValue);
+            case EXECUTE -> dExecute += newValue;
             case DAMAGE_REDUCTION -> dReduce += newValue;
             default -> {
             }
@@ -567,6 +573,8 @@ public final class Reforge {
         bumpDouble(pdc, Keys.LIFESTEAL, dSteal);
         bumpDouble(pdc, Keys.DAMAGE_REDUCE, dReduce);
         bumpInt(pdc, Keys.FIRE_TICKS, dFire);
+        bumpInt(pdc, Keys.CHILL_TICKS, dChill * 20);
+        bumpDouble(pdc, Keys.EXECUTE, dExecute);
     }
 
     private static void bumpDouble(PersistentDataContainer pdc,
@@ -605,6 +613,9 @@ public final class Reforge {
             case LIFESTEAL -> bumpDouble(pdc, Keys.LIFESTEAL, value);
             case DAMAGE_REDUCTION -> bumpDouble(pdc, Keys.DAMAGE_REDUCE, value);
             case FIRE -> bumpInt(pdc, Keys.FIRE_TICKS, (int) Math.round(value) * 20);
+            // v2.24 切片一收口：冰噬 / 处决落账（与 ItemFactory 同口径：秒×20）
+            case CHILL -> bumpInt(pdc, Keys.CHILL_TICKS, (int) Math.round(value) * 20);
+            case EXECUTE -> bumpDouble(pdc, Keys.EXECUTE, value);
             default -> {
             }
         }
@@ -627,6 +638,9 @@ public final class Reforge {
             case LIFESTEAL -> bumpDouble(pdc, Keys.LIFESTEAL, -v);
             case DAMAGE_REDUCTION -> bumpDouble(pdc, Keys.DAMAGE_REDUCE, -v);
             case FIRE -> bumpInt(pdc, Keys.FIRE_TICKS, -(int) Math.round(v) * 20);
+            // v2.24 切片一收口：冰噬 / 处决摘账取负
+            case CHILL -> bumpInt(pdc, Keys.CHILL_TICKS, -(int) Math.round(v) * 20);
+            case EXECUTE -> bumpDouble(pdc, Keys.EXECUTE, -v);
             default -> {
             }
         }

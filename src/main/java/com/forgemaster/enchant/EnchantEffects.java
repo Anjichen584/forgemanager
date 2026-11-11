@@ -59,7 +59,9 @@ public final class EnchantEffects {
             // 拾遗
             double maxSalvageChance,
             // 望气
-            double maxSenseRadius, long senseIntervalMs) {
+            double maxSenseRadius, long senseIntervalMs,
+            // v2.24 切片一：淬锋 / 饮命
+            double maxStreakBonus, int maxStreakStacks, double maxDurLeech) {
 
         public static Caps defaults() {
             return new Caps(
@@ -74,7 +76,9 @@ public final class EnchantEffects {
                     0.15, 3000L,      // 回响：最多 +15%，窗口 3 秒
                     2.5, 2000L, 5000L, 5, // 守夜：每 2 秒最多回 2.5 点，脱战 5 秒起算
                     0.30,             // 拾遗：最多 30% 几率
-                    20.0, 3000L);     // 望气：最多 20 格，最快每 3 秒
+                    20.0, 3000L,      // 望气：最多 20 格，最快每 3 秒
+                    0.20, 5,          // 淬锋：满层最多 +20%，最多 5 层
+                    3.0);             // 饮命：击杀最多回 3 点虚拟耐久
         }
 
         public static Caps fromConfig(ConfigurationSection cfg) {
@@ -106,7 +110,11 @@ public final class EnchantEffects {
                     Math.max(1, cfg.getInt("enchant.caps.max-regen-level", d.maxRegenLevel())),
                     cfg.getDouble("enchant.caps.max-salvage-chance", d.maxSalvageChance()),
                     cfg.getDouble("enchant.caps.max-sense-radius", d.maxSenseRadius()),
-                    cfg.getLong("enchant.caps.sense-interval-ms", d.senseIntervalMs()));
+                    cfg.getLong("enchant.caps.sense-interval-ms", d.senseIntervalMs()),
+                    // v2.24 切片一
+                    cfg.getDouble("enchant.caps.max-streak-bonus", d.maxStreakBonus()),
+                    Math.max(1, cfg.getInt("enchant.caps.max-streak-stacks", d.maxStreakStacks())),
+                    cfg.getDouble("enchant.caps.max-dur-leech", d.maxDurLeech()));
         }
     }
 
@@ -179,16 +187,19 @@ public final class EnchantEffects {
     public record Mechanics(double splashRatio, double pyreDamage, double loneWolf,
                             double charge, double hamperSeconds, double markBonus,
                             double delayRatio, double cheatHeal, double retaliate,
-                            double regenPerTick, double salvageChance, double senseRadius) {
+                            double regenPerTick, double salvageChance, double senseRadius,
+                            // v2.24 切片一：淬锋（每层增伤比例）/ 饮命（击杀回耐久点数）
+                            double streakPerLevel, double durLeech) {
 
         public static Mechanics none() {
-            return new Mechanics(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+            return new Mechanics(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         }
 
         public boolean any() {
             return splashRatio > 0 || pyreDamage > 0 || loneWolf > 0 || charge > 0
                     || hamperSeconds > 0 || markBonus > 0 || delayRatio > 0 || cheatHeal > 0
-                    || retaliate > 0 || regenPerTick > 0 || salvageChance > 0 || senseRadius > 0;
+                    || retaliate > 0 || regenPerTick > 0 || salvageChance > 0 || senseRadius > 0
+                    || streakPerLevel > 0 || durLeech > 0;
         }
     }
 
@@ -216,6 +227,10 @@ public final class EnchantEffects {
                 case REGEN -> m = withRegen(m, Math.min(v, caps.maxRegenPerTick()));
                 case SALVAGE -> m = withSalvage(m, Math.min(v, caps.maxSalvageChance()));
                 case SENSE -> m = withSense(m, Math.min(v, caps.maxSenseRadius()));
+                // 淬锋：perLevel 是「每层增伤」，存的是单层比例；总层封顶在结算处按
+                // maxStreakStacks × 单层夹（见 CombatListener / streakBonusOf），这里只夹单层
+                case STREAK -> m = withStreak(m, Math.min(v, caps.maxStreakBonus()));
+                case DUR_LEECH -> m = withDurLeech(m, Math.min(v, caps.maxDurLeech()));
             }
         }
         return m;
@@ -233,6 +248,7 @@ public final class EnchantEffects {
         }
         double splash = 0, pyre = 0, lone = 0, charge = 0, hamper = 0, mark = 0;
         double delay = 0, cheat = 0, retaliate = 0, regen = 0, salvage = 0, sense = 0;
+        double streak = 0, durLeech = 0;
         for (Mechanics m : parts) {
             // 同一种机制取「最大值」而不是相加：两件护甲都带卸力，摊 50% 与摊 50% 没有区别，
             // 相加只会变成无敌。溅射/烬狱是输出侧，同理取大不叠加。
@@ -248,6 +264,8 @@ public final class EnchantEffects {
             regen = Math.max(regen, m.regenPerTick());
             salvage = Math.max(salvage, m.salvageChance());
             sense = Math.max(sense, m.senseRadius());
+            streak = Math.max(streak, m.streakPerLevel());
+            durLeech = Math.max(durLeech, m.durLeech());
         }
         return new Mechanics(
                 Math.min(splash, caps.maxSplashRatio()),
@@ -261,7 +279,9 @@ public final class EnchantEffects {
                 Math.min(retaliate, caps.maxRetaliate()),
                 Math.min(regen, caps.maxRegenPerTick()),
                 Math.min(salvage, caps.maxSalvageChance()),
-                Math.min(sense, caps.maxSenseRadius()));
+                Math.min(sense, caps.maxSenseRadius()),
+                Math.min(streak, caps.maxStreakBonus()),
+                Math.min(durLeech, caps.maxDurLeech()));
     }
 
     // ---- 记录构造（record 没有 wither，逐项写一遍最直观，也避免 Builder 那套样板）
@@ -269,73 +289,85 @@ public final class EnchantEffects {
     private static Mechanics withSplash(Mechanics m, double v) {
         return new Mechanics(v, m.pyreDamage(), m.loneWolf(), m.charge(), m.hamperSeconds(),
                 m.markBonus(), m.delayRatio(), m.cheatHeal(), m.retaliate(), m.regenPerTick(),
-                m.salvageChance(), m.senseRadius());
+                m.salvageChance(), m.senseRadius(), m.streakPerLevel(), m.durLeech());
     }
 
     private static Mechanics withPyre(Mechanics m, double v) {
         return new Mechanics(m.splashRatio(), v, m.loneWolf(), m.charge(), m.hamperSeconds(),
                 m.markBonus(), m.delayRatio(), m.cheatHeal(), m.retaliate(), m.regenPerTick(),
-                m.salvageChance(), m.senseRadius());
+                m.salvageChance(), m.senseRadius(), m.streakPerLevel(), m.durLeech());
     }
 
     private static Mechanics withLone(Mechanics m, double v) {
         return new Mechanics(m.splashRatio(), m.pyreDamage(), v, m.charge(), m.hamperSeconds(),
                 m.markBonus(), m.delayRatio(), m.cheatHeal(), m.retaliate(), m.regenPerTick(),
-                m.salvageChance(), m.senseRadius());
+                m.salvageChance(), m.senseRadius(), m.streakPerLevel(), m.durLeech());
     }
 
     private static Mechanics withCharge(Mechanics m, double v) {
         return new Mechanics(m.splashRatio(), m.pyreDamage(), m.loneWolf(), v, m.hamperSeconds(),
                 m.markBonus(), m.delayRatio(), m.cheatHeal(), m.retaliate(), m.regenPerTick(),
-                m.salvageChance(), m.senseRadius());
+                m.salvageChance(), m.senseRadius(), m.streakPerLevel(), m.durLeech());
     }
 
     private static Mechanics withHamper(Mechanics m, double v) {
         return new Mechanics(m.splashRatio(), m.pyreDamage(), m.loneWolf(), m.charge(), v,
                 m.markBonus(), m.delayRatio(), m.cheatHeal(), m.retaliate(), m.regenPerTick(),
-                m.salvageChance(), m.senseRadius());
+                m.salvageChance(), m.senseRadius(), m.streakPerLevel(), m.durLeech());
     }
 
     private static Mechanics withMark(Mechanics m, double v) {
         return new Mechanics(m.splashRatio(), m.pyreDamage(), m.loneWolf(), m.charge(),
                 m.hamperSeconds(), v, m.delayRatio(), m.cheatHeal(), m.retaliate(),
-                m.regenPerTick(), m.salvageChance(), m.senseRadius());
+                m.regenPerTick(), m.salvageChance(), m.senseRadius(), m.streakPerLevel(), m.durLeech());
     }
 
     private static Mechanics withDelay(Mechanics m, double v) {
         return new Mechanics(m.splashRatio(), m.pyreDamage(), m.loneWolf(), m.charge(),
                 m.hamperSeconds(), m.markBonus(), v, m.cheatHeal(), m.retaliate(),
-                m.regenPerTick(), m.salvageChance(), m.senseRadius());
+                m.regenPerTick(), m.salvageChance(), m.senseRadius(), m.streakPerLevel(), m.durLeech());
     }
 
     private static Mechanics withCheat(Mechanics m, double v) {
         return new Mechanics(m.splashRatio(), m.pyreDamage(), m.loneWolf(), m.charge(),
                 m.hamperSeconds(), m.markBonus(), m.delayRatio(), v, m.retaliate(),
-                m.regenPerTick(), m.salvageChance(), m.senseRadius());
+                m.regenPerTick(), m.salvageChance(), m.senseRadius(), m.streakPerLevel(), m.durLeech());
     }
 
     private static Mechanics withRetaliate(Mechanics m, double v) {
         return new Mechanics(m.splashRatio(), m.pyreDamage(), m.loneWolf(), m.charge(),
                 m.hamperSeconds(), m.markBonus(), m.delayRatio(), m.cheatHeal(), v,
-                m.regenPerTick(), m.salvageChance(), m.senseRadius());
+                m.regenPerTick(), m.salvageChance(), m.senseRadius(), m.streakPerLevel(), m.durLeech());
     }
 
     private static Mechanics withRegen(Mechanics m, double v) {
         return new Mechanics(m.splashRatio(), m.pyreDamage(), m.loneWolf(), m.charge(),
                 m.hamperSeconds(), m.markBonus(), m.delayRatio(), m.cheatHeal(), m.retaliate(),
-                v, m.salvageChance(), m.senseRadius());
+                v, m.salvageChance(), m.senseRadius(), m.streakPerLevel(), m.durLeech());
     }
 
     private static Mechanics withSalvage(Mechanics m, double v) {
         return new Mechanics(m.splashRatio(), m.pyreDamage(), m.loneWolf(), m.charge(),
                 m.hamperSeconds(), m.markBonus(), m.delayRatio(), m.cheatHeal(), m.retaliate(),
-                m.regenPerTick(), v, m.senseRadius());
+                m.regenPerTick(), v, m.senseRadius(), m.streakPerLevel(), m.durLeech());
     }
 
     private static Mechanics withSense(Mechanics m, double v) {
         return new Mechanics(m.splashRatio(), m.pyreDamage(), m.loneWolf(), m.charge(),
                 m.hamperSeconds(), m.markBonus(), m.delayRatio(), m.cheatHeal(), m.retaliate(),
-                m.regenPerTick(), m.salvageChance(), v);
+                m.regenPerTick(), m.salvageChance(), v, m.streakPerLevel(), m.durLeech());
+    }
+
+    private static Mechanics withStreak(Mechanics m, double v) {
+        return new Mechanics(m.splashRatio(), m.pyreDamage(), m.loneWolf(), m.charge(),
+                m.hamperSeconds(), m.markBonus(), m.delayRatio(), m.cheatHeal(), m.retaliate(),
+                m.regenPerTick(), m.salvageChance(), m.senseRadius(), v, m.durLeech());
+    }
+
+    private static Mechanics withDurLeech(Mechanics m, double v) {
+        return new Mechanics(m.splashRatio(), m.pyreDamage(), m.loneWolf(), m.charge(),
+                m.hamperSeconds(), m.markBonus(), m.delayRatio(), m.cheatHeal(), m.retaliate(),
+                m.regenPerTick(), m.salvageChance(), m.senseRadius(), m.streakPerLevel(), v);
     }
 
     // ------------------------------------------------------------ 伤害加成（条件型）
@@ -382,6 +414,42 @@ public final class EnchantEffects {
             return 0;
         }
         return Math.min(dealt * m.splashRatio(), dealt * caps.maxSplashRatio());
+    }
+
+    /**
+     * 淬锋：当前层数下这一击的增伤比例（v2.24 切片一，纯函数）。
+     *
+     * <p>层封顶与总封顶都在这一处夹：层数超过 {@code maxStreakStacks} 按满层算，
+     * 总加成超过 {@code maxStreakBonus} 截断。调用方传的 stacks 永远是
+     * {@link EnchantState} 记的真实层数，配置改成离谱值也只会打到夹子上。</p>
+     *
+     * @param stacks 当前锋锐层数（受击会清零，见 {@code EnchantState.clearStreak}）
+     */
+    public double streakBonus(Mechanics m, Caps caps, int stacks) {
+        if (m == null || caps == null || m.streakPerLevel() <= 0) {
+            return 0;
+        }
+        int eff = Math.min(Math.max(0, stacks), caps.maxStreakStacks());
+        return Math.min(eff * m.streakPerLevel(), Math.max(0, caps.maxStreakBonus()));
+    }
+
+    /**
+     * 淬锋的层数推进（v2.24 切片一，纯函数）。
+     *
+     * <p>状态层（{@code EnchantState.noteHitStreak}）就用这一份封顶逻辑，
+     * 自检不需要伪造 Player 也能钉住「层数封顶」这条红线 —— 封顶写两份
+     * 就是「线上按 5 层算、自检按 8 层算」那种分歧的温床。</p>
+     */
+    public static int nextStreakStack(int current, int maxStacks) {
+        return Math.min(Math.max(0, current) + 1, Math.max(1, maxStacks));
+    }
+
+    /** 饮命：击杀一次能回多少虚拟耐久点（v2.24 切片一，纯函数，已夹上限） */
+    public double durLeechGain(Mechanics m, Caps caps) {
+        if (m == null || caps == null) {
+            return 0;
+        }
+        return Math.min(Math.max(0, m.durLeech()), Math.max(0, caps.maxDurLeech()));
     }
 
     /** 烬狱：击杀时的范围伤害 */

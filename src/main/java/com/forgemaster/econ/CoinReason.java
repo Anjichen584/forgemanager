@@ -34,6 +34,8 @@ public enum CoinReason {
     MENTOR("mentor", "师徒分成", Flow.PRODUCE),
     /** 龙税周目：交满贡品的赏金（既不是退款也不是成就，单列才看得出周目经济） */
     CONTRACT("contract", "龙税贡品", Flow.PRODUCE),
+    /** v2.24 声望兑换所：拿声望换剑币（单列才看得出「声望变现」的量） */
+    REDEEM("redeem", "声望兑换", Flow.PRODUCE),
     /** 退款 / 回滚（拍卖流拍、扣款失败回退、订单断线续做）——不算真实产出，报表里单列 */
     REFUND("refund", "退款回滚", Flow.PRODUCE),
     OTHER_IN("other-in", "其它产出", Flow.PRODUCE),

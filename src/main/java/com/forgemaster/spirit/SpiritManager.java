@@ -8,15 +8,19 @@ import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.title.Title;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.attribute.AttributeModifier;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.server.PluginDisableEvent;
 import org.bukkit.inventory.EquipmentSlotGroup;
@@ -77,6 +81,8 @@ public final class SpiritManager implements Listener {
     private final Random random = new Random();
     /** 每玩家一条待落账灵性；命中热路径只动这里，冲刷时才碰物品 */
     private final Map<UUID, PendingSpirit> pending = new HashMap<>();
+    /** 灵击冷却：玩家 uuid → 解禁时刻毫秒。仅内存，重启即丢（冷却不值得落盘） */
+    private final Map<UUID, Long> surgeCooldowns = new HashMap<>();
 
     public SpiritManager(ForgingMasterPlugin plugin) {
         this.plugin = plugin;
@@ -91,7 +97,8 @@ public final class SpiritManager implements Listener {
         return plugin.settings().flag("spirit.enabled", true);
     }
 
-    private int maxValue() {
+    /** 灵性上限（v2.24 温养要给剑冢快照补灵性，改成公开读口） */
+    public int maxValue() {
         return Math.max(1, plugin.settings().intOf("spirit.max", 1000));
     }
 
@@ -125,6 +132,77 @@ public final class SpiritManager implements Listener {
     public int slotsOf(int tier) {
         int cap = Math.max(0, plugin.settings().intOf("spirit.max-extra-affixes", 2));
         return Math.min(cap, Math.max(0, tier - 1));
+    }
+
+    // ------------------------------------------------------------ 灵击（v2.24 切片二）
+
+    /**
+     * 剑灵灵击：灵性 ≥ min-tier 档的锻造剑击杀时几率「灵体出鞘」，对尸体位置
+     * radius 内的怪物结算一次 damage 点无归因伤害（玩家不受伤）。
+     *
+     * <p>参数上限在代码里写死一份（照项目「config 驱动 + 代码夹取」惯例）：
+     * chance ≤ 0.15、damage ≤ 4.0、radius ≤ 3.0、cooldown-ms ≥ 3000、min-tier ≥ 1。</p>
+     */
+
+    /** 触发概率夹取：[0, 0.15]，防「配置写 1.0 = 每杀必炸」 */
+    public static double clampSurgeChance(double v) {
+        return Math.max(0, Math.min(0.15, v));
+    }
+
+    /** 单怪伤害夹取：[0, 4.0]，灵击是锦上添花的特效不是清场技能 */
+    public static double clampSurgeDamage(double v) {
+        return Math.max(0, Math.min(4.0, v));
+    }
+
+    /** 波及半径夹取：[0, 3.0]，照烬狱 pyreRadius 的尺度 */
+    public static double clampSurgeRadius(double v) {
+        return Math.max(0, Math.min(3.0, v));
+    }
+
+    /** 冷却下限 3000ms：灵击带伤害结算，零冷却等于白送一个群体技能 */
+    public static long clampSurgeCooldownMs(long v) {
+        return Math.max(3000, v);
+    }
+
+    /** 档位下限 ≥1：初醒档的剑不该带灵击，这是高阶剑灵的排面 */
+    public static int clampSurgeMinTier(int v) {
+        return Math.max(1, v);
+    }
+
+    /** 灵击总开关（跟着 spirit.enabled 一起关） */
+    public boolean surgeEnabled() {
+        return enabled() && plugin.settings().flag("spirit.surge.enabled", true);
+    }
+
+    /** 触发概率（已夹取） */
+    public double surgeChance() {
+        return clampSurgeChance(plugin.settings().num("spirit.surge.chance", 0.08));
+    }
+
+    /** 单怪伤害（已夹取） */
+    public double surgeDamage() {
+        return clampSurgeDamage(plugin.settings().num("spirit.surge.damage", 2.0));
+    }
+
+    /** 波及半径（已夹取） */
+    public double surgeRadius() {
+        return clampSurgeRadius(plugin.settings().num("spirit.surge.radius", 2.5));
+    }
+
+    /** 每玩家冷却毫秒（已夹取） */
+    public long surgeCooldownMs() {
+        return clampSurgeCooldownMs(plugin.settings().longOf("spirit.surge.cooldown-ms", 6000));
+    }
+
+    /** 灵性档位下限（已夹取，spirit.tiers 的档序号，0 起） */
+    public int surgeMinTier() {
+        return clampSurgeMinTier(plugin.settings().intOf("spirit.surge.min-tier", 3));
+    }
+
+    /** 距离该玩家下一次灵击还剩多少毫秒，0 = 现在就能触发（自检可喂固定时钟） */
+    public long surgeCooldownRemaining(UUID playerId, long nowMillis) {
+        Long until = surgeCooldowns.get(playerId);
+        return until == null ? 0 : Math.max(0, until - nowMillis);
     }
 
     // ------------------------------------------------------------ 读写
@@ -434,6 +512,63 @@ public final class SpiritManager implements Listener {
         if (pending.containsKey(player.getUniqueId())) {
             // 退服事件里背包还能读写，正是冲刷的最后窗口
             flushPending(player, player.getInventory().getItemInMainHand());
+        }
+        surgeCooldowns.remove(player.getUniqueId()); // 冷却只对在线有意义，退服即清
+    }
+
+    /**
+     * 灵击：剑灵出鞘震慑。口径照抄烬狱（EnchantListener.onKill 的 v2.23.7 修法）：
+     * MONITOR + ignoreCancelled，玩家击杀才触发；伤害用<b>无归因</b>
+     * {@code victim.damage(dmg)}——带归因的伤害会再发一个 EntityDamageByEntityEvent，
+     * CombatListener 会把它当普通挥击结算（掷暴击 / 吸血 / 扣耐久），链式放大。
+     *
+     * <p>只炸怪不炸玩家（PVP 不乱杀）；每玩家冷却存内存，退服即清。</p>
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onSurgeKill(EntityDeathEvent event) {
+        Player killer = event.getEntity().getKiller();
+        if (killer == null || !surgeEnabled()) {
+            return;
+        }
+        // 主手灵性档位：非锻造品 spiritOf 返回 0，天然过不了 minTier ≥ 1 的门槛
+        int tier = tierOf(spiritOf(killer.getInventory().getItemInMainHand()));
+        if (tier < surgeMinTier()) {
+            return;
+        }
+        double chance = surgeChance();
+        if (chance <= 0 || random.nextDouble() >= chance) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (surgeCooldownRemaining(killer.getUniqueId(), now) > 0) {
+            return;
+        }
+        double dmg = surgeDamage();
+        double radius = surgeRadius();
+        if (dmg <= 0 || radius <= 0) {
+            return;
+        }
+        surgeCooldowns.put(killer.getUniqueId(), now + surgeCooldownMs());
+
+        Location at = event.getEntity().getLocation();
+        // 粒子走安全包装（与 onHit 同一套，避免不带数据的重载抛 IllegalArgumentException）
+        com.forgemaster.util.Particles.spawn(Particle.SOUL_FIRE_FLAME,
+                at.clone().add(0, 0.8, 0), 24, radius * 0.4, 0.5, radius * 0.4, 0.03);
+        at.getWorld().playSound(at, Sound.PARTICLE_SOUL_ESCAPE, 1.0f, 0.7f);
+        int hit = 0;
+        for (Entity near : at.getWorld().getNearbyEntities(at, radius, radius, radius)) {
+            if (near.equals(killer) || near.equals(event.getEntity())) {
+                continue;
+            }
+            if (!(near instanceof LivingEntity victim) || near instanceof Player) {
+                continue; // 玩家击杀怪物时炸怪，不炸玩家（照烬狱：PVP 不乱杀）
+            }
+            // 无归因结算：不触发暴击 / 吸血 / 耐久链（v2.23.7 的口径）
+            victim.damage(dmg);
+            hit++;
+        }
+        if (hit > 0) {
+            Msg.action(killer, "<#b06bff>剑灵出鞘</#b06bff> <gray>· 震慑了 " + hit + " 只怪物。</gray>");
         }
     }
 

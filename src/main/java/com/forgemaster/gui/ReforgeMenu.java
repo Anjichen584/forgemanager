@@ -552,6 +552,10 @@ public final class ReforgeMenu {
             case CRIT_DAMAGE -> Material.DIAMOND_SWORD;
             case LIFESTEAL -> Material.RED_DYE;
             case FIRE -> Material.BLAZE_POWDER;
+            // v2.24 切片一：冰噬 / 处决的图标（iconOf 是对词条 Kind 的穷举 switch 表达式，
+            // 新增 Kind 必须在这里补分支，否则编译不过）
+            case CHILL -> Material.PACKED_ICE;
+            case EXECUTE -> Material.WITHER_SKELETON_SKULL;
             case DAMAGE_REDUCTION -> Material.SHIELD;
             case ATTRIBUTE -> attributeIcon(affix.attribute());
         };

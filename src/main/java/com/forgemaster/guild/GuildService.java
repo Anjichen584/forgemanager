@@ -63,6 +63,13 @@ public final class GuildService {
         public final Map<String, Double> weekPoints = new LinkedHashMap<>();
         /** 已扩容次数（成员上限 = max-members + upgrades × upgrade-size） */
         public int upgrades;
+        /**
+         * 基金账本（v2.24 切片二）：成员捐款只进不退（退会不退款），唯一出口是
+         * 会长花基金买科技。与金库 treasury 分开记：金库解散平分退还，基金不退。
+         */
+        public long fund;
+        /** 科技等级：techId（小写）→ 已购等级，只认 {@link #isTech(String)} 里的 id */
+        public final Map<String, Integer> techs = new LinkedHashMap<>();
 
         Guild(String id) {
             this.id = id;
@@ -223,6 +230,107 @@ public final class GuildService {
                 + Msg.fmt(bonusRateOf(g) * 100, 0) + "%</#ffd166>";
     }
 
+    // ------------------------------------------------------------ 基金与科技（v2.24 切片二）
+
+    /** 科技线一：锻造费折扣（每级 -2%，代码上限 10%） */
+    public static final String TECH_FORGE_DISCOUNT = "forge-discount";
+    /** 科技线二：锻造成功率（每级 +1%，代码上限 5%） */
+    public static final String TECH_FORGE_SUCCESS = "forge-success";
+    /** 科技等级的代码硬上限：两条线各 5 级封顶，配置再大也夹回来 */
+    private static final int TECH_LEVEL_HARD_CAP = 5;
+
+    /** 是不是合法的科技 id（大小写不敏感） */
+    public static boolean isTech(String id) {
+        String n = id == null ? "" : id.trim().toLowerCase(Locale.ROOT);
+        return TECH_FORGE_DISCOUNT.equals(n) || TECH_FORGE_SUCCESS.equals(n);
+    }
+
+    /** 科技价（纯数值层）：第 level → level+1 级 = base + per × level，负参夹 0 */
+    public static long techCost(long base, long per, int level) {
+        return Math.max(0, base) + Math.max(0, per) * Math.max(0, level);
+    }
+
+    /** 等级上限夹取：[1, 5]，科技倍区已经在代码里写死一份，不许配置越过 */
+    public static int clampTechMaxLevel(int cfg) {
+        return Math.max(1, Math.min(TECH_LEVEL_HARD_CAP, cfg));
+    }
+
+    /**
+     * 捐款后的基金（纯数值层）：负数捐款一律不动账。
+     * 守恒由调用方保证——钱包 take 成功才把返回值写进 g.fund，两步不同时就不落账。
+     */
+    public static long fundAfterDonate(long fund, long amount) {
+        return fund + Math.max(0, amount);
+    }
+
+    /**
+     * 买科技后的基金（纯数值层）：基金不足返回 -1 且调用方不得动账，
+     * 这是「买科技扣基金」守恒的唯一闸门。
+     */
+    public static long fundAfterTech(long fund, long cost) {
+        if (cost <= 0) {
+            return fund;
+        }
+        return fund >= cost ? fund - cost : -1;
+    }
+
+    /**
+     * 锻造费乘区（纯数值层）：1 - min(0.10, level × perLevel)。
+     * 上限 10% 写死在这里，ForgeManager 的落点只管乘这一行。
+     */
+    public static double feeMultiplierOf(int level, double perLevel) {
+        double disc = Math.min(0.10, Math.max(0, level) * Math.max(0, perLevel));
+        return Math.max(0, 1.0 - disc);
+    }
+
+    /** 锻造成功率加成（纯数值层）：min(0.05, level × perLevel)，上限 5% 写死 */
+    public static double successBonusOf(int level, double perLevel) {
+        return Math.min(0.05, Math.max(0, level) * Math.max(0, perLevel));
+    }
+
+    /** 某玩家所属行会的某条科技等级（无会 / 未知 id = 0） */
+    public int techLevel(UUID playerId, String techId) {
+        Guild g = guildOf(playerId);
+        if (g == null || techId == null) {
+            return 0;
+        }
+        return g.techs.getOrDefault(techId.trim().toLowerCase(Locale.ROOT), 0);
+    }
+
+    /**
+     * 锻造费乘区查询口（ForgeManager 落点一行调用）：
+     * {@code fee = Math.round(fee * plugin.guilds().forgeFeeMultiplier(uuid))}。
+     * 返回 1 - discount（1.0 = 无折扣，满级 0.90 = 锻造费九折）。
+     */
+    public double forgeFeeMultiplier(UUID player) {
+        return feeMultiplierOf(techLevel(player, TECH_FORGE_DISCOUNT),
+                Math.max(0, plugin.settings().num("guild.tech.discount-per-level", 0.02)));
+    }
+
+    /**
+     * 锻造成功率加成查询口（ForgeManager 落点一行调用）：
+     * 返回 0 ~ 0.05 的小数（0.05 = 满级 +5%）。
+     */
+    public double forgeSuccessBonus(UUID player) {
+        return successBonusOf(techLevel(player, TECH_FORGE_SUCCESS),
+                Math.max(0, plugin.settings().num("guild.tech.success-per-level", 0.01)));
+    }
+
+    /** 科技 1 级基础价 */
+    private long techCostBase() {
+        return Math.max(0, plugin.settings().longOf("guild.tech.cost-base", 2000));
+    }
+
+    /** 科技逐级递增价 */
+    private long techCostPerLevel() {
+        return Math.max(0, plugin.settings().longOf("guild.tech.cost-per-level", 1500));
+    }
+
+    /** 科技等级上限（已夹到代码硬上限 5） */
+    private int techMaxLevel() {
+        return clampTechMaxLevel(plugin.settings().intOf("guild.tech.max-level", 5));
+    }
+
     private com.forgemaster.stats.StatsStore stats() {
         return plugin.stats();
     }
@@ -250,6 +358,17 @@ public final class GuildService {
                         g.members.addAll(sec.getStringList("members"));
                         g.treasury = sec.getLong("treasury", 0);
                         g.upgrades = Math.max(0, sec.getInt("upgrades", 0));
+                        // v2.24：基金账本与科技等级读回（负数 / 未知 id 直接丢弃）
+                        g.fund = Math.max(0, sec.getLong("fund", 0));
+                        ConfigurationSection tw = sec.getConfigurationSection("techs");
+                        if (tw != null) {
+                            for (String techId : tw.getKeys(false)) {
+                                if (isTech(techId)) {
+                                    g.techs.put(techId.toLowerCase(Locale.ROOT),
+                                            Math.max(0, tw.getInt(techId, 0)));
+                                }
+                            }
+                        }
                         ConfigurationSection wp = sec.getConfigurationSection("week-points");
                         if (wp != null) {
                             for (String uuid : wp.getKeys(false)) {
@@ -386,6 +505,9 @@ public final class GuildService {
             case "upgrade", "kuorong", "shengji" -> upgrade(p);
             case "warehouse", "cangku", "ck" -> GuildWarehouseGui.open(plugin, p);
             case "quest", "renwu" -> quests.command(p, args);
+            // v2.24 切片二：商会基金（捐款 / 查询）与商会科技（会长买级 / 查询）
+            case "fund", "jijin" -> fundCommand(p, args);
+            case "tech", "keji" -> techCommand(p, args);
             default -> status(p);
         }
     }
@@ -724,6 +846,152 @@ public final class GuildService {
                 + g.upgrades + "/" + upgradeMax() + " 次），金库余 " + g.treasury + "。</green>");
     }
 
+    // ------------------------------------------------------------ 基金 / 科技（v2.24 切片二）
+
+    /** /zhujian guild fund [donate <数量>|info] */
+    private void fundCommand(Player p, String[] args) {
+        Guild g = guildOf(p.getUniqueId());
+        if (g == null) {
+            Msg.prefix(p, "<gray>你还没有行会。</gray>");
+            return;
+        }
+        String op = args.length >= 3 ? args[2].toLowerCase(Locale.ROOT) : "info";
+        switch (op) {
+            case "donate", "juan" -> {
+                if (args.length < 4) {
+                    Msg.prefix(p, "<gray>用法：<white>/zhujian guild fund donate <数量></white></gray>");
+                } else {
+                    fundDonate(p, g, args[3]);
+                }
+            }
+            case "info", "xinxi", "chakan" -> fundInfo(p, g);
+            default -> Msg.prefix(p, "<gray>用法：<white>/zhujian guild fund [donate <数量>|info]</white></gray>");
+        }
+    }
+
+    /** 成员向基金捐剑币。守恒：钱包 take 成功才写 g.fund；捐款只进不退（退会不退款） */
+    private void fundDonate(Player p, Guild g, String amountRaw) {
+        long amount;
+        try {
+            amount = Long.parseLong(amountRaw.replace(",", ""));
+        } catch (NumberFormatException ex) {
+            Msg.prefix(p, "<red>数量要写数字：" + amountRaw);
+            return;
+        }
+        if (amount <= 0) {
+            Msg.prefix(p, "<red>数量要大于 0。</red>");
+            return;
+        }
+        // v2.23.7：扣款走 Wallet 收口（coin-sinks=server 时与 Vault 同账本），禁止直连 stats().takeCoins
+        if (!plugin.wallet().take(p, amount, CoinReason.GUILD)) {
+            Msg.prefix(p, "<red>你的剑币不够 " + amount + "。</red>");
+            return;
+        }
+        g.fund = fundAfterDonate(g.fund, amount);
+        save();
+        p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.8f, 1.6f);
+        Msg.prefix(p, "<green>已向基金捐入 <white>" + amount + "</white> 剑币，基金现有 "
+                + CoinRules.fmt(g.fund) + "。</green>");
+        notifyOnline(g.owner, "<gray>成员 <white>" + p.getName() + "</white> 向基金捐入 "
+                + CoinRules.fmt(amount) + "（现有 " + CoinRules.fmt(g.fund) + "）。</gray>");
+    }
+
+    /** 基金余额与两条科技线当前等级 */
+    private void fundInfo(Player p, Guild g) {
+        Msg.send(p, "<dark_gray>──── <#ffd166>" + g.name + " · 商会基金</#ffd166> <dark_gray>────");
+        Msg.send(p, "<gray>基金: <#ffd166>" + CoinRules.fmt(g.fund) + "</#ffd166> "
+                + "<dark_gray>（捐款只进不退，唯一出口是会长买科技）</dark_gray>");
+        techLines(p, g);
+        Msg.send(p, "<dark_gray>/zhujian guild fund donate <数量> 捐款 · /zhujian guild tech buy <techId> 买科技</dark_gray>");
+    }
+
+    /** /zhujian guild tech [buy <techId>|info] */
+    private void techCommand(Player p, String[] args) {
+        Guild g = guildOf(p.getUniqueId());
+        if (g == null) {
+            Msg.prefix(p, "<gray>你还没有行会。</gray>");
+            return;
+        }
+        String op = args.length >= 3 ? args[2].toLowerCase(Locale.ROOT) : "info";
+        switch (op) {
+            case "buy", "gou" -> {
+                if (args.length < 4) {
+                    Msg.prefix(p, "<gray>用法：<white>/zhujian guild tech buy <"
+                            + TECH_FORGE_DISCOUNT + "|" + TECH_FORGE_SUCCESS + "></white></gray>");
+                } else {
+                    techBuy(p, g, args[3]);
+                }
+            }
+            case "info", "xinxi" -> {
+                Msg.send(p, "<dark_gray>──── <#ffd166>" + g.name + " · 商会科技</#ffd166> <dark_gray>────");
+                techLines(p, g);
+            }
+            default -> Msg.prefix(p, "<gray>用法：<white>/zhujian guild tech [buy <techId>|info]</white></gray>");
+        }
+    }
+
+    /** 两条科技线的当前等级 / 效果 / 下一级价格 */
+    private void techLines(Player p, Guild g) {
+        int maxLv = techMaxLevel();
+        long base = techCostBase();
+        long per = techCostPerLevel();
+        double discPer = Math.max(0, plugin.settings().num("guild.tech.discount-per-level", 0.02));
+        double succPer = Math.max(0, plugin.settings().num("guild.tech.success-per-level", 0.01));
+        int lvDiscount = g.techs.getOrDefault(TECH_FORGE_DISCOUNT, 0);
+        int lvSuccess = g.techs.getOrDefault(TECH_FORGE_SUCCESS, 0);
+        double disc = 1.0 - feeMultiplierOf(lvDiscount, discPer);
+        double succ = successBonusOf(lvSuccess, succPer);
+        Msg.send(p, "<gray>" + TECH_FORGE_DISCOUNT + ": <white>" + lvDiscount + "/" + maxLv
+                + "</white> <dark_gray>·</dark_gray> 锻造费 <#ffd166>-"
+                + Msg.fmt(disc * 100, 0) + "%</#ffd166>"
+                + (lvDiscount < maxLv ? " <dark_gray>· 下一级 " + techCost(base, per, lvDiscount) + "</dark_gray>" : " <green>已满级</green>"));
+        Msg.send(p, "<gray>" + TECH_FORGE_SUCCESS + ": <white>" + lvSuccess + "/" + maxLv
+                + "</white> <dark_gray>·</dark_gray> 成功率 <#ffd166>+"
+                + Msg.fmt(succ * 100, 0) + "%</#ffd166>"
+                + (lvSuccess < maxLv ? " <dark_gray>· 下一级 " + techCost(base, per, lvSuccess) + "</dark_gray>" : " <green>已满级</green>"));
+        Msg.send(p, "<dark_gray>效果对全体成员生效：锻造费乘 " + Msg.fmt(feeMultiplierOf(lvDiscount, discPer), 2)
+                + " · 成功率 +" + Msg.fmt(succ * 100, 0) + "%</dark_gray>");
+    }
+
+    /** 会长花基金买科技。守恒闸门：fundAfterTech 返回 -1 不动账 */
+    private void techBuy(Player p, Guild g, String techRaw) {
+        if (!g.owner.equals(p.getUniqueId())) {
+            Msg.prefix(p, "<red>只有会长能花基金升级科技。</red>");
+            return;
+        }
+        String techId = techRaw.trim().toLowerCase(Locale.ROOT);
+        if (!isTech(techId)) {
+            Msg.prefix(p, "<red>没有这个科技：<white>" + techRaw + "</white>，只有 <white>"
+                    + TECH_FORGE_DISCOUNT + "</white> 与 <white>" + TECH_FORGE_SUCCESS + "</white>。</red>");
+            return;
+        }
+        int cur = g.techs.getOrDefault(techId, 0);
+        int maxLv = techMaxLevel();
+        if (cur >= maxLv) {
+            Msg.prefix(p, "<red>「" + techId + "」已经 " + cur + " 级，到顶了。</red>");
+            return;
+        }
+        long cost = techCost(techCostBase(), techCostPerLevel(), cur);
+        long after = fundAfterTech(g.fund, cost);
+        if (after < 0) {
+            Msg.prefix(p, "<red>基金不够：「" + techId + "」升 " + (cur + 1) + " 级要 <white>" + cost
+                    + "</white>，现有 " + CoinRules.fmt(g.fund) + "。让大家 <white>/zhujian guild fund donate</white> 捐一捐。</red>");
+            return;
+        }
+        g.fund = after;
+        g.techs.put(techId, cur + 1);
+        save();
+        p.playSound(p.getLocation(), Sound.BLOCK_ANVIL_USE, 0.8f, 1.4f);
+        Msg.prefix(p, "<green>科技「<white>" + techId + "</white>」升到 <white>" + (cur + 1) + "/" + maxLv
+                + "</white> 级，基金支出 <white>" + cost + "</white>，余 " + CoinRules.fmt(g.fund) + "。</green>");
+        for (UUID id : g.memberIds()) {
+            if (!id.equals(p.getUniqueId())) {
+                notifyOnline(id, "<gray>会长升级了商会科技「</gray><white>" + techId
+                        + "</white><gray>」（" + (cur + 1) + " 级），锻造加成对全员生效。</gray>");
+            }
+        }
+    }
+
     // ------------------------------------------------------------ 周赛登记 / 结算
 
     /**
@@ -956,6 +1224,11 @@ public final class GuildService {
                 yml.set(base + ".members", new ArrayList<>(g.members));
                 yml.set(base + ".treasury", g.treasury);
                 yml.set(base + ".upgrades", g.upgrades);
+                // v2.24：基金账本与科技等级（照 weekPoints 的快照遍历，防 CME 写歪）
+                yml.set(base + ".fund", g.fund);
+                for (Map.Entry<String, Integer> e : new LinkedHashMap<>(g.techs).entrySet()) {
+                    yml.set(base + ".techs." + e.getKey(), e.getValue());
+                }
                 for (Map.Entry<String, Double> e : new LinkedHashMap<>(g.weekPoints).entrySet()) {
                     yml.set(base + ".week-points." + e.getKey(), e.getValue());
                 }

@@ -384,6 +384,26 @@ public final class StatsStore {
         return !before.equals(titleOf(st.reputation));
     }
 
+    /**
+     * 扣声望（v2.24 声望兑换所专用）：余额不足返回 false 且不扣，够才扣并标脏。
+     *
+     * <p>与 {@link #addReputation} 同一份 {@code Stats.reputation} 字段，不存在两本账；
+     * 不走 addReputation(负数) 是因为那会把不足扣成 0（Math.max(0, …) 兜底），
+     * 兑换必须「够才扣」，语义与 takeCoins 对齐。</p>
+     */
+    public boolean spendReputation(UUID uuid, int amount) {
+        if (amount <= 0) {
+            return true;
+        }
+        Stats st = get(uuid);
+        if (st.reputation < amount) {
+            return false;
+        }
+        st.reputation -= amount;
+        dirty = true;
+        return true;
+    }
+
     // ------------------------------------------------------------ v2.0 剑币
 
     public long coins(UUID uuid) {

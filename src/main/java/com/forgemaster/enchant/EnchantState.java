@@ -18,6 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li><b>回响</b>：最近被谁打过</li>
  *   <li><b>守夜</b>：上一次进入战斗是什么时候</li>
  *   <li><b>望气</b>：上一次侦测是什么时候</li>
+ *   <li><b>淬锋</b>（v2.24 切片一）：当前锋锐层数（命中叠层、受击清零）</li>
  * </ul>
  *
  * <h2>内存纪律</h2>
@@ -52,6 +53,8 @@ public final class EnchantState {
         final Map<UUID, Double> marks = new java.util.HashMap<>();
         /** 已被刻印的目标 */
         final java.util.Set<UUID> branded = new java.util.HashSet<>();
+        /** 淬锋（v2.24 切片一）：当前锋锐层数。命中 +1、受击清零，不落盘 */
+        int streakStacks;
 
         Data() {
         }
@@ -130,6 +133,46 @@ public final class EnchantState {
         for (Data d : MAP.values()) {
             d.marks.remove(id);
             d.branded.remove(id);
+        }
+    }
+
+    // ------------------------------------------------------------ 淬锋（v2.24 切片一）
+
+    /**
+     * 命中时叠一层锋锐，封顶 {@code maxStacks}。
+     *
+     * <p>封顶在状态层就做掉（而不是只靠结算处的夹子）：这样配置被写成离谱大数时，
+     * 层数本身也涨不上去，结算侧的 {@code EnchantEffects.streakBonus} 只需再夹一道。</p>
+     */
+    public static void noteHitStreak(Player player, int maxStacks) {
+        if (player == null || maxStacks <= 0) {
+            return;
+        }
+        Data d = of(player);
+        // 封顶逻辑只有一份：EnchantEffects.nextStreakStack（自检钉的就是它）
+        d.streakStacks = EnchantEffects.nextStreakStack(d.streakStacks, maxStacks);
+    }
+
+    /** 当前锋锐层数（0 = 还没叠过 / 刚被清掉） */
+    public static int streakOf(Player player) {
+        if (player == null) {
+            return 0;
+        }
+        Data d = MAP.get(player.getUniqueId());
+        return d == null ? 0 : d.streakStacks;
+    }
+
+    /**
+     * 受击清零。**任何伤害都要清**（包括毒 / 摔落 / 火 tick）——
+     * 机制的卖点就是「不挨打才有收益」，漏掉一种伤害类型就等于给那条路开白嫖通道。
+     */
+    public static void clearStreak(Player player) {
+        if (player == null) {
+            return;
+        }
+        Data d = MAP.get(player.getUniqueId());
+        if (d != null) {
+            d.streakStacks = 0;
         }
     }
 

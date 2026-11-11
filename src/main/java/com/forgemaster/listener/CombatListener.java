@@ -176,6 +176,9 @@ public final class CombatListener implements Listener {
         double critDamage = pdc.getOrDefault(Keys.CRIT_DAMAGE, PersistentDataType.DOUBLE, 0.0);
         double lifesteal = pdc.getOrDefault(Keys.LIFESTEAL, PersistentDataType.DOUBLE, 0.0);
         int fireTicks = pdc.getOrDefault(Keys.FIRE_TICKS, PersistentDataType.INTEGER, 0);
+        // v2.24 切片一：冰噬（命中减速）与处决（残血增伤）——口径与点燃同源，PDC 已写入即封顶
+        int chillTicks = pdc.getOrDefault(Keys.CHILL_TICKS, PersistentDataType.INTEGER, 0);
+        double execute = pdc.getOrDefault(Keys.EXECUTE, PersistentDataType.DOUBLE, 0.0);
 
         // 原创附魔（v2.23.3 机制版）：这里**不再**给吸血/点燃加数值 ——
         // 那是原版附魔的皮肤，已经被否掉。现在只做「条件型增伤」：
@@ -236,6 +239,15 @@ public final class CombatListener implements Listener {
             }
         }
 
+        // 淬锋（v2.24 切片一）：连续命中且不受伤就叠一层「锋锐」，每层增伤、最多满层。
+        // 必须放在崩刃 return 之后：崩刃的剑属性已失效，不该继续叠层（否则换回好剑
+        // 会带着崩刃期间白嫖的层数）。受伤清零在 EnchantListener.onDamagedFinal。
+        if (fullMech.streakPerLevel() > 0) {
+            com.forgemaster.enchant.EnchantState.noteHitStreak(player, enchCaps.maxStreakStacks());
+            enchBonus += plugin.enchantEffects().streakBonus(fullMech, enchCaps,
+                    com.forgemaster.enchant.EnchantState.streakOf(player));
+        }
+
         // 暴击：口径全在 Crit 里（压上限 + 抬底数），这里只管掷骰与表现。
         // 以前直接 random < critChance && damage * (1 + critDamage)：
         // 暴击率能叠到 179% → 永久暴击；暴伤最低档只有 ×1.25 → 比原版跳劈还弱。
@@ -246,6 +258,19 @@ public final class CombatListener implements Listener {
         // 必须一起被下面的 DamageBudget 管住。放在夹子之后就等于给它开了后门。
         if (enchBonus > 0) {
             dealt *= 1.0 + enchBonus;
+        }
+        // 处决（v2.24 切片一）：目标血量比例低于阈值时本击增伤。必须压在暴击之前 ——
+        // 它和暴击同属「本插件的乘区」，之后的 DamageBudget.clampHit 会连暴击一起管住，
+        // 处决放不进预算的唯一写法就是放到夹子后面，这里没有那个后门。
+        double execThreshold = Math.max(0.0,
+                plugin.getConfig().getDouble("combat.caps.execute-threshold", 0.15));
+        if (execute > 0 && execThreshold > 0
+                && event.getEntity() instanceof LivingEntity execTarget) {
+            var hpAttr = execTarget.getAttribute(org.bukkit.attribute.Attribute.MAX_HEALTH);
+            double maxHp = hpAttr == null ? 20.0 : hpAttr.getValue();
+            if (maxHp > 0 && execTarget.getHealth() / maxHp < execThreshold) {
+                dealt *= 1.0 + execute;
+            }
         }
         var crit = com.forgemaster.combat.Crit.fromConfig(plugin, critChance, critDamage);
         if (crit.roll(ThreadLocalRandom.current())) {
@@ -291,6 +316,17 @@ public final class CombatListener implements Listener {
                     Math.max(0.0, plugin.getConfig().getDouble("combat.limits.max-fire-seconds", 10.0)) * 20);
             int applied = capTicks > 0 ? Math.min(fireTicks, capTicks) : fireTicks;
             living.setFireTicks(Math.max(living.getFireTicks(), applied));
+        }
+
+        // 冰噬（v2.24 切片一）：命中附加短暂减速（Slowness II）。结算处再夹一道 ——
+        // 存量旧物品里 chill_ticks 可能带着旧上限写的值，与点燃「结算侧再夹」同一套防线
+        if (chillTicks > 0 && event.getEntity() instanceof LivingEntity living) {
+            int applied = com.forgemaster.combat.DamageBudget.Caps
+                    .fromConfig(plugin.getConfig()).clampChillTicks(chillTicks);
+            if (applied > 0) {
+                living.addPotionEffect(new org.bukkit.potion.PotionEffect(
+                        org.bukkit.potion.PotionEffectType.SLOWNESS, applied, 1, false, true));
+            }
         }
     }
 /**

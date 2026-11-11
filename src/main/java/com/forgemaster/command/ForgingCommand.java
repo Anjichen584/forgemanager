@@ -157,6 +157,8 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
                     plugin.guilds().handle(sender, args);
                 }
             }
+            // 声望兑换所（v2.24 切片二）：声望换剑币 / 保底护胚类符，扣减走 spendReputation
+            case "redeem", "duihuan", "huan" -> redeem(sender, args);
             case "shop", "shanghui" -> shop(sender);
             case "blackmarket", "heishi" -> blackmarket(sender);
             case "signin", "qiandao" -> signin(sender);
@@ -3257,6 +3259,170 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         }
     }
 
+    // ============================================================ 声望兑换所（v2.24 切片二）
+
+    /** /zhujian redeem [info|coin <数量>|charm <符id>]（别名 duihuan / huan） */
+    private void redeem(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            Msg.prefix(sender, "<red>声望兑换要在游戏里操作。</red>");
+            return;
+        }
+        String sub = args.length >= 2 ? args[1].toLowerCase(Locale.ROOT) : "info";
+        switch (sub) {
+            case "info", "xinxi" -> redeemInfo(player);
+            case "coin", "bi" -> {
+                if (args.length < 3) {
+                    Msg.prefix(player, "<gray>用法：<white>/zhujian redeem coin <声望数></white></gray>");
+                } else {
+                    redeemCoin(player, args[2]);
+                }
+            }
+            case "charm", "fu" -> {
+                if (args.length < 3) {
+                    Msg.prefix(player, "<gray>用法：<white>/zhujian redeem charm <符id></white>"
+                            + " <dark_gray>（redeem info 看列表）</dark_gray></gray>");
+                } else {
+                    redeemCharm(player, args[2]);
+                }
+            }
+            default -> Msg.prefix(player, "<gray>用法：<white>/zhujian redeem [info|coin <数量>|charm <符id>]</white></gray>");
+        }
+    }
+
+    /** redeem coin 单次上限夹取（纯数值层）：≤0 拒付返回 0，其余夹进 [1, max]，max 下限 1 */
+    public static int clampRedeemAmount(int raw, int max) {
+        if (raw <= 0) {
+            return 0;
+        }
+        return Math.min(Math.max(1, max), raw);
+    }
+
+    /** 可兑换的符 id 列表（config redeem.charms 的键；配置缺失退内置两张） */
+    private List<String> redeemCharmIds() {
+        org.bukkit.configuration.ConfigurationSection sec =
+                plugin.getConfig().getConfigurationSection("redeem.charms");
+        if (sec != null) {
+            List<String> ids = new ArrayList<>(sec.getKeys(false));
+            if (!ids.isEmpty()) {
+                return ids;
+            }
+        }
+        return List.of(com.forgemaster.strengthen.Charm.TALISMAN, com.forgemaster.strengthen.Charm.STEADY);
+    }
+
+    /** 某张符的声望价（读 redeem.charms；没配返回 -1 = 不在兑换列表） */
+    private long redeemCharmCost(String charmId) {
+        if (!plugin.getConfig().contains("redeem.charms." + charmId)) {
+            return -1;
+        }
+        return Math.max(1, plugin.getConfig().getLong("redeem.charms." + charmId));
+    }
+
+    /** 兑换剑币：1 声望 = coin-rate 剑币，单次最多 coin-max 声望。扣减走 spendReputation（不足拒付） */
+    private void redeemCoin(Player player, String amountRaw) {
+        int rate = Math.max(1, plugin.settings().intOf("redeem.coin-rate", 10));
+        int cap = Math.max(1, plugin.settings().intOf("redeem.coin-max", 500));
+        int raw;
+        try {
+            raw = Integer.parseInt(amountRaw.replace(",", ""));
+        } catch (NumberFormatException ex) {
+            Msg.prefix(player, "<red>数量要写数字：" + amountRaw);
+            return;
+        }
+        int amount = clampRedeemAmount(raw, cap);
+        if (amount <= 0) {
+            Msg.prefix(player, "<red>数量要大于 0。</red>");
+            return;
+        }
+        UUID me = player.getUniqueId();
+        int have = plugin.stats().get(me).reputation;
+        if (!plugin.stats().spendReputation(me, amount)) {
+            Msg.prefix(player, "<red>声望不足：需要 <white>" + amount + "</white>，你只有 <white>"
+                    + have + "</white>。</red>");
+            return;
+        }
+        long coins = (long) amount * rate;
+        // 发钱走 Wallet 收口（v2.23.7），与全服账本同源
+        plugin.wallet().give(player, coins, com.forgemaster.econ.CoinReason.REDEEM);
+        player.playSound(player.getLocation(), org.bukkit.Sound.BLOCK_NOTE_BLOCK_PLING, 0.8f, 1.6f);
+        Msg.prefix(player, "<green>兑换成功：声望 <white>-" + amount + "</white> → 剑币 <#ffd166>+" + coins
+                + "</#ffd166> <dark_gray>（汇率 1:" + rate
+                + (amount < raw ? " · 单次上限 " + cap + " 声望" : "") + "）</dark_gray>。</green>");
+    }
+
+    /** 兑换符：照 SeasonPassService.grantReward 的 Charm.create 造符，声望价读 redeem.charms */
+    private void redeemCharm(Player player, String rawId) {
+        String charmId = com.forgemaster.strengthen.Charm.normalize(rawId);
+        if (charmId == null || charmId.isBlank()) {
+            charmId = rawId.trim().toLowerCase(Locale.ROOT);
+        }
+        long cost = redeemCharmCost(charmId);
+        if (cost < 0 || !redeemCharmIds().contains(charmId)) {
+            StringBuilder list = new StringBuilder();
+            for (String id : redeemCharmIds()) {
+                if (list.length() > 0) {
+                    list.append("<gray>、</gray>");
+                }
+                list.append("<white>").append(id).append("</white>");
+            }
+            Msg.prefix(player, "<red>没有这张符：<white>" + rawId + "</white>，可兑换的有 " + list + "。</red>");
+            return;
+        }
+        UUID me = player.getUniqueId();
+        int have = plugin.stats().get(me).reputation;
+        if (!plugin.stats().spendReputation(me, (int) cost)) {
+            Msg.prefix(player, "<red>声望不足：需要 <white>" + cost + "</white>，你只有 <white>"
+                    + have + "</white>。</red>");
+            return;
+        }
+        ItemStack charm = com.forgemaster.strengthen.Charm.create(plugin, charmId);
+        Map<Integer, ItemStack> left = player.getInventory().addItem(charm);
+        for (ItemStack rest : left.values()) {
+            player.getWorld().dropItemNaturally(player.getLocation(), rest);
+        }
+        player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_PLAYER_LEVELUP, 0.8f, 1.4f);
+        Msg.prefix(player, "<green>兑换成功：声望 <white>-" + cost + "</white> → <#9f7aea>"
+                + com.forgemaster.strengthen.Charm.plainName(charmId) + "</#9f7aea>。</green>");
+    }
+
+    /** 兑换所价目表 */
+    private void redeemInfo(Player player) {
+        int rate = Math.max(1, plugin.settings().intOf("redeem.coin-rate", 10));
+        int cap = Math.max(1, plugin.settings().intOf("redeem.coin-max", 500));
+        int have = plugin.stats().get(player.getUniqueId()).reputation;
+        Msg.send(player, "<dark_gray>──── <#ffd166>声望兑换所</#ffd166> <dark_gray>────");
+        Msg.send(player, "<gray>你的声望: <white>" + have + "</white> <dark_gray>·</dark_gray> "
+                + StatsStore.titleOf(have));
+        Msg.send(player, "<gray>coin: <white>1</white> 声望 = <#ffd166>" + rate + "</#ffd166> 剑币"
+                + " <dark_gray>· 单次最多 " + cap + " 声望</dark_gray>");
+        for (String id : redeemCharmIds()) {
+            long cost = redeemCharmCost(id);
+            if (cost < 0) {
+                continue;
+            }
+            Msg.send(player, "<gray>charm: <#9f7aea>" + com.forgemaster.strengthen.Charm.plainName(id)
+                    + "</#9f7aea> <dark_gray>(" + id + ")</dark_gray> <gray>= <white>" + cost + "</white> 声望</gray>");
+        }
+        Msg.send(player, "<dark_gray>/zhujian redeem coin <数量> · /zhujian redeem charm <符id></dark_gray>");
+    }
+
+    /** 兑换所补全：info / coin <数量> / charm <符id> */
+    private List<String> tabRedeem(String[] args) {
+        if (args.length == 2) {
+            return filter(List.of("info", "xinxi", "coin", "bi", "charm", "fu"), args[1]);
+        }
+        String sub = args[1].toLowerCase(Locale.ROOT);
+        if (args.length == 3) {
+            if (isAny(sub, "coin", "bi")) {
+                return filter(AMOUNTS, args[2]);
+            }
+            if (isAny(sub, "charm", "fu")) {
+                return filter(redeemCharmIds(), args[2]);
+            }
+        }
+        return List.of();
+    }
+
     private double parseDouble(String raw, double def) {
         try {
             return Double.parseDouble(raw);
@@ -3338,6 +3504,8 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             List.of("order", "dingdan"),
             List.of("auction", "paimai"),
             List.of("guild", "hanghui"),
+            // 声望兑换所（v2.24 切片二）
+            List.of("redeem", "duihuan", "huan"),
             List.of("master", "shifu"),
             List.of("accept"),
             // ---- 极限锻造 / 世界事件 / 帮助 ----
@@ -3440,6 +3608,8 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             case "master", "shifu" -> tabMaster(args);
             case "guild", "hanghui" -> tabGuild(args);
             case "spirit", "jianling" -> tabSpirit(args);
+            // 声望兑换所（v2.24 切片二）：分派表与 SUBCOMMANDS 同步，别名的下一层也要有候选
+            case "redeem", "duihuan", "huan" -> tabRedeem(args);
             // ---- 服主 ----
             case "metrics", "jingji" -> tabMetrics(args);
             case "config", "peizhi" -> tabConfig(args);
@@ -3894,7 +4064,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         return List.of();
     }
 
-    /** 行会：/zhujian guild [create|invite|…|warehouse|quest …] */
+    /** 行会：/zhujian guild [create|invite|…|warehouse|quest|fund|tech …] */
     private List<String> tabGuild(String[] args) {
         if (args.length == 2) {
             return filter(List.of("create", "jian", "li",
@@ -3902,7 +4072,8 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
                     "leave", "tuichu", "kick", "tichu", "info", "xinxi", "chakan",
                     "deposit", "cun", "juan", "list", "liebiao",
                     "upgrade", "kuorong", "shengji",
-                    "warehouse", "cangku", "ck", "quest", "renwu"), args[1]);
+                    "warehouse", "cangku", "ck", "quest", "renwu",
+                    "fund", "jijin", "tech", "keji"), args[1]);
         }
         String sub = args[1].toLowerCase(Locale.ROOT);
         if (args.length == 3) {
@@ -3916,10 +4087,27 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
                 return filter(List.of("info", "xinxi", "claim", "lingjiang", "ling",
                         "report", "shangbao"), args[2]);
             }
+            // v2.24 切片二：基金与科技的下一层
+            if (isAny(sub, "fund", "jijin")) {
+                return filter(List.of("donate", "juan", "info", "xinxi"), args[2]);
+            }
+            if (isAny(sub, "tech", "keji")) {
+                return filter(List.of("buy", "gou", "info", "xinxi"), args[2]);
+            }
         }
-        if (args.length == 4 && isAny(sub, "quest", "renwu")
-                && isAny(args[2].toLowerCase(Locale.ROOT), "report", "shangbao")) {
-            return filter(players(), args[3]);
+        if (args.length == 4) {
+            if (isAny(sub, "quest", "renwu")
+                    && isAny(args[2].toLowerCase(Locale.ROOT), "report", "shangbao")) {
+                return filter(players(), args[3]);
+            }
+            // tech buy <techId>：两条科技线
+            if (isAny(sub, "tech", "keji") && isAny(args[2].toLowerCase(Locale.ROOT), "buy", "gou")) {
+                return filter(List.of("forge-discount", "forge-success"), args[3]);
+            }
+            // fund donate <数量>
+            if (isAny(sub, "fund", "jijin") && isAny(args[2].toLowerCase(Locale.ROOT), "donate", "juan")) {
+                return filter(AMOUNTS, args[3]);
+            }
         }
         if (args.length == 5 && isAny(sub, "quest", "renwu")
                 && isAny(args[2].toLowerCase(Locale.ROOT), "report", "shangbao")) {

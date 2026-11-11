@@ -52,6 +52,12 @@ public final class Keys {
     /** 装备：受到伤害减免（0-1 的小数） */
     public static NamespacedKey DAMAGE_REDUCE;
 
+    // ---- v2.24 切片一：词条新机制 ----
+    /** 冰噬：命中附加减速的时长（tick，已过 max-chill-ticks 夹子） */
+    public static NamespacedKey CHILL_TICKS;
+    /** 处决：目标血量低于阈值时的增伤比例（0-1 小数，已过 max-execute 夹子） */
+    public static NamespacedKey EXECUTE;
+
     // ---- v2.2 宝石 ----
     /** 宝石物品标记 */
     public static NamespacedKey GEM;
@@ -268,6 +274,8 @@ public static NamespacedKey SPIRIT_DISPLAY_BONUS;
         SEASON = new NamespacedKey(plugin, "season");
         ARMOR_SLOT = new NamespacedKey(plugin, "armor_slot");
         DAMAGE_REDUCE = new NamespacedKey(plugin, "damage_reduce");
+        CHILL_TICKS = new NamespacedKey(plugin, "chill_ticks");
+        EXECUTE = new NamespacedKey(plugin, "execute");
         GEM = new NamespacedKey(plugin, "gem");
         GEM_TYPE = new NamespacedKey(plugin, "gem_type");
         GEM_VALUE = new NamespacedKey(plugin, "gem_value");

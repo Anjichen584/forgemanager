@@ -516,6 +516,9 @@ public final class TombChallenge implements Listener {
         List<String> got = grantRewards(player, t);
         if (plugin.spectrum() != null) plugin.spectrum().countTombWin(player); // 名剑谱：剑冢胜场登记
         if (plugin.seasonPass() != null) plugin.seasonPass().earn(player.getUniqueId(), "tomb-win"); // 赛季通行证：剑冢胜利登记
+        // v2.24 切片二 冢主温养：他人挑战成功，冢主埋着的剑 +N 灵性（崩刃剑 / 已满不温养，
+        // 实际涨多少由 TombManager.nurtureSpirit 按上限折算；广播与提示在下面按返回值追加）
+        int nurtured = tombs.nurtureSpirit(t, player);
         // v2.23 拓展 C：剑冢胜利 → Webhook
         plugin.broadcast(com.forgemaster.webhook.WebhookEvent.TOMB_WIN,
                 "【剑冢】" + player.getName() + " 斩下残影「" + t.swordName + "」",
@@ -537,7 +540,10 @@ public final class TombChallenge implements Listener {
         if (broadcast()) {
             Bukkit.broadcast(Msg.mm(Msg.PREFIX + "<gray>" + player.getName() + " 斩下了「<#ffd166>"
                     + t.swordName + "</#ffd166>」的残影（+" + levelOf(t) + " · "
-                    + qualityColored(t.quality) + "）。"));
+                    + qualityColored(t.quality) + "）。"
+                    // v2.24 冢主温养：温养成功才追加这一段，广播里看得见冢主的剑在成长
+                    + (nurtured > 0 ? " <dark_gray>·</dark_gray> <#b06bff>冢主的剑得到了温养 +"
+                    + nurtured + "</#b06bff>" : "")));
         }
     }
 

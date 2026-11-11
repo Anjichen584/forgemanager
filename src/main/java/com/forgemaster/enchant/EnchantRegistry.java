@@ -14,7 +14,7 @@ import java.util.Random;
 /**
  * 原创附魔注册表（v2.23.3 重做）。
  *
- * <p>12 条，<b>每一条都是原版没有的机制</b>（对照表见 {@link CustomEnchant.Kind}）。
+ * <p>14 条（v2.24 切片一新增淬锋 / 饮命），<b>每一条都是原版没有的机制</b>（对照表见 {@link CustomEnchant.Kind}）。
  * 全部 config 驱动：{@code enchant.defs.<id>} 下的 enabled / max-level / per-level / weight 可改。</p>
  *
  * <h2>为什么是 12 条而不是 15/20 条</h2>
@@ -63,6 +63,14 @@ public final class EnchantRegistry {
                 new CustomEnchant("mark", "刻痕", 5, CustomEnchant.Kind.MARK,
                         CustomEnchant.Slot.WEAPON, 0.02, 60,
                         "对同一目标累计削其三成血后刻印，此后伤害 %v"),
+                // v2.24 切片一：连续命中叠层、受击清零 —— 奖励「不挨打地输出」
+                new CustomEnchant("temper", "淬锋", 5, CustomEnchant.Kind.STREAK,
+                        CustomEnchant.Slot.WEAPON, 0.04, 80,
+                        "连续命中不受伤时每层增伤 %v，最多五层；挨打即清零"),
+                // v2.24 切片一：击杀回虚拟耐久；崩刃的剑不回，研磨仍是唯一出路
+                new CustomEnchant("siphon", "饮命", 5, CustomEnchant.Kind.DUR_LEECH,
+                        CustomEnchant.Slot.WEAPON, 0.5, 70,
+                        "击杀则剑身饮命，回复 %v 点耐久（崩刃不回）"),
                 // ---------------------------------------------------------- 护甲：改变容错的
                 new CustomEnchant("unload", "卸力", 5, CustomEnchant.Kind.DELAY_DAMAGE,
                         CustomEnchant.Slot.ARMOR, 0.10, 95,
