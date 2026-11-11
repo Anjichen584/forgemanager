@@ -615,11 +615,9 @@ public final class SeasonPassService {
      */
     private List<String> grantReward(Player player, Reward r) {
         List<String> got = new ArrayList<>();
-        if (r.coins > 0) {
-            // 通行证等级奖励：达成条件领奖，暂归「成就奖励」桶（要单列请加 PASS 类枚举，调用点不用返工）
-            plugin.stats().addCoins(player.getUniqueId(), r.coins, CoinReason.PASS);
-            got.add("剑币 <#ffd166>+" + r.coins + "</#ffd166>");
-        }
+        // v2.23.7 修 P2：剑币进账挪到最后。原来的顺序是「先 addCoins → 再发材料/符」，
+        // 物品路径一旦抛异常，调用方回滚的只有领取记录 —— 已入账的剑币不收回，
+        // 玩家再点一次就重复领币。物品发完（不会抛）之后再进账，失败重试不再复制。
         if (r.materialId != null) {
             ItemStack item = materialItem(r.materialId, r.materialAmount);
             if (item != null) {
@@ -651,6 +649,11 @@ public final class SeasonPassService {
             }
             got.add("<#ffd166>" + r.charmAmount + " × "
                     + com.forgemaster.strengthen.Charm.plainName(r.charmId) + "</#ffd166>");
+        }
+        if (r.coins > 0) {
+            // 通行证等级奖励：达成条件领奖，暂归「成就奖励」桶（要单列请加 PASS 类枚举，调用点不用返工）
+            plugin.stats().addCoins(player.getUniqueId(), r.coins, CoinReason.PASS);
+            got.add(0, "剑币 <#ffd166>+" + r.coins + "</#ffd166>");
         }
         return got;
     }

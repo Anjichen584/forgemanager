@@ -1165,7 +1165,10 @@ public final class StrengthenService {
         if (kindle) {
             Charm.take(player, Charm.KINDLE, 1);
         }
-        addInt(item, Keys.STRENGTHEN_INVEST, need);
+        // v2.23.7 修 P2：履历「投入材料」按真正从背包扣走的 matUsed 记账。
+        // 上一轮修复把文案与 StrikeResult.materials 都改成 matUsed，唯独这行漏改，
+        // 剑尘抵扣的部分被虚报进投入总量。
+        addInt(item, Keys.STRENGTHEN_INVEST, matUsed);
         if (cornerstone) {
             writeInt(item, Keys.CORNERSTONE_USED, cornerUsedOf(item) + 1);
         }

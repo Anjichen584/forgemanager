@@ -940,14 +940,33 @@ public final class ForgeMenu {
     private List<String> report(ForgeSession s) {
         List<String> lore = new ArrayList<>();
         lore.add("<gray>材料: " + s.material().display());
+        // v2.23.7 修 P2：报告里的「贡献」原来用 2.18 的旧权重（30 / 55），
+        // 而 weightedScore 实际是 20 / 35（且关工序时按占比归一），玩家对着
+        // 报告验算总分永远对不上。这里与 ForgeManager.weightedScore 同源同权。
+        double wHeat = 20, wHammer = 35, wFold = 20, wGrind = 10, wPolish = 8, wInlay = 7, wQuench = 15;
+        if (!settings.foldingEnabled()) {
+            wFold = 0;
+        }
+        if (!settings.grindingEnabled()) {
+            wGrind = 0;
+        }
+        if (!settings.polishingEnabled()) {
+            wPolish = 0;
+        }
+        if (!settings.inlayEnabled()) {
+            wInlay = 0;
+        }
+        double totalWeight = wHeat + wHammer + wFold + wGrind + wPolish + wInlay + wQuench;
         lore.add("<gray>加热评分: <white>" + Msg.fmt(s.heatScore() * 100, 1)
-                + " <dark_gray>(贡献 " + Msg.fmt(s.heatScore() * 30, 1) + ")");
+                + " <dark_gray>(贡献 " + Msg.fmt(s.heatScore() * wHeat / totalWeight * 100, 1) + ")");
         lore.add("<gray>锻打评分: <white>" + Msg.fmt(s.hammerScore() * 100, 1)
-                + " <dark_gray>(贡献 " + Msg.fmt(s.hammerScore() * 55, 1) + ")");
+                + " <dark_gray>(贡献 " + Msg.fmt(s.hammerScore() * wHammer / totalWeight * 100, 1) + ")");
         double qb = s.quench() == null ? 0 : s.quench().scoreBonus();
-        lore.add("<gray>淬火加成: <white>+" + Msg.fmt(qb, 1));
+        lore.add("<gray>淬火加成: <white>+" + Msg.fmt(qb, 1)
+                + " <dark_gray>(贡献 " + Msg.fmt(qb / 15.0 * wQuench / totalWeight * 100, 1) + ")");
         lore.add("");
-        lore.add("<gray>总评分: <white><bold>" + Msg.fmt(s.finalScore(), 1) + "</bold>");
+        lore.add("<gray>总评分: <white><bold>" + Msg.fmt(s.finalScore(), 1) + "</bold>"
+                + "<dark_gray>（未含环境 / 档位修正）</dark_gray>");
         lore.add("<gray>品质: " + s.quality().colored());
         lore.add("");
         lore.add("<dark_gray>完美 " + s.perfects() + " 次 / 共 " + s.hits().size() + " 锤");

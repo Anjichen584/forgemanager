@@ -346,11 +346,33 @@ async function deepAliases() {
   for (const [tag, cmd, re] of aliases) await expectChat('别名', cmd, re, 1800, `[${tag}] ${cmd}`)
 }
 
+// 出生点是刷怪场：把 bot 挪到空地。死亡重生会回到出生点继续挨打，
+// 每次死亡重生后再拉回来（v2.23.6 fulltest 一串假失败的真因）。
+const rconlib = require('./rconlib')
+let rconConn = null
+async function rcon(cmd) {
+  if (!rconConn) rconConn = await rconlib.connect({ port: 25599, password: 'testpass' })
+  return rconConn.send(cmd)
+}
+
+async function safeTp() {
+  // 先铺一块 5x5 石台，防止坐标下方是洞穴/虚空（200,70,200 实测悬空，bot 摔死）
+  await rcon(`/minecraft:fill 198 69 198 202 69 202 minecraft:smooth_stone`)
+  await wait(300)
+  await rcon(`/minecraft:gamemode creative ${BOT_NAME}`)
+  await wait(300)
+  await rcon(`/minecraft:tp ${BOT_NAME} 200 70 200`)
+  await wait(600)
+  await rcon(`/minecraft:gamemode survival ${BOT_NAME}`)
+}
+
 async function main() {
   console.log(`=== 全功能 bot 实测：${BOT_NAME} @ 127.0.0.1:25577 ===`)
   bot = await join(BOT_NAME)
   bot.on('message', onChat)
   await wait(800)
+  await safeTp()
+  bot.on('death', () => { setTimeout(() => { safeTp().catch(() => {}) }, 1500) })
   console.log('已进服\n')
 
   console.log('=== 命令分派（顶层） ===')

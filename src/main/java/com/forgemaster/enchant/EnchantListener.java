@@ -38,8 +38,8 @@ import java.util.List;
  *   <tr><td>烬狱（爆燃）</td><td>EntityDeathEvent</td><td>只对玩家造成的击杀生效；范围伤害不吃倍率</td></tr>
  *   <tr><td>孤锋 / 蓄锋 / 刻痕</td><td>CombatListener 里读状态</td><td>三者相加只夹一次</td></tr>
  *   <tr><td>夺魄（打断）</td><td>命中后</td><td>只给 Slowness + Weakness，不改 AI（改 AI 会卡怪）</td></tr>
- *   <tr><td>卸力（延后）</td><td>受伤前（HIGH）</td><td>延后部分**仍会结算**，只是晚 2 秒，不是免除</td></tr>
- *   <tr><td>替身（免死）</td><td>致命伤时（HIGHEST）</td><td>冷却 + 回气有上限，防永久免死</td></tr>
+ *   <tr><td>卸力（延后）</td><td>HIGH 记比例 + MONITOR 按最终伤害切账</td><td>延后部分**仍会结算**，只是晚 2 秒，不是免除</td></tr>
+ *   <tr><td>替身（免死）</td><td>致命伤时（MONITOR，卸力切账后判）</td><td>冷却 + 回气有上限，防永久免死</td></tr>
  *   <tr><td>回响（反击）</td><td>受伤记状态 + 命中读状态</td><td>只对「刚打过我的那个目标」生效</td></tr>
  *   <tr><td>守夜（脱战回复）</td><td>周期任务</td><td>每 2 秒一次、单次有上限</td></tr>
  *   <tr><td>拾遗（额外经验）</td><td>BlockBreakEvent</td><td>给经验不给物品，绕开「刷矿」</td></tr>
@@ -236,7 +236,11 @@ public final class EnchantListener implements Listener {
             if (!(near instanceof LivingEntity victim) || near instanceof Player) {
                 continue; // 玩家击杀怪物时炸怪，不炸玩家（PVP 不乱杀）
             }
-            victim.damage(pyre, killer);
+            // v2.23.7 修 P2：不归因（damage(pyre) 而非 damage(pyre, killer)）。
+            // 带归因的伤害会再发一个 EntityDamageByEntityEvent，CombatListener
+            // 把爆炸当普通挥击结算：掷暴击、按爆炸伤害吸血、扣武器耐久，
+            // 链式击杀还会级联放大。溅射侧早已是无归因的 damage(splash)。
+            victim.damage(pyre);
             victim.setFireTicks(Math.max(victim.getFireTicks(), 40));
         }
     }
@@ -255,6 +259,12 @@ public final class EnchantListener implements Listener {
      *
      * <p>反过来写（先替身后卸力）会让替身替「本来不该死的伤害」触发，
      * 90 秒冷却白白浪费，玩家会觉得这条附魔坏了。</p>
+     *
+     * <p>v2.23.7 修 P1「卸力对穿甲玩家反而增伤」：HIGH 只记延后**比例**，
+     * 真正的切账挪到 {@link #onDamagedFinal}（MONITOR）按**最终伤害**口径算 ——
+     * 立即部分照常吃护甲 / 词条减伤，延后部分却曾经是裸伤直接扣血，
+     * 总承伤 = (D-d)·r + d &gt; 不带卸力的 D·r，卸力成了增伤词条。
+     * 现在立即与延后都按 final×(1-ratio) / final×ratio 切分，两者严格同口径。</p>
      */
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onDamaged(EntityDamageEvent event) {
@@ -277,15 +287,56 @@ public final class EnchantListener implements Listener {
             return;
         }
 
-        // ---- 卸力：把一部分伤害挪到 2 秒后
-        double delayed = fx().delayedPortion(m, caps, damage);
-        if (delayed > 0.01) {
-            event.setDamage(damage - delayed);
-            scheduleDelayed(player, delayed, (int) Math.max(1, caps.delayMs() / 50));
+        // ---- 卸力：HIGH 只记比例，MONITOR 才切账（原因见方法注释）
+        if (m.delayRatio() > 0) {
+            double delayed = fx().delayedPortion(m, caps, damage);
+            if (delayed > 0.01) {
+                pendingUnload.put(player.getUniqueId(),
+                        new PendingUnload(event, Math.min(1.0, delayed / damage)));
+            }
+        }
+    }
+
+    /**
+     * 卸力切账 + 替身免死（MONITOR：所有插件改完伤害之后）。
+     *
+     * <p>为什么在 MONITOR 才动手：护甲 / 词条减伤 / 其它插件都改完之后
+     * {@code getFinalDamage()} 才是玩家真正要吃的数。从 BASE 里扣回
+     * {@code final × ratio}，立即伤害恰好等于 {@code final × (1-ratio)}，
+     * 延后部分总额也是 {@code final × ratio} —— 与不带卸力严格等账，
+     * 不受任何插件改伤害的顺序影响。</p>
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onDamagedFinal(EntityDamageEvent event) {
+        if (!(event.getEntity() instanceof Player player)) {
+            return;
+        }
+        EnchantEffects.Caps caps = caps();
+        EnchantEffects.Mechanics m = playerMechanics(player);
+        if (!m.any()) {
+            return;
         }
 
-        // ---- 替身：这次（扣掉卸力后）会不会致死
-        if (m.cheatHeal() > 0 && wouldKill(player, event.getDamage())) {
+        // ---- 卸力切账：只认 HIGH 那次登记的同一个事件，防串账
+        PendingUnload pending = pendingUnload.remove(player.getUniqueId());
+        double ratio = pending != null && pending.event() == event ? pending.ratio() : 0;
+        if (ratio > 0) {
+            double finalDamage = event.getFinalDamage();
+            double take = Math.min(finalDamage, finalDamage * ratio);
+            if (take > 0.01) {
+                try {
+                    double base = event.getDamage(EntityDamageEvent.DamageModifier.BASE);
+                    event.setDamage(EntityDamageEvent.DamageModifier.BASE, base - take);
+                } catch (UnsupportedOperationException unsupported) {
+                    // 个别伤害类型不提供 BASE：退化为整单减（延后总额不变）
+                    event.setDamage(Math.max(0, event.getDamage() - take));
+                }
+                scheduleDelayed(player, take, (int) Math.max(1, caps.delayMs() / 50));
+            }
+        }
+
+        // ---- 替身：切完账后按**最终伤害**判致死（比 HIGH 时按裸伤害更准）
+        if (m.cheatHeal() > 0 && wouldKill(player, event.getFinalDamage())) {
             if (EnchantState.cheatDeathReady(player, caps.cheatCooldownMs())) {
                 event.setCancelled(true);
                 EnchantState.noteCheatDeath(player);
@@ -299,6 +350,12 @@ public final class EnchantListener implements Listener {
             }
         }
     }
+
+    /** HIGH 记下的待切账卸力（事件引用一起存，MONITOR 只消费同一个事件） */
+    private record PendingUnload(EntityDamageEvent event, double ratio) {
+    }
+
+    private final java.util.Map<java.util.UUID, PendingUnload> pendingUnload = new java.util.HashMap<>();
 
     /**
      * 延后伤害：2 秒内分 4 期扣。
@@ -417,11 +474,24 @@ public final class EnchantListener implements Listener {
     @EventHandler
     public void onQuit(PlayerQuitEvent event) {
         EnchantState.clear(event.getPlayer());
+        pendingUnload.remove(event.getPlayer().getUniqueId());
     }
 
     /** 目标消失（区块卸载、被移除）时清刻痕，防止表无限长 */
     @EventHandler
     public void onDeath(EntityDeathEvent event) {
+        EnchantState.clearMark(event.getEntity());
+    }
+
+    /**
+     * v2.23.7 修 P2：刻痕/刻印表原来只挂在 {@link EntityDeathEvent} 上清，
+     * 怪物随区块卸载 despawn 不触发死亡事件 —— 挂机打怪场景下每玩家的
+     * 表能积累上千条永不清理的 UUID。Paper 的
+     * {@link com.destroystokyo.paper.event.entity.EntityRemoveFromWorldEvent}
+     * 覆盖死亡 / despawn / 区块卸载三条路，统一在这里清。
+     */
+    @EventHandler
+    public void onEntityRemove(com.destroystokyo.paper.event.entity.EntityRemoveFromWorldEvent event) {
         EnchantState.clearMark(event.getEntity());
     }
 

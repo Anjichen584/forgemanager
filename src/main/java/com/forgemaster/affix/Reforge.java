@@ -422,11 +422,16 @@ public final class Reforge {
                 out.add(a);
             }
         }
-        // 池子被占满：武器可以回退到全表（与 AffixRegistry.pick 的行为一致），
-        // 装备坚持只在防御池里抽，绝不把「火焰附加」这种武器词条塞到胸甲上
+        // 池子被占满：武器回退到 WEAPON_AFFIX_POOL（锻造侧 settle 同款口径），
+        // 装备坚持只在防御池里抽，绝不把「火焰附加」这种武器词条塞到胸甲上。
+        // v2.23.7 修 P1：原来武器兜底回退的是 registry.all() 整张表 ——
+        // 老物品无淬火键 / 介质被删 / 池浅词条占满时，armor_plate、
+        // toughness 这类防御词条会被重铸到剑上，与「剑永远抽不到防御
+        // 词条」（ForgeManager.WEAPON_AFFIX_POOL javadoc）的口径直接矛盾。
         if (out.isEmpty() && !armor) {
-            for (Affix a : registry.all()) {
-                if (!taken.contains(a.id().toLowerCase(Locale.ROOT))) {
+            for (String id : com.forgemaster.forge.ForgeManager.WEAPON_AFFIX_POOL) {
+                Affix a = registry.get(id);
+                if (a != null && !taken.contains(a.id().toLowerCase(Locale.ROOT))) {
                     out.add(a);
                 }
             }

@@ -485,7 +485,19 @@ public final class TombChallenge implements Listener {
         }
         active.remove(a.player);
 
+        // v2.23.7 修 P2：残影不是挑战者本人杀的（更强的路人补刀、摔落 / 仙人掌 /
+        // /kill 等环境死）不给胜场不发奖 —— 否则 A 挑战、B 补刀，奖励全归 A，代打可行。
+        // 挑战作废：冷却照算（挑战确实发生了），费用本就不退。
         Player player = Bukkit.getPlayer(a.player);
+        Player killerPlayer = dead.getKiller();
+        if (killerPlayer == null || !killerPlayer.getUniqueId().equals(a.player)) {
+            markCooldown(a.player, a.tombId);
+            if (player != null && player.isOnline()) {
+                Msg.prefix(player, "<red>残影不是你斩落的，挑战作废。</red> <dark_gray>（挑战费不退）</dark_gray>");
+            }
+            return;
+        }
+
         TombManager.Tomb t = tombs.get(a.tombId);
         if (t != null) {
             // 「挑战次数」在召唤时就记过了，这里只加胜场，否则一次召唤会算两次

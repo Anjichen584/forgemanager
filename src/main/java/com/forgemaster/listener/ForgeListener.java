@@ -44,7 +44,12 @@ public final class ForgeListener implements Listener {
         this.manager = plugin.forge();
     }
 
-    @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
+    // v2.23.7 修 P2：原来 HIGH + ignoreCancelled=true —— 任何在 NORMAL 及更早
+    // 优先级 blanket-cancel InventoryClickEvent 的插件（背包保护 / GUI 管理类很常见）
+    // 会让锻造台 / 主菜单 / 契约 / 蜕变全部「点不动」。改成 LOWEST + false：
+    // 自绘界面的点击本来就要无条件接住（分支里各自 setCancelled(true)），
+    // 与 ReforgeMenu 的 ClickRouter 同一套契约。
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onClick(InventoryClickEvent event) {
         Inventory top = event.getView().getTopInventory();
         InventoryHolder holder = top.getHolder();

@@ -165,14 +165,15 @@ public final class TombRunService implements Listener {
             return say(player, "<red>秘境波次没配好（<white>tombrun.waves</white> 为空），找管理员看看。</red>");
         }
         long ticket = ticketCoins();
-        if (ticket > 0 && !plugin.stats().takeCoins(player.getUniqueId(), ticket, com.forgemaster.econ.CoinReason.TOMB_FEE)) {
+        // v2.23.7：扣款走 Wallet 收口，与经济总开关同账本
+        if (ticket > 0 && !plugin.wallet().take(player, ticket, com.forgemaster.econ.CoinReason.TOMB_FEE)) {
             return say(player, "<red>进秘境需要 <white>" + ticket + "</white> 剑币门票，你不够。</red>");
         }
 
         List<UUID> spawned = spawnWave(player, 1, waves.get(0));
         if (spawned == null) {
             if (ticket > 0) {
-                plugin.stats().addCoins(player.getUniqueId(), ticket); // 生成失败：门票原路退回
+                plugin.wallet().give(player, ticket, com.forgemaster.econ.CoinReason.TOMB_FEE); // 生成失败：门票原路退回
             }
             return say(player, "<red>秘境守卫没能凝成形，稍后再试（门票已退回）。</red>");
         }

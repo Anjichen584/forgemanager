@@ -1,6 +1,6 @@
 {
   "bot": "TestBot",
-  "at": "2026-11-11T08:51:57.909Z",
+  "at": "2026-11-11T17:18:34.231Z",
   "totals": {
     "pass": 114,
     "warn": 1,
@@ -13,805 +13,805 @@
       "area": "命令",
       "name": "/zhujian reload",
       "detail": "铸剑 » 配置已重载：6 种剑胚 / 13 条词条 / 5 种淬火。",
-      "at": "2026-11-11T08:48:45.695Z"
+      "at": "2026-11-11T17:15:21.937Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian give",
       "detail": "铸剑 » 用法: /zhujian give <玩家> <剑胚id> [品质] [分数]",
-      "at": "2026-11-11T08:48:48.955Z"
+      "at": "2026-11-11T17:15:25.188Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian spirit",
-      "detail": "灵性: 初醒 0/1000 · 距「通灵」还差 50 | 本档应有灵契词条: 0 条 | 击中敌人自动养灵；/zhujian spirit feed 花剑币喂养，/zhujian spirit name <剑名> 起名。",
-      "at": "2026-11-11T08:48:50.308Z"
+      "detail": "铸剑 » 主手要拿一把锻造品。",
+      "at": "2026-11-11T17:15:26.538Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian tomb",
-      "detail": "窗口 90 格 / 内容 71 / 0:iron_sword,1:iron_sword,2:iron_sword,3:iron_sword,4:iron_sword,5:iron_sword,6:iron_sword,7:iron_sword",
-      "at": "2026-11-11T08:48:51.674Z"
+      "detail": "窗口 90 格 / 内容 48 / 0:iron_sword,1:iron_sword,2:iron_sword,3:iron_sword,4:iron_sword,5:iron_sword,6:iron_sword,7:iron_sword",
+      "at": "2026-11-11T17:15:27.897Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian tombrun",
-      "detail": "铸剑 » 秘境试炼 · 开 第 1/3 波，守卫 2 只 · 超时 180 秒。清完全部波次即通关。 | 铸剑 » 秘境试炼 · 开 第 1/3 波，守卫 2 只 · 超时 180 秒。清完全部波次即通关。",
-      "at": "2026-11-11T08:48:53.284Z"
+      "detail": "铸剑 » 进秘境需要 300 剑币门票，你不够。 | 铸剑 » 进秘境需要 300 剑币门票，你不够。",
+      "at": "2026-11-11T17:15:29.525Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian achievements",
-      "detail": "窗口 90 格 / 内容 46 / 0:iron_sword,1:gray_dye,2:gray_dye,3:gray_dye,4:gray_dye,5:gray_dye,6:gray_dye,7:gray_dye",
-      "at": "2026-11-11T08:48:54.646Z"
+      "detail": "窗口 90 格 / 内容 23 / 0:iron_sword,1:gray_dye,2:gray_dye,3:gray_dye,4:gray_dye,5:gray_dye,6:gray_dye,7:gray_dye",
+      "at": "2026-11-11T17:15:30.884Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian top",
-      "detail": "8. 7f318070 | 0.0 分 | — | 共 0 次 | 9. 0874e983 | 0.0 分 | — | 共 0 次 | 10. 441551a7 | 0.0 分 | — | 共 0 次",
-      "at": "2026-11-11T08:48:56.273Z"
+      "detail": "8. 74399c7e | 0.0 分 | — | 共 0 次 | 9. 23c8e5d2 | 0.0 分 | — | 共 0 次 | 10. eb6ff37c | 0.0 分 | — | 共 0 次",
+      "at": "2026-11-11T17:15:32.493Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian stats",
-      "detail": "排名: 剑币 #1 · 声望 未上榜 · 连锻 未上榜 | 强化: #2 · +99/+99 （历史最高，离线也算） | /zhujian rank [coins|reputation|streak|level|strengthen] 看排行榜",
-      "at": "2026-11-11T08:48:57.642Z"
+      "detail": "排名: 剑币 未上榜 · 声望 未上榜 · 连锻 未上榜 | 强化: #2 · +99/+99 （历史最高，离线也算） | /zhujian rank [coins|reputation|streak|level|strengthen] 看排行榜",
+      "at": "2026-11-11T17:15:33.849Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian profile",
-      "detail": "排名: 剑币 #1 · 声望 未上榜 · 连锻 未上榜 | 强化: #2 · +99/+99 （历史最高，离线也算） | /zhujian rank [coins|reputation|streak|level|strengthen] 看排行榜",
-      "at": "2026-11-11T08:48:58.995Z"
+      "detail": "排名: 剑币 未上榜 · 声望 未上榜 · 连锻 未上榜 | 强化: #2 · +99/+99 （历史最高，离线也算） | /zhujian rank [coins|reputation|streak|level|strengthen] 看排行榜",
+      "at": "2026-11-11T17:15:35.228Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian rank",
-      "detail": "窗口 90 格 / 内容 34 / 0:gold_block,1:iron_block,45:gold_ingot,46:enchanted_book,47:blaze_powder,48:experience_bottle,49:barrier,50:netherite_sword",
-      "at": "2026-11-11T08:49:00.347Z"
+      "detail": "窗口 90 格 / 内容 10 / 0:gold_block,45:gold_ingot,46:enchanted_book,47:blaze_powder,48:experience_bottle,49:barrier,50:netherite_sword,53:player_head",
+      "at": "2026-11-11T17:15:36.587Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian season",
-      "detail": "开始: 2026-11-05 19:31 | 预计结算: 24 天 2 小时后 （每 30 天一季） | 管理员：/zhujian season end 立即结算",
-      "at": "2026-11-11T08:49:01.970Z"
+      "detail": "开始: 2026-11-05 19:31 | 预计结算: 23 天 18 小时后 （每 30 天一季） | 管理员：/zhujian season end 立即结算",
+      "at": "2026-11-11T17:15:38.190Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian codex",
       "detail": "netherite □□□□□□ 未锻过 | starfall □□□□□□ 未锻过 | 收集度: ||||||||||||||||||||||||||||||",
-      "at": "2026-11-11T08:49:03.322Z"
+      "at": "2026-11-11T17:15:39.549Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian relicset",
-      "detail": "窗口 90 格 / 内容 33 / 4:book,10:iron_ingot,11:gold_ingot,12:copper_ingot,13:diamond,14:netherite_ingot,15:nether_star,49:barrier",
-      "at": "2026-11-11T08:49:04.688Z"
+      "detail": "窗口 90 格 / 内容 10 / 4:book,10:iron_ingot,11:gold_ingot,12:copper_ingot,13:diamond,14:netherite_ingot,15:nether_star,49:barrier",
+      "at": "2026-11-11T17:15:40.922Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian collection",
-      "detail": "窗口 90 格 / 内容 39 / 0:emerald,1:iron_sword,2:gold_ingot,3:totem_of_undying,4:enchanted_book,5:name_tag,8:barrier,9:stone_sword",
-      "at": "2026-11-11T08:49:06.299Z"
+      "detail": "窗口 90 格 / 内容 16 / 0:emerald,1:iron_sword,2:gold_ingot,3:totem_of_undying,4:enchanted_book,5:name_tag,8:barrier,9:stone_sword",
+      "at": "2026-11-11T17:15:42.538Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian salvage",
-      "detail": "铸剑 » 熔掉了 铁剑 锻造品，回炉得到 4 × 铁锭。",
-      "at": "2026-11-11T08:49:07.915Z"
+      "detail": "铸剑 » 手里拿的不是锻造品。",
+      "at": "2026-11-11T17:15:44.164Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian dissolve",
       "detail": "铸剑 » 主手先拿一件锻造品。",
-      "at": "2026-11-11T08:49:09.289Z"
+      "at": "2026-11-11T17:15:45.519Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian imprint",
       "detail": "铸剑 » 背包里没有词条符（用 /zhujian strengthen strip <序号> 剥出来）。",
-      "at": "2026-11-11T08:49:10.645Z"
+      "at": "2026-11-11T17:15:46.871Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian board",
-      "detail": "窗口 63 格 / 内容 32 / 4:writable_book,10:enchanted_book,12:enchanted_book,14:paper,18:barrier,22:iron_ingot,26:clock,27:iron_sword",
-      "at": "2026-11-11T08:49:11.995Z"
+      "detail": "窗口 63 格 / 内容 9 / 4:writable_book,10:anvil,12:experience_bottle,14:paper,18:barrier,22:lapis_lazuli,26:clock,54:lapis_lazuli",
+      "at": "2026-11-11T17:15:48.237Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian duel",
       "detail": "铸剑 » 用法：/zhujian duel <玩家> 发起 · /zhujian duel accept 应战 · deny 拒绝",
-      "at": "2026-11-11T08:49:13.595Z"
+      "at": "2026-11-11T17:15:49.837Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian repair",
       "detail": "铸剑 » 主手要拿一把锻造品才能研磨。",
-      "at": "2026-11-11T08:49:14.958Z"
+      "at": "2026-11-11T17:15:51.187Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian manual",
-      "detail": "窗口 63 格 / 内容 28 / 0:netherite_sword,1:diamond_sword,23:barrier,27:iron_sword,28:book,29:iron_sword,30:iron_sword,31:iron_sword",
-      "at": "2026-11-11T08:49:16.326Z"
+      "detail": "窗口 63 格 / 内容 5 / 0:netherite_sword,1:diamond_sword,23:barrier,54:lapis_lazuli,55:enchanted_book",
+      "at": "2026-11-11T17:15:52.537Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian record",
       "detail": "铸剑 » 手上要拿一把锻造品才能登记。",
-      "at": "2026-11-11T08:49:17.945Z"
+      "at": "2026-11-11T17:15:54.146Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian copy",
       "detail": "铸剑 » 用法：/zhujian copy <谱号> 开始临摹 · /zhujian copy stop 取消 · /zhujian manual 看谱库",
-      "at": "2026-11-11T08:49:19.300Z"
+      "at": "2026-11-11T17:15:55.512Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian contest",
-      "detail": "窗口 63 格 / 内容 33 / 4:clock,10:anvil,12:player_head,14:clock,16:golden_helmet,18:paper,22:ender_pearl,26:barrier",
-      "at": "2026-11-11T08:49:20.678Z"
+      "detail": "窗口 63 格 / 内容 10 / 4:clock,10:anvil,12:player_head,14:clock,16:golden_helmet,18:paper,22:ender_pearl,26:barrier",
+      "at": "2026-11-11T17:15:56.871Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian grade",
       "detail": " 天外料 · 上限 +12% · 额外词条 +1 | 手上: 普通料 (锻造时优先消耗高档料) | 管理员: /zhujian grade up | grade give <材料> <档次> [数量]",
-      "at": "2026-11-11T08:49:22.296Z"
+      "at": "2026-11-11T17:15:58.487Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian gem",
-      "detail": "窗口 63 格 / 内容 34 / 4:amethyst_shard,10:grindstone,11:enchanting_table,13:nether_star,15:amethyst_cluster,16:enchanted_book,20:grindstone,22:arrow",
-      "at": "2026-11-11T08:49:23.662Z"
+      "detail": "窗口 63 格 / 内容 11 / 4:amethyst_shard,10:grindstone,11:enchanting_table,13:nether_star,15:amethyst_cluster,16:enchanted_book,20:grindstone,22:arrow",
+      "at": "2026-11-11T17:15:59.838Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian enchant",
       "detail": "铸剑 » 主手要拿锻造品。",
-      "at": "2026-11-11T08:49:25.287Z"
+      "at": "2026-11-11T17:16:01.458Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian ench",
-      "detail": "窗口 90 格 / 内容 28 / 22:enchanted_book,45:barrier,49:gray_dye,54:iron_sword,55:book,56:iron_sword,57:iron_sword,58:iron_sword",
-      "at": "2026-11-11T08:49:26.646Z"
+      "detail": "窗口 90 格 / 内容 5 / 22:enchanted_book,45:barrier,49:gray_dye,81:lapis_lazuli,82:enchanted_book",
+      "at": "2026-11-11T17:16:02.829Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian strengthen",
       "detail": "③ 再 右键铁砧 把剑取回来 | 没有锤子？/zhujian hammer 领一把（原版重锤也认） | ────────────────────",
-      "at": "2026-11-11T08:49:28.273Z"
+      "at": "2026-11-11T17:16:04.439Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian hammer",
       "detail": "铸剑 » 领到一把 铁匠重锤。主手拿剑右键铁砧放上去，再拿它左键敲。",
-      "at": "2026-11-11T08:49:29.627Z"
+      "at": "2026-11-11T17:16:05.812Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian evolve",
       "detail": "铸剑 » 主手这把不是锻造品，蜕变不了——锻造台打出来的才算。",
-      "at": "2026-11-11T08:49:30.994Z"
+      "at": "2026-11-11T17:16:07.166Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian contract",
       "detail": "铸剑 » 你还没签契约：/zhujian contract join",
-      "at": "2026-11-11T08:49:32.356Z"
+      "at": "2026-11-11T17:16:08.536Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian shangjin",
-      "detail": "铸剑 » 1. 史诗 以上 · 强化 +13 以上 · 赏金 2369 | 铸剑 » 2. 精良 以上 · 强化 +5 以上 · 赏金 1347 | 铸剑 » 3. 精良 以上 · 强化 +7 以上 · 赏金 1617",
-      "at": "2026-11-11T08:49:33.708Z"
+      "detail": "铸剑 » 1. 传说 以上 · 强化 +5 以上 · 锻阶 1 阶以上 · 赏金 3243 | 铸剑 » 2. 传说 以上 · 强化 +15 以上 · 赏金 3195 | 铸剑 » 3. 精良 以上 · 强化 +11 以上 · 赏金 1766",
+      "at": "2026-11-11T17:16:09.893Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian money",
-      "detail": "├ 剑币（插件内产出：锻造 / 委托 / 大赛 / 拍卖）: 99900 币 | ├ 宝石 / 黑市 / 签到 / 重铸 扣: 剑币 （economy.coin-sinks=plugin，与商会 / 拍卖同一本账） | └ 锻造费扣: 服务器经济 （README 写明的唯一例外）",
-      "at": "2026-11-11T08:49:35.062Z"
+      "detail": "├ 剑币（插件内产出：锻造 / 委托 / 大赛 / 拍卖）: 0 币 | ├ 宝石 / 黑市 / 签到 / 重铸 扣: 剑币 （economy.coin-sinks=plugin，与商会 / 拍卖同一本账） | └ 锻造费扣: 服务器经济 （README 写明的唯一例外）",
+      "at": "2026-11-11T17:16:11.267Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian env",
-      "detail": "窗口 63 格 / 内容 33 / 4:glowstone_dust,10:blaze_powder,12:golden_sword,13:clock,14:paper,16:iron_bars,22:barrier,27:iron_sword",
-      "at": "2026-11-11T08:49:36.438Z"
+      "detail": "窗口 63 格 / 内容 10 / 4:glowstone_dust,10:blaze_powder,12:golden_sword,13:yellow_dye,14:paper,16:iron_bars,22:barrier,54:lapis_lazuli",
+      "at": "2026-11-11T17:16:12.637Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian story",
       "detail": "铸剑 » 剧情进度（1/5）：第二章 · 初识委托 | 进度 0/2（委托）",
-      "at": "2026-11-11T08:49:38.052Z"
+      "at": "2026-11-11T17:16:14.276Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian spectrum",
-      "detail": "窗口 63 格 / 内容 31 / 4:writable_book,10:netherite_sword,12:anvil,14:skeleton_skull,26:barrier,27:iron_sword,28:book,29:iron_sword",
-      "at": "2026-11-11T08:49:39.408Z"
+      "detail": "窗口 63 格 / 内容 8 / 4:writable_book,10:netherite_sword,12:anvil,14:skeleton_skull,26:barrier,54:lapis_lazuli,55:enchanted_book,56:iron_axe",
+      "at": "2026-11-11T17:16:15.633Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian pass",
-      "detail": "窗口 90 格 / 内容 45 / 4:clock,36:iron_bars,37:iron_bars,38:iron_bars,39:iron_bars,40:iron_bars,41:iron_bars,42:iron_bars",
-      "at": "2026-11-11T08:49:41.040Z"
+      "detail": "窗口 90 格 / 内容 22 / 4:clock,36:iron_bars,37:iron_bars,38:iron_bars,39:iron_bars,40:iron_bars,41:iron_bars,42:iron_bars",
+      "at": "2026-11-11T17:16:17.238Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian halloffame",
       "detail": "铸剑 » 用法: /zhujian halloffame set｜clear",
-      "at": "2026-11-11T08:49:42.645Z"
+      "at": "2026-11-11T17:16:18.866Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian hall",
       "detail": "铸剑 » 用法: /zhujian hall set 设原点｜show 立即重摆｜del 删除",
-      "at": "2026-11-11T08:49:43.998Z"
+      "at": "2026-11-11T17:16:20.226Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian power",
       "detail": "这不是锻造品，没有战力分。",
-      "at": "2026-11-11T08:49:45.370Z"
+      "at": "2026-11-11T17:16:21.587Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian fixattrs",
       "detail": "铸剑 » 主手要拿一件锻造品。",
-      "at": "2026-11-11T08:49:46.744Z"
+      "at": "2026-11-11T17:16:22.963Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian config",
       "detail": "├ 强化高段: 成功率下限 14% · 顶段碎裂 18% · 失败损伤占比 35% （用 /zhujian strengthen curve 看六档曲线） | ├ 暴击口径: 暴击率上限 50% · 暴伤上限 +110% → 最高 ×2.60 （倍率底数 ×1.50） | └ 货币口径: plugin（宝石/黑市/签到/重铸扣剑币） · 锻造费永远走服务器经济",
-      "at": "2026-11-11T08:49:48.094Z"
+      "at": "2026-11-11T17:16:24.333Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian metrics",
-      "detail": "├ 剑冢费用 300 100.0% | 口径：流水是生命周期累计；metrics.history-days = 30 天只留给后续趋势切片 | 用 /zhujian admin metrics trend [天数] 看历史趋势，metrics csv [天数] 导出 CSV，metrics sample 立刻采样。",
-      "at": "2026-11-11T08:49:51.345Z"
+      "detail": "消耗构成 （还没有流水） | 口径：流水是生命周期累计；metrics.history-days = 30 天只留给后续趋势切片 | 用 /zhujian metrics trend [天数] 看历史趋势，metrics csv [天数] 导出 CSV，metrics sample 立刻采样。",
+      "at": "2026-11-11T17:16:27.589Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian givefull",
       "detail": "铸剑 » 用法: /zhujian givefull <玩家> <剑胚|armor-剑胚-部位> [品质] | 铸剑 » 例：/zhujian givefull Steve iron legendary | 铸剑 » /zhujian givefull Steve armor-iron-chestplate mythic",
-      "at": "2026-11-11T08:49:54.595Z"
+      "at": "2026-11-11T17:16:30.853Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian auction",
-      "detail": "窗口 90 格 / 内容 29 / 45:chest,49:barrier,53:clock,54:iron_sword,55:book,56:iron_sword,57:iron_sword,58:iron_sword",
-      "at": "2026-11-11T08:49:55.946Z"
+      "detail": "窗口 90 格 / 内容 6 / 45:chest,49:barrier,53:clock,81:lapis_lazuli,82:enchanted_book,83:iron_axe",
+      "at": "2026-11-11T17:16:32.214Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian order",
-      "detail": "窗口 90 格 / 内容 30 / 4:writable_book,45:minecart,49:barrier,53:clock,54:iron_sword,55:book,56:iron_sword,57:iron_sword",
-      "at": "2026-11-11T08:49:57.562Z"
+      "detail": "窗口 90 格 / 内容 7 / 4:writable_book,45:minecart,49:barrier,53:clock,81:lapis_lazuli,82:enchanted_book,83:iron_axe",
+      "at": "2026-11-11T17:16:33.836Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian master",
       "detail": "师父: 无 | 徒弟: 0/3 · 分成比例 10% | /zhujian master 玩家名 拜师 · /zhujian accept 收徒 · /zhujian master leave 离开 · /zhujian master expel 徒弟名 逐出",
-      "at": "2026-11-11T08:49:59.170Z"
+      "at": "2026-11-11T17:16:35.447Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian title",
-      "detail": "窗口 90 格 / 内容 34 / 0:netherite_sword,1:anvil,2:iron_block,3:skeleton_skull,4:name_tag,5:tnt,49:gray_dye,53:barrier",
-      "at": "2026-11-11T08:50:00.541Z"
+      "detail": "窗口 90 格 / 内容 11 / 0:netherite_sword,1:anvil,2:iron_block,3:skeleton_skull,4:name_tag,5:tnt,49:gray_dye,53:barrier",
+      "at": "2026-11-11T17:16:36.801Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian accept",
       "detail": "铸剑 » 你现在没有待处理的拜师邀请。",
-      "at": "2026-11-11T08:50:02.149Z"
+      "at": "2026-11-11T17:16:38.410Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian guild",
       "detail": "──── 行会 ──── | 行会: 无 | /zhujian guild create <会名> 建会 · /zhujian guild list 全服行会",
-      "at": "2026-11-11T08:50:03.525Z"
+      "at": "2026-11-11T17:16:39.775Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian shop",
-      "detail": "窗口 81 格 / 内容 50 / 10:iron_ingot,11:iron_ingot,12:iron_ingot,13:gold_ingot,14:gold_ingot,15:gold_ingot,16:copper_ingot,19:copper_ingot",
-      "at": "2026-11-11T08:50:04.894Z"
+      "detail": "窗口 81 格 / 内容 27 / 10:iron_ingot,11:iron_ingot,12:iron_ingot,13:gold_ingot,14:gold_ingot,15:gold_ingot,16:copper_ingot,19:copper_ingot",
+      "at": "2026-11-11T17:16:41.137Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian blackmarket",
-      "detail": "窗口 63 格 / 内容 33 / 4:ender_chest,10:netherite_ingot,12:copper_ingot,14:paper,16:diamond,22:gold_ingot,26:barrier,27:iron_sword",
-      "at": "2026-11-11T08:50:06.494Z"
+      "detail": "窗口 63 格 / 内容 10 / 4:ender_chest,10:copper_ingot,12:echo_shard,14:paper,16:paper,22:gold_ingot,26:barrier,54:lapis_lazuli",
+      "at": "2026-11-11T17:16:42.738Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian signin",
-      "detail": "铸剑 » 今天已经签过了（本轮第 1 天）。明天再来。",
-      "at": "2026-11-11T08:50:08.095Z"
+      "detail": "铸剑 » 今天已经签过了（本轮第 2 天）。明天再来。",
+      "at": "2026-11-11T17:16:44.356Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian talent",
       "detail": "当前合计: 容差 +0% · 命中区 +0 · 叠钢 +0.0s · 开刃 +0.0 | 降温 ×1.00 · 额外词条 +0% · 经验 ×1.00 | 加点: /zhujian talent add <id> · 可选: touch/eye/ember/fold/edge/luck/study",
-      "at": "2026-11-11T08:50:09.457Z"
+      "at": "2026-11-11T17:16:45.728Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian forge",
       "detail": "铸剑 » 用法：/zhujian forge risk 预设极限锻造（下一把剑生效）· /zhujian forge cancel 撤销",
-      "at": "2026-11-11T08:50:10.816Z"
+      "at": "2026-11-11T17:16:47.087Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian event",
-      "detail": "铸剑 » 当前没有世界事件，约 32 分钟后可能随机开启。",
-      "at": "2026-11-11T08:50:12.178Z"
+      "detail": "铸剑 » 当前没有世界事件，约 57 分钟后可能随机开启。",
+      "at": "2026-11-11T17:16:48.444Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian backup",
       "detail": " · 20261105-232600 data.yml, commissions.yml, manuals.yml, auction.yml, tombs.yml | · 20261105-232531 data.yml, commissions.yml, manuals.yml, auction.yml, tombs.yml | 回档用 /zhujian restore <id>（回档前会自动再备份一次）",
-      "at": "2026-11-11T08:50:15.439Z"
+      "at": "2026-11-11T17:16:51.711Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian restore",
       "detail": " · 20261105-232600 data.yml, commissions.yml, manuals.yml, auction.yml, tombs.yml | · 20261105-232531 data.yml, commissions.yml, manuals.yml, auction.yml, tombs.yml | 回档用 /zhujian restore <id>（回档前会自动再备份一次）",
-      "at": "2026-11-11T08:50:18.699Z"
+      "at": "2026-11-11T17:16:54.984Z"
     },
     {
       "status": "PASS",
       "area": "命令",
       "name": "/zhujian help",
-      "detail": "/zhujian reload — 重载配置 | /zhujian selftest — 运行时自检 | 玩法：烧红 → 卡点落锤 → 序列叠钢 → 稳住刃压 → 选淬火介质",
-      "at": "2026-11-11T08:50:20.061Z"
+      "detail": "/zhujian config check [all] — 配置体检：盘上缺键 + 实际生效值 | 玩法：烧红 → 卡点落锤 → 序列叠钢 → 稳住刃压 → 选淬火介质 | 全部子命令（含别名与玩家名 / 剑胚 / 谱号 / 编号这些参数）都能 Tab 补全。",
+      "at": "2026-11-11T17:16:56.337Z"
     },
     {
       "status": "PASS",
       "area": "物品",
       "name": "清空背包",
       "detail": "背包已空",
-      "at": "2026-11-11T08:50:22.896Z"
+      "at": "2026-11-11T17:16:59.157Z"
     },
     {
       "status": "PASS",
       "area": "物品",
       "name": "/zhujian money coin give TestBot 100000",
-      "detail": "铸剑 » 已给 TestBot 100000 剑币（余额 199900）。",
-      "at": "2026-11-11T08:50:24.563Z"
+      "detail": "铸剑 » 已给 TestBot 100000 剑币（余额 100000）。",
+      "at": "2026-11-11T17:17:00.823Z"
     },
     {
       "status": "PASS",
       "area": "物品",
       "name": "/zhujian givefull TestBot iron mythic",
       "detail": "铸剑 » 已给 TestBot 生成满配：神话 · 评分 100 · +99 · 6 阶 · 词条 6 条 · 宝石孔 1 · 附魔孔 1",
-      "at": "2026-11-11T08:50:27.641Z"
+      "at": "2026-11-11T17:17:03.884Z"
     },
     {
       "status": "PASS",
       "area": "物品",
       "name": "givefull 产物",
       "detail": "iron_sword @36 ✦ 〔造化〕霜鸣 ✦",
-      "at": "2026-11-11T08:50:27.641Z"
+      "at": "2026-11-11T17:17:03.885Z"
     },
     {
       "status": "PASS",
       "area": "物品",
       "name": "/zhujian power",
-      "detail": "品质 神话 · 材质 铁剑（档 1） | 强化 +99 · 蜕变 6 阶 · 词条 5 条 | 宝石 1 颗 · 附魔 0 条 | 拍卖/订单推荐价约 22760 剑币 （战力 × price-per-power，仅供参考）",
-      "at": "2026-11-11T08:50:30.003Z"
+      "detail": "品质 神话 · 材质 铁剑（档 1） | 强化 +99 · 蜕变 6 阶 · 词条 5 条 | 宝石 1 颗 · 附魔 0 条 | 拍卖/订单推荐价约 23630 剑币 （战力 × price-per-power，仅供参考）",
+      "at": "2026-11-11T17:17:06.237Z"
     },
     {
       "status": "PASS",
       "area": "物品",
       "name": "/zhujian strengthen info",
       "detail": "② 手持 重锤，左键铁砧 落锤，一次一锤 | ③ 再 右键铁砧 把剑取回来 | 没有锤子？/zhujian hammer 领一把（原版重锤也认） | ────────────────────",
-      "at": "2026-11-11T08:50:31.771Z"
+      "at": "2026-11-11T17:17:08.004Z"
     },
     {
       "status": "PASS",
       "area": "物品",
       "name": "/zhujian strengthen plan 20 100",
-      "detail": "期望 0.0 锤 · 剑币 0 · 材料 0 | 期望碎剑 0.0 把（碎后按剑魂传承重开） · 达成率 100.0% | 口径：裸状态（无连击/狂热/符/圣物），实际只会更省；结果按上界读。 | 铸剑 » 秘境试炼通关！ 3 波守卫尽数散去，获得 800 剑币 + 残页 ×2。 残页可在剑冢挑战时抵扣挑战费。",
-      "at": "2026-11-11T08:50:34.225Z"
+      "detail": "铸剑 » 强化规划 +99 → +99 (模拟 100 局) | 期望 0.0 锤 · 剑币 0 · 材料 0 | 期望碎剑 0.0 把（碎后按剑魂传承重开） · 达成率 100.0% | 口径：裸状态（无连击/狂热/符/圣物），实际只会更省；结果按上界读。",
+      "at": "2026-11-11T17:17:10.470Z"
     },
     {
       "status": "PASS",
       "area": "物品",
       "name": "/zhujian fixattrs",
-      "detail": "铸剑 » 数值本来就合规 （没有需要收敛的部分）。 | 当前基础属性： fm_set_executioner=0.06 fm_attack_damage=2.60 fm_atk=6.84 fm_attack_speed=0.18 fm_speed=0.34 | 确认无误后用 /zhujian fixattrs all 扫在线玩家，或 /zhujian fixattrs containers 扫已加载的箱子。",
-      "at": "2026-11-11T08:50:36.093Z"
+      "detail": "铸剑 » 数值本来就合规 （没有需要收敛的部分）。 | 当前基础属性： fm_attack_damage=2.60 fm_atk=6.84 fm_attack_speed=0.18 fm_speed=0.34 | 确认无误后用 /zhujian fixattrs all 扫在线玩家，或 /zhujian fixattrs containers 扫已加载的箱子。",
+      "at": "2026-11-11T17:17:12.337Z"
     },
     {
       "status": "PASS",
       "area": "物品",
       "name": "/zhujian repair",
       "detail": "铸剑 » 这把剑还完好，不用修。",
-      "at": "2026-11-11T08:50:37.845Z"
+      "at": "2026-11-11T17:17:14.088Z"
     },
     {
       "status": "PASS",
       "area": "物品",
       "name": "满配 Lore 强化段",
       "detail": "+99",
-      "at": "2026-11-11T08:50:37.846Z"
+      "at": "2026-11-11T17:17:14.089Z"
     },
     {
       "status": "WARN",
       "area": "物品",
       "name": "满配 Lore 战力段",
       "detail": "未在 Lore 中看到战力，可能只走命令输出",
-      "at": "2026-11-11T08:50:37.846Z"
+      "at": "2026-11-11T17:17:14.089Z"
     },
     {
       "status": "PASS",
       "area": "子命令",
       "name": "/zhujian strengthen sim 10",
       "detail": "铸剑 » 强化模拟: +99 → +99 (上限 +99) | 铸剑 » 目标不高于当前等级，不用锻。",
-      "at": "2026-11-11T08:50:40.324Z"
+      "at": "2026-11-11T17:17:16.554Z"
     },
     {
       "status": "PASS",
       "area": "子命令",
       "name": "/zhujian strengthen curve",
       "detail": "铸剑 » 强化曲线 (当前 +99 / 上限 +99 · 裸锤口径，不含连击与符) | 铸剑 » +99 · 期望 0 锤 · 0 剑币 · 达成 100.0% | 铸剑 » 口径说明：这里只算裸锤。连击 / 炉魂 / 护胚符都会显著提高达成率，所以真实手感比表上宽松——表是「最坏情况的地板」。",
-      "at": "2026-11-11T08:50:42.789Z"
+      "at": "2026-11-11T17:17:19.023Z"
     },
     {
       "status": "PASS",
       "area": "子命令",
       "name": "/zhujian gem list",
       "detail": " knockback_resist · 镇岳石 击退抗性 | attack_speed · 疾风石 攻击速度 | 等级：L1 / L2 / L3 / L4 / L5（也认 COMMON / FINE / EPIC / LEGENDARY） | 发：/zhujian gem give 玩家 attack L5 3 · /zhujian gem give all random L3 1",
-      "at": "2026-11-11T08:50:45.244Z"
+      "at": "2026-11-11T17:17:21.475Z"
     },
     {
       "status": "PASS",
       "area": "子命令",
       "name": "/zhujian rank text",
-      "detail": "──── 剑币排行 ──── | 1. TestBot | 200700 剑币 | 2. 18bba0d5 | 300 剑币",
-      "at": "2026-11-11T08:50:47.695Z"
+      "detail": "──── 剑币排行 ──── | 1. TestBot | 100000 剑币 | 2. 0212d5d2 | 300 剑币",
+      "at": "2026-11-11T17:17:23.937Z"
     },
     {
       "status": "PASS",
       "area": "子命令",
       "name": "/zhujian contest list",
       "detail": "铸剑 » 当前还没有人上榜。",
-      "at": "2026-11-11T08:50:50.145Z"
+      "at": "2026-11-11T17:17:26.387Z"
     },
     {
       "status": "PASS",
       "area": "子命令",
       "name": "/zhujian metrics sample",
-      "detail": "消耗构成 (前 1) | ├ 剑冢费用 300 100.0% | 口径：流水是生命周期累计；metrics.history-days = 30 天只留给后续趋势切片 | 用 /zhujian admin metrics trend [天数] 看历史趋势，metrics csv [天数] 导出 CSV，metrics sample 立刻采样。",
-      "at": "2026-11-11T08:50:52.599Z"
+      "detail": "铸剑 » 已采样一次。",
+      "at": "2026-11-11T17:17:28.843Z"
     },
     {
       "status": "PASS",
       "area": "子命令",
       "name": "/zhujian metrics trend 7",
-      "detail": "消耗构成 (前 1) | ├ 剑冢费用 300 100.0% | 口径：流水是生命周期累计；metrics.history-days = 30 天只留给后续趋势切片 | 用 /zhujian admin metrics trend [天数] 看历史趋势，metrics csv [天数] 导出 CSV，metrics sample 立刻采样。",
-      "at": "2026-11-11T08:50:55.063Z"
+      "detail": "├ 产出 0 · 消耗 0 · 净通胀 0 | ├ 日均 产出 0 · 消耗 0 | ├ 最近一天 2026-11-12 · 产出 0 · 消耗 0 | └ 保留 30 天 · 当前 2 个日文件 (超期自动删)",
+      "at": "2026-11-11T17:17:31.320Z"
     },
     {
       "status": "PASS",
       "area": "子命令",
       "name": "/zhujian config check",
       "detail": "├ 蜕变逐阶（乘区/剑币）: 1:×1.06/600 · 2:×1.07/1400 · 3:×1.09/3000 · 4:×1.10/6000 · 5:×1.12/12000 · 6:×1.15/24000 连乘 ×1.752 | ├ 强化高段: 成功率下限 14% · 顶段碎裂 18% · 失败损伤占比 35% （用 /zhujian strengthen curve 看六档曲线） | ├ 暴击口径: 暴击率上限 50% · 暴伤上限 +110% → 最高 ×2.60 （倍率底数 ×1.50） | └ 货币口径: plugin（宝石/黑市/签到/重铸扣剑币） · 锻造费永远走服务器经济",
-      "at": "2026-11-11T08:50:57.514Z"
+      "at": "2026-11-11T17:17:33.787Z"
     },
     {
       "status": "PASS",
       "area": "子命令",
       "name": "/zhujian money balance",
-      "detail": "铸剑 » 你的余额：17,496,294.00€ （CMI） | ├ 剑币（插件内产出：锻造 / 委托 / 大赛 / 拍卖）: 200700 币 | ├ 宝石 / 黑市 / 签到 / 重铸 扣: 剑币 （economy.coin-sinks=plugin，与商会 / 拍卖同一本账） | └ 锻造费扣: 服务器经济 （README 写明的唯一例外）",
-      "at": "2026-11-11T08:50:59.969Z"
+      "detail": "铸剑 » 你的余额：17,496,294.00€ （CMI） | ├ 剑币（插件内产出：锻造 / 委托 / 大赛 / 拍卖）: 100000 币 | ├ 宝石 / 黑市 / 签到 / 重铸 扣: 剑币 （economy.coin-sinks=plugin，与商会 / 拍卖同一本账） | └ 锻造费扣: 服务器经济 （README 写明的唯一例外）",
+      "at": "2026-11-11T17:17:36.238Z"
     },
     {
       "status": "PASS",
       "area": "子命令",
       "name": "/zhujian tomb list",
-      "detail": "窗口 90 格 / 内容 48 / 0:iron_sword,1:iron_sword,2:iron_sword,3:iron_sword,4:iron_sword,5:iron_sword,6:iron_sword,7:iron_sword",
-      "at": "2026-11-11T08:51:02.031Z"
+      "detail": "窗口 90 格 / 内容 47 / 0:iron_sword,1:iron_sword,2:iron_sword,3:iron_sword,4:iron_sword,5:iron_sword,6:iron_sword,7:iron_sword",
+      "at": "2026-11-11T17:17:38.314Z"
     },
     {
       "status": "PASS",
       "area": "别名",
       "name": "[zj→zhujian] /zj power",
-      "detail": "品质 神话 · 材质 铁剑（档 1） | 强化 +99 · 蜕变 6 阶 · 词条 5 条 | 宝石 1 颗 · 附魔 0 条 | 拍卖/订单推荐价约 22760 剑币 （战力 × price-per-power，仅供参考）",
-      "at": "2026-11-11T08:51:04.396Z"
+      "detail": "品质 神话 · 材质 铁剑（档 1） | 强化 +99 · 蜕变 6 阶 · 词条 5 条 | 宝石 1 颗 · 附魔 0 条 | 拍卖/订单推荐价约 23630 剑币 （战力 × price-per-power，仅供参考）",
+      "at": "2026-11-11T17:17:40.687Z"
     },
     {
       "status": "PASS",
       "area": "别名",
       "name": "[zhanli→power] /zhujian zhanli",
-      "detail": "品质 神话 · 材质 铁剑（档 1） | 强化 +99 · 蜕变 6 阶 · 词条 5 条 | 宝石 1 颗 · 附魔 0 条 | 拍卖/订单推荐价约 22760 剑币 （战力 × price-per-power，仅供参考）",
-      "at": "2026-11-11T08:51:06.457Z"
+      "detail": "品质 神话 · 材质 铁剑（档 1） | 强化 +99 · 蜕变 6 阶 · 词条 5 条 | 宝石 1 颗 · 附魔 0 条 | 拍卖/订单推荐价约 23630 剑币 （战力 × price-per-power，仅供参考）",
+      "at": "2026-11-11T17:17:42.737Z"
     },
     {
       "status": "PASS",
       "area": "别名",
       "name": "[fumotai→ench] /zhujian fumotai list",
       "detail": "· echo 回响 [装备] 1~5 (+15% 满级) | · vigil 守夜 [装备] 1~5 (2.5 点/次 满级) | · salvage 拾遗 [通用] 1~5 (+30% 满级) | · insight 望气 [通用] 1~5 (10 格 满级)",
-      "at": "2026-11-11T08:51:08.516Z"
+      "at": "2026-11-11T17:17:44.788Z"
     },
     {
       "status": "PASS",
       "area": "别名",
       "name": "[qianghua→strengthen] /zhujian qianghua info",
       "detail": "② 手持 重锤，左键铁砧 落锤，一次一锤 | ③ 再 右键铁砧 把剑取回来 | 没有锤子？/zhujian hammer 领一把（原版重锤也认） | ────────────────────",
-      "at": "2026-11-11T08:51:10.575Z"
+      "at": "2026-11-11T17:17:46.839Z"
     },
     {
       "status": "PASS",
       "area": "别名",
       "name": "[paihang→rank] /zhujian paihang text",
-      "detail": "──── 剑币排行 ──── | 1. TestBot | 200700 剑币 | 2. 18bba0d5 | 300 剑币",
-      "at": "2026-11-11T08:51:12.645Z"
+      "detail": "──── 剑币排行 ──── | 1. TestBot | 100000 剑币 | 2. 0212d5d2 | 300 剑币",
+      "at": "2026-11-11T17:17:48.898Z"
     },
     {
       "status": "PASS",
       "area": "附魔",
       "name": "/zhujian ench list",
       "detail": "· echo 回响 [装备] 1~5 (+15% 满级) | · vigil 守夜 [装备] 1~5 (2.5 点/次 满级) | · salvage 拾遗 [通用] 1~5 (+30% 满级) | · insight 望气 [通用] 1~5 (10 格 满级)",
-      "at": "2026-11-11T08:51:17.895Z"
+      "at": "2026-11-11T17:17:54.149Z"
     },
     {
       "status": "PASS",
       "area": "附魔",
       "name": "界面尺寸",
       "detail": "90",
-      "at": "2026-11-11T08:51:19.545Z"
+      "at": "2026-11-11T17:17:55.805Z"
     },
     {
       "status": "PASS",
       "area": "附魔",
       "name": "4 号 成品",
       "detail": "空（输入/输出槽，符合设计）",
-      "at": "2026-11-11T08:51:19.545Z"
+      "at": "2026-11-11T17:17:55.805Z"
     },
     {
       "status": "PASS",
       "area": "附魔",
       "name": "20 号 书槽",
       "detail": "空（输入/输出槽，符合设计）",
-      "at": "2026-11-11T08:51:19.545Z"
+      "at": "2026-11-11T17:17:55.805Z"
     },
     {
       "status": "PASS",
       "area": "附魔",
       "name": "24 号 矿槽",
       "detail": "空（输入/输出槽，符合设计）",
-      "at": "2026-11-11T08:51:19.545Z"
+      "at": "2026-11-11T17:17:55.805Z"
     },
     {
       "status": "PASS",
       "area": "附魔",
       "name": "22 号 信息",
       "detail": "enchanted_book",
-      "at": "2026-11-11T08:51:19.545Z"
+      "at": "2026-11-11T17:17:55.805Z"
     },
     {
       "status": "PASS",
       "area": "附魔",
       "name": "49 号 附魔按钮",
       "detail": "gray_dye",
-      "at": "2026-11-11T08:51:19.545Z"
+      "at": "2026-11-11T17:17:55.805Z"
     },
     {
       "status": "PASS",
       "area": "附魔",
       "name": "45 号 关闭",
       "detail": "barrier",
-      "at": "2026-11-11T08:51:19.545Z"
+      "at": "2026-11-11T17:17:55.805Z"
     },
     {
       "status": "PASS",
       "area": "附魔",
       "name": "空白书生成",
       "detail": "铸剑 » 附魔成功 | 随机原创附魔 I",
-      "at": "2026-11-11T08:51:22.021Z"
+      "at": "2026-11-11T17:17:58.269Z"
     },
     {
       "status": "PASS",
       "area": "附魔",
       "name": "成品格产出",
-      "detail": "烬狱 I ✦ 原创附魔 /   · 烬狱 I击杀则尸身爆燃，周围 2 点 点伤害",
-      "at": "2026-11-11T08:51:22.022Z"
+      "detail": "守夜 I ✦ 原创附魔 /   · 守夜 I脱战五秒后每两秒回 0.5 点/次",
+      "at": "2026-11-11T17:17:58.270Z"
     },
     {
       "status": "PASS",
       "area": "附魔",
       "name": "附魔书升级",
-      "detail": "铸剑 » 附魔成功 | 烬狱 II",
-      "at": "2026-11-11T08:51:24.445Z"
+      "detail": "铸剑 » 附魔成功 | 守夜 II",
+      "at": "2026-11-11T17:18:00.688Z"
     },
     {
       "status": "PASS",
       "area": "附魔",
       "name": "升级产物",
-      "detail": "烬狱 II",
-      "at": "2026-11-11T08:51:24.445Z"
+      "detail": "守夜 II",
+      "at": "2026-11-11T17:18:00.688Z"
     },
     {
       "status": "PASS",
       "area": "附魔",
       "name": "关闭按钮",
       "detail": "窗口已关",
-      "at": "2026-11-11T08:51:24.946Z"
+      "at": "2026-11-11T17:18:01.191Z"
     },
     {
       "status": "PASS",
       "area": "GUI",
       "name": "主菜单槽位",
       "detail": "10 个入口齐",
-      "at": "2026-11-11T08:51:26.606Z"
+      "at": "2026-11-11T17:18:02.861Z"
     },
     {
       "status": "PASS",
       "area": "GUI",
       "name": "宝石台按钮",
       "detail": "开孔/熔炼/镶嵌/拆卸/合成 齐",
-      "at": "2026-11-11T08:51:28.625Z"
+      "at": "2026-11-11T17:18:04.875Z"
     },
     {
       "status": "PASS",
       "area": "GUI",
       "name": "/zhujian rank",
       "detail": "窗口 90 格 / 内容 11 / 0:gold_block,1:iron_block,45:gold_ingot,46:enchanted_book,47:blaze_powder,48:experience_bottle,49:barrier,50:netherite_sword",
-      "at": "2026-11-11T08:51:30.742Z"
+      "at": "2026-11-11T17:18:06.988Z"
     },
     {
       "status": "PASS",
       "area": "GUI",
       "name": "/zhujian board",
-      "detail": "窗口 63 格 / 内容 9 / 4:writable_book,10:enchanted_book,12:enchanted_book,14:paper,18:barrier,22:lapis_lazuli,26:clock,54:lapis_lazuli",
-      "at": "2026-11-11T08:51:32.815Z"
+      "detail": "窗口 63 格 / 内容 9 / 4:writable_book,10:anvil,12:experience_bottle,14:paper,18:barrier,22:lapis_lazuli,26:clock,54:lapis_lazuli",
+      "at": "2026-11-11T17:18:09.067Z"
     },
     {
       "status": "PASS",
       "area": "GUI",
       "name": "/zhujian manual",
       "detail": "窗口 63 格 / 内容 5 / 0:netherite_sword,1:diamond_sword,23:barrier,54:lapis_lazuli,55:enchanted_book",
-      "at": "2026-11-11T08:51:34.890Z"
+      "at": "2026-11-11T17:18:11.152Z"
     },
     {
       "status": "PASS",
       "area": "GUI",
       "name": "/zhujian achievements",
       "detail": "窗口 90 格 / 内容 23 / 0:iron_sword,1:gray_dye,2:gray_dye,3:gray_dye,4:gray_dye,5:gray_dye,6:gray_dye,7:gray_dye",
-      "at": "2026-11-11T08:51:36.945Z"
+      "at": "2026-11-11T17:18:13.237Z"
     },
     {
       "status": "PASS",
       "area": "GUI",
       "name": "/zhujian shop",
       "detail": "窗口 81 格 / 内容 26 / 10:iron_ingot,11:iron_ingot,12:iron_ingot,13:gold_ingot,14:gold_ingot,15:gold_ingot,16:copper_ingot,19:copper_ingot",
-      "at": "2026-11-11T08:51:39.008Z"
+      "at": "2026-11-11T17:18:15.298Z"
     },
     {
       "status": "PASS",
       "area": "GUI",
       "name": "/zhujian blackmarket",
-      "detail": "窗口 63 格 / 内容 9 / 4:ender_chest,10:netherite_ingot,12:copper_ingot,14:paper,16:diamond,22:gold_ingot,26:barrier,54:lapis_lazuli",
-      "at": "2026-11-11T08:51:41.072Z"
+      "detail": "窗口 63 格 / 内容 9 / 4:ender_chest,10:copper_ingot,12:echo_shard,14:paper,16:paper,22:gold_ingot,26:barrier,54:lapis_lazuli",
+      "at": "2026-11-11T17:18:17.361Z"
     },
     {
       "status": "PASS",
       "area": "GUI",
       "name": "/zhujian auction",
       "detail": "窗口 90 格 / 内容 5 / 45:chest,49:barrier,53:clock,81:lapis_lazuli,82:enchanted_book",
-      "at": "2026-11-11T08:51:43.138Z"
+      "at": "2026-11-11T17:18:19.434Z"
     },
     {
       "status": "PASS",
       "area": "GUI",
       "name": "/zhujian order",
       "detail": "窗口 90 格 / 内容 6 / 4:writable_book,45:minecart,49:barrier,53:clock,81:lapis_lazuli,82:enchanted_book",
-      "at": "2026-11-11T08:51:45.203Z"
+      "at": "2026-11-11T17:18:21.488Z"
     },
     {
       "status": "PASS",
       "area": "GUI",
       "name": "/zhujian guild list",
       "detail": "窗口 90 格 / 内容 4 / 22:minecart,49:barrier,81:lapis_lazuli,82:enchanted_book",
-      "at": "2026-11-11T08:51:47.280Z"
+      "at": "2026-11-11T17:18:23.564Z"
     },
     {
       "status": "PASS",
       "area": "GUI",
       "name": "/zhujian pass",
       "detail": "窗口 90 格 / 内容 21 / 4:clock,36:iron_bars,37:iron_bars,38:iron_bars,39:iron_bars,40:iron_bars,41:iron_bars,42:iron_bars",
-      "at": "2026-11-11T08:51:49.344Z"
+      "at": "2026-11-11T17:18:25.637Z"
     },
     {
       "status": "PASS",
       "area": "GUI",
       "name": "/zhujian title",
       "detail": "窗口 90 格 / 内容 10 / 0:netherite_sword,1:anvil,2:iron_block,3:skeleton_skull,4:name_tag,5:tnt,49:gray_dye,53:barrier",
-      "at": "2026-11-11T08:51:51.395Z"
+      "at": "2026-11-11T17:18:27.714Z"
     },
     {
       "status": "PASS",
       "area": "GUI",
       "name": "/zhujian collection",
       "detail": "窗口 90 格 / 内容 16 / 0:emerald,1:iron_sword,2:gold_ingot,3:totem_of_undying,4:enchanted_book,5:name_tag,8:barrier,9:stone_sword",
-      "at": "2026-11-11T08:51:53.457Z"
+      "at": "2026-11-11T17:18:29.786Z"
     },
     {
       "status": "PASS",
       "area": "GUI",
       "name": "/zhujian relicset",
       "detail": "窗口 90 格 / 内容 10 / 4:book,10:iron_ingot,11:gold_ingot,12:copper_ingot,13:diamond,14:netherite_ingot,15:nether_star,49:barrier",
-      "at": "2026-11-11T08:51:55.536Z"
+      "at": "2026-11-11T17:18:31.843Z"
     },
     {
       "status": "PASS",
       "area": "GUI",
       "name": "/zhujian spectrum",
       "detail": "窗口 63 格 / 内容 7 / 4:writable_book,10:netherite_sword,12:anvil,14:skeleton_skull,26:barrier,54:lapis_lazuli,55:enchanted_book",
-      "at": "2026-11-11T08:51:57.596Z"
+      "at": "2026-11-11T17:18:33.918Z"
     }
   ]
 }

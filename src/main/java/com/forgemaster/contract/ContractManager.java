@@ -422,7 +422,19 @@ public final class ContractManager {
                 plugin.stats().takeCoins(id, loss, CoinReason.OTHER_OUT);
             }
         }
-        String name = Bukkit.getOfflinePlayer(id).getName();
+        // v2.23.7 修 P2：主线程 getOfflinePlayer(uuid).getName() 对从未进服的
+        // 存档玩家会触发阻塞式数据查档（Paper 明确警告 may block），午夜结算
+        // 多人破产时会卡顿。优先在线名，其次 stats 里记账的名字，都不再碰 BlockingManager。
+        String name = null;
+        Player self = Bukkit.getPlayer(id);
+        if (self != null) {
+            name = self.getName();
+        } else if (plugin.stats() != null) {
+            String cached = plugin.stats().get(id).name;
+            if (cached != null && !cached.isBlank()) {
+                name = cached;
+            }
+        }
         Bukkit.broadcast(Msg.mm("<gradient:#ff3d6e:#ff7a3d><bold>巨龙的怒吼撕裂了夜空——</bold></gradient> "
                 + "<white>" + (name == null ? "一名铁匠" : name) + "</white> <red>交不上税，契约粉碎，"
                 + "圣物被尽数夺走，剑币少了 " + loss + "。</red>"));

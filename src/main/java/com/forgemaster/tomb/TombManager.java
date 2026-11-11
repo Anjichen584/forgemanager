@@ -449,7 +449,8 @@ public final class TombManager {
             return;
         }
         long fee = retrieveFee();
-        if (fee > 0 && !plugin.stats().takeCoins(player.getUniqueId(), fee, CoinReason.TOMB_FEE)) {
+        // v2.23.7：扣款走 Wallet 收口，与经济总开关同账本
+        if (fee > 0 && !plugin.wallet().take(player, fee, CoinReason.TOMB_FEE)) {
             Msg.prefix(player, "<red>取回需要 <white>" + fee + "</white> 剑币，你不够。</red>");
             return;
         }
@@ -521,7 +522,8 @@ public final class TombManager {
                 }
             }
         }
-        if (fee > 0 && !plugin.stats().takeCoins(player.getUniqueId(), fee, CoinReason.TOMB_FEE)) {
+        // v2.23.7：扣款走 Wallet 收口，与经济总开关同账本
+        if (fee > 0 && !plugin.wallet().take(player, fee, CoinReason.TOMB_FEE)) {
             Msg.prefix(player, "<red>挑战需要 <white>" + fee + "</white> 剑币，你不够。</red>");
             return;
         }

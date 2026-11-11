@@ -875,10 +875,12 @@ public final class GemService {
         player.getInventory().setItemInOffHand(off.getAmount() <= 0 ? null : off);
         ItemStack third = player.getInventory().getItem(thirdSlot);
         if (third != null) {
+            // v2.23.7 修 P2（审计 #9）：只在归零时写回、数量>0 时不写回。
+            // 库里其它所有背包改动路径都显式 setItem 写回（getItem 返回副本是本插件
+            // 自证过的口径），唯独这里漏了 —— 一旦该槽是成叠宝石，第三颗的扣减
+            // 可能没落盘，三合一就能反复白嫖。无条件写回，与 MaterialGrades.consume 对齐。
             third.setAmount(third.getAmount() - 1);
-            if (third.getAmount() <= 0) {
-                player.getInventory().setItem(thirdSlot, null);
-            }
+            player.getInventory().setItem(thirdSlot, third.getAmount() <= 0 ? null : third);
         }
 
         player.playSound(player.getLocation(), Sound.BLOCK_AMETHYST_BLOCK_CHIME, 0.8f, 1.6f);

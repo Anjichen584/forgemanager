@@ -535,7 +535,9 @@ public final class SpiritManager implements Listener {
             return;
         }
         long cost = Math.max(0, plugin.settings().intOf("spirit.feed-coin-cost", 10));
-        if (!plugin.stats().takeCoins(player.getUniqueId(), cost, com.forgemaster.econ.CoinReason.OTHER_OUT)) {
+        // v2.23.7：扣款走 Wallet 收口（coin-sinks=server 时与 Vault 同账本），
+        // 直连 stats().takeCoins 会造成「黑市扣金币、喂养扣剑币」两本账分裂
+        if (!plugin.wallet().take(player, cost, com.forgemaster.econ.CoinReason.OTHER_OUT)) {
             Msg.prefix(player, "<red>喂养需要 <white>" + cost + "</white> 剑币，你不够。</red>");
             return;
         }

@@ -174,8 +174,16 @@ public final class EnchantState {
         if (player == null || attacker == null) {
             return;
         }
+        // v2.23.7 修 P2：被箭 / 三叉戟打中时 damager 是投掷物本身，
+        // 之前记的是箭的 UUID，回响拿射手 UUID 来比对恒 false ——
+        // 回响对远程攻击者从不生效。这里把投掷物展开成射手。
+        Entity effective = attacker;
+        if (attacker instanceof org.bukkit.entity.Projectile projectile
+                && projectile.getShooter() instanceof org.bukkit.entity.LivingEntity shooter) {
+            effective = shooter;
+        }
         Data d = of(player);
-        d.lastAttacker = attacker.getUniqueId();
+        d.lastAttacker = effective.getUniqueId();
         d.lastAttackerAt = System.currentTimeMillis();
         d.lastCombatAt = d.lastAttackerAt;
     }
