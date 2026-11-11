@@ -165,6 +165,9 @@ public final class SelfTestSuite {
         // v2.24 拓展：切片一（附魔/词条新机制）与切片二（剑灵剑冢/经济社交）的护栏
         com.forgemaster.selftest.SelfTestExpansion24Enchant.register(this);
         com.forgemaster.selftest.SelfTestExpansion24Social.register(this);
+        // v2.25 拓展：切片一（血怒/坚韧附魔）与切片二（灵契重抽/强化保险）的护栏
+        com.forgemaster.selftest.SelfTestExpansion25Enchant.register(this);
+        com.forgemaster.selftest.SelfTestExpansion25Social.register(this);
         // v2.23.1：本轮 bug 修复的回归护栏（isBaseKey 精确化 / 铁砧心跳句柄 /
         // 付费轨奖励来源 / 配置漂移 / 仓库超容量抢救 / 看板接线 / 迁移版本号）
         SelfTestRegression231.register(this);

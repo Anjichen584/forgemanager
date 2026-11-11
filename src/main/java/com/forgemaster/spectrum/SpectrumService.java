@@ -463,11 +463,12 @@ public final class SpectrumService {
             Msg.prefix(player, "<red>「<#ffd166>" + e.display + "</#ffd166>」的条件还没齐，谱上看看差哪样。</red>");
             return false;
         }
+        // v2.25 修 P1（审计轮2-1）：先落「已领」再发钱，与图鉴/悬赏/委托同一契约
         data(uuid).claimed.add(e.id);
+        save();
         if (e.coins > 0) {
             plugin.stats().addCoins(uuid, e.coins, CoinReason.CODEX);
         }
-        save();
 
         player.playSound(player.getLocation(), org.bukkit.Sound.UI_TOAST_CHALLENGE_COMPLETE, 0.9f, 1.2f);
         Msg.prefix(player, "<gradient:#ffd166:#ff7a18><bold>名剑谱</bold></gradient> <gray>「<#ffd166>"

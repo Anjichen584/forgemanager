@@ -155,6 +155,10 @@ public final class StoryManager {
             if (first != null) {
                 baseline.put(uuid, statOf(uuid, first.type()));
             }
+            // v2.25 修 P2（审计轮2-6）：baseline 原来只在完成章节 / 停服时落盘，
+            // 崩服后重启 baseline 缺省 0 —— 老玩家会被 while 循环连环跳章。
+            // 首次建档立即 save 一次。
+            save();
         }
         // 连续完成多章时循环推进
         while (true) {

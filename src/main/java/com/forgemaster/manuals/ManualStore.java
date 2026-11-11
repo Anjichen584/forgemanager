@@ -45,6 +45,8 @@ public final class ManualStore implements InventoryHolder {
     private final ForgingMasterPlugin plugin;
     private final File file;
     private final Map<String, ManualEntry> entries = new HashMap<>();
+    /** v2.25：每日登记奖励计数（uuid → day → 次数），重启清零属软上限 */
+    private final java.util.Map<java.util.UUID, java.util.Map<String, int[]>> repDailyCounter = new java.util.HashMap<>();
     private final Set<String> seenSignatures = new LinkedHashSet<>();
 
     /** 谁正在临摹哪本谱 */
@@ -196,7 +198,21 @@ public final class ManualStore implements InventoryHolder {
         entries.put(id, entry);
         seenSignatures.add(sig);
         save();
-        plugin.stats().addReputation(player.getUniqueId(), 15);
+        // v2.25 修 P2（审计轮2-8）：登记奖励原来无上限 —— 批量造廉价剑改名登记
+        // 就能线性刷声望（匠衔只升不降）。加每日上限：每天最多 rep-daily-cap 次
+        // 奖励（默认 3 次），超出照常收录只是没有声望。
+        String day = java.time.LocalDate.now().toString();
+        java.util.Map<String, int[]> rep = repDailyCounter.computeIfAbsent(player.getUniqueId(),
+                k -> new java.util.HashMap<>());
+        // 只留当天一层，防 Map 只增不减
+        rep.keySet().removeIf(d -> !day.equals(d));
+        int[] slot = rep.computeIfAbsent(day, k -> new int[1]);
+        int cap = Math.max(0, plugin.getConfig().getInt("manuals.rep-daily-cap", 3));
+        if (slot[0] < cap) {
+            slot[0]++;
+            plugin.stats().addReputation(player.getUniqueId(), 15);
+        }
+        // 超出上限：照常收录，只是当天没有声望奖励
 
         player.playSound(player.getLocation(), Sound.ITEM_BOOK_PAGE_TURN, 0.9f, 1.4f);
         return "<green>已收录剑谱《<white>" + name + "</white>》</green> <dark_gray>(" + id + ")"

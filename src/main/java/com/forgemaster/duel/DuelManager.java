@@ -86,6 +86,11 @@ public final class DuelManager {
         // 临时压档必须在「玩家退出 / 插件停用」时还原，这里自己挂监听，
         // 不依赖 ForgingMasterPlugin 的注册表（那个文件不归本模块改）
         Bukkit.getPluginManager().registerEvents(new DuelTierListener(plugin, this, balance), plugin);
+        // v2.25 修 P2（审计轮2-5）：「应战后 30 分钟强制收场」原本只在
+        // activeMatchOf 里顺带清 —— 双方 AFK 时没人再交互，锁永远不解。
+        // 挂一个 60s 的轻量心跳兜底（空表扫一遍，成本可忽略）。
+        Bukkit.getScheduler().runTaskTimer(plugin, this::cleanupExpiredInvites,
+                20L * 60, 20L * 60);
     }
 
     public boolean enabled() {

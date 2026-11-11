@@ -70,6 +70,11 @@ public final class ContestManager {
     }
 
     public void shutdown() {
+        // v2.25 修 P2（审计轮2-4）：reload / 关服时若大赛进行中，先走完整结算
+        // （发声望 / 剑币 / 播报），否则交过剑的玩家分数凭空蒸发、BossBar 无声消失。
+        if (running) {
+            finish();
+        }
         running = false;
         stopTicker();
         if (bar != null) {

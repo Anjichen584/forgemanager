@@ -113,11 +113,16 @@ public final class DailyStore {
 
     /** 整份重建落盘；market 里非当天的日期层一并剪掉 */
     public void save() {
+        // v2.25 修 P2（审计轮2-7）：剪层原来「非今天全剪」。23:59:59 进入 buy()
+        // 记的是昨天的账，跨过零点后这次 save() 会把刚记的层整个剪掉 ——
+        // 限购计数回零，可立即再买。改为保留今天+昨天两层（多层方案下
+        // 每天的查询都带日期键，留昨天不影响任何口径），跨零点后第二天再清。
         String today = LocalDate.now().toString();
+        String yesterday = LocalDate.now().minusDays(1).toString();
         YamlConfiguration yml = new YamlConfiguration();
         for (Map.Entry<UUID, Map<String, Map<String, Integer>>> e : market.entrySet()) {
             Map<String, Map<String, Integer>> byDate = e.getValue();
-            byDate.keySet().removeIf(d -> !today.equals(d));
+            byDate.keySet().removeIf(d -> !today.equals(d) && !yesterday.equals(d));
             for (Map.Entry<String, Map<String, Integer>> d : byDate.entrySet()) {
                 for (Map.Entry<String, Integer> k : d.getValue().entrySet()) {
                     yml.set("market." + e.getKey() + "." + d.getKey() + "." + k.getKey(), k.getValue());

@@ -61,6 +61,8 @@ public enum CoinReason {
     BLACKMARKET("blackmarket", "黑市", Flow.CONSUME),
     TOMB_FEE("tomb-fee", "剑冢费用", Flow.CONSUME),
     GUILD("guild", "行会", Flow.CONSUME),
+    /** v2.25：专精洗点（从 OTHER_OUT 分出来，报表看得出洗点总量） */
+    TALENT_RESET("talent-reset", "天赋洗点", Flow.CONSUME),
     OTHER_OUT("other-out", "其它消耗", Flow.CONSUME);
 
     /** 钱往哪个方向走 */

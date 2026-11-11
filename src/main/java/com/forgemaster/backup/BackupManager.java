@@ -100,14 +100,41 @@ public final class BackupManager {
         while (target.exists()) {
             target = new File(root(), id + "-" + n++);
         }
-        if (!target.mkdirs()) {
-            throw new IOException("无法创建备份目录 " + target.getName());
+        // v2.25 修 P2：先写 -tmp 再原子改名。原来直接写最终目录，中途崩服会留下
+        // 半份备份被 list() 当有效备份列出，回档进去就是混纪元数据。
+        File tmp = new File(root(), target.getName() + "-tmp");
+        deleteRecursively(tmp);
+        if (!tmp.mkdirs()) {
+            throw new IOException("无法创建备份目录 " + tmp.getName());
         }
-        for (String f : present) {
-            Files.copy(new File(dataDir, f).toPath(),
-                    new File(target, f).toPath(), StandardCopyOption.REPLACE_EXISTING);
+        try {
+            for (String f : present) {
+                Files.copy(new File(dataDir, f).toPath(),
+                        new File(tmp, f).toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+            if (!tmp.renameTo(target)) {
+                throw new IOException("备份目录改名失败（" + tmp.getName() + " -> " + target.getName() + "）");
+            }
+        } catch (IOException ex) {
+            deleteRecursively(tmp);
+            throw ex;
         }
         return target.getName();
+    }
+
+    /** v2.25：递归删除（只用于清理 -tmp 残留，路径恒在备份根目录内） */
+    private static void deleteRecursively(File dir) {
+        File[] kids = dir.listFiles();
+        if (kids != null) {
+            for (File k : kids) {
+                if (k.isDirectory()) {
+                    deleteRecursively(k);
+                } else {
+                    k.delete();
+                }
+            }
+        }
+        dir.delete();
     }
 
     /** 列出可用备份（按名字倒序，即最新在前）。只列普通备份与回档前备份，不列不合法目录 */
@@ -118,6 +145,8 @@ public final class BackupManager {
             return out;
         }
         Arrays.sort(dirs, (a, b) -> b.getName().compareTo(a.getName()));
+        // v2.25：-tmp 是原子改名前的半成品，不是有效备份
+        dirs = Arrays.stream(dirs).filter(d -> !d.getName().endsWith("-tmp")).toArray(File[]::new);
         for (File d : dirs) {
             out.add(d.getName());
         }
@@ -178,20 +207,36 @@ public final class BackupManager {
         String preId = backup(PRE_RESTORE_PREFIX);
         // ③ 覆盖存档目录
         File dataDir = plugin.getDataFolder();
+        try {
+            for (String f : SAVE_FILES) {
+                File src = new File(dir, f);
+                if (src.isFile()) {
+                    Files.copy(src.toPath(), new File(dataDir, f).toPath(), StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+            // metrics/ 这类子目录：整目录替换（趋势快照是派生数据，一并回档才自洽）
+            File srcMetrics = new File(dir, METRICS_DIR);
+            if (srcMetrics.isDirectory()) {
+                File dstMetrics = new File(dataDir, METRICS_DIR);
+                copyDir(srcMetrics, dstMetrics);
+            }
+        } finally {
+            // v2.25 修 P2：中途 IOException 时不能半途而废 —— flushAll 已跑、脏标记已清，
+            // 定时冲刷不会纠正。无论成败都按磁盘重建内存，混态最多维持到这条命令结束。
+            reloadAllSilently();
+        }
+        // v2.25：备份里没有的新版存档文件（升级后新增模块）保持现值，向调用方提示
+        // 「一半新一半旧」的风险，让管理员知情而不是默默混纪元
+        List<String> missing = new java.util.ArrayList<>();
         for (String f : SAVE_FILES) {
-            File src = new File(dir, f);
-            if (src.isFile()) {
-                Files.copy(src.toPath(), new File(dataDir, f).toPath(), StandardCopyOption.REPLACE_EXISTING);
+            if (!new File(dir, f).isFile() && new File(dataDir, f).isFile()) {
+                missing.add(f);
             }
         }
-        // metrics/ 这类子目录：整目录替换（趋势快照是派生数据，一并回档才自洽）
-        File srcMetrics = new File(dir, METRICS_DIR);
-        if (srcMetrics.isDirectory()) {
-            File dstMetrics = new File(dataDir, METRICS_DIR);
-            copyDir(srcMetrics, dstMetrics);
+        if (!missing.isEmpty()) {
+            plugin.getLogger().warning("[restore] 备份 " + id + " 缺这些现存文件（保持现值，数据可能混纪元）: "
+                    + String.join(", ", missing));
         }
-        // ④ 磁盘是真相：按文件重建所有内存态（只 load，不 save）
-        reloadAllSilently();
         return preId == null ? "(无当前存档，未做前置备份)" : preId;
     }
 
@@ -212,6 +257,17 @@ public final class BackupManager {
         swallow(stage, "anvils.yml", () -> plugin.anvilForge().save());
         swallow(stage, "pass-data.yml", () -> plugin.seasonPass().save());
         swallow(stage, "spectrum-data.yml", () -> plugin.spectrum().save());
+        // v2.25 修 P1：以下模块的存档在 SAVE_FILES 里、回档时会被覆盖，
+        // 但 flushAll 此前漏了它们 —— 内存还是回档前副本，30 秒一轮的异步
+        // 脏冲刷（contract 同型）或下一次变更即整文件回写，把回档静默吞掉。
+        // 与 v2.23.1 修过的「stats 被脏冲刷盖回」完全同型，这里是漏网模块。
+        swallow(stage, "contract.yml", () -> plugin.contractManager().store().save());
+        swallow(stage, "manuals.yml", () -> plugin.manuals().save());
+        // story.yml 是章节定义（config 驱动），运行时状态只有 progress 一份
+        swallow(stage, "story-progress.yml", () -> plugin.story().save());
+        swallow(stage, "daily-data.yml", () -> plugin.dailyStore().save());
+        swallow(stage, "season.yml", () -> plugin.seasons().save());
+        swallow(stage, "hall-strengthen.yml", () -> plugin.hallOfFame().strengthen().save());
     }
 
     /**
@@ -231,6 +287,14 @@ public final class BackupManager {
         swallow("回档后", "codex-data.yml", () -> plugin.codex().load());
         swallow("回档后", "pass-data.yml", () -> plugin.seasonPass().load());
         swallow("回档后", "spectrum-data.yml", () -> plugin.spectrum().load());
+        // v2.25 修 P1：与 flushAll 同一批漏网模块 —— 覆盖文件后必须按盘重建内存，
+        // 否则旧副本在下次冲刷时把回档结果盖回去（manuals 是变更即全量写，最急）
+        swallow("回档后", "contract.yml", () -> plugin.contractManager().store().load());
+        swallow("回档后", "manuals.yml", () -> plugin.manuals().load());
+        swallow("回档后", "story-progress.yml", () -> plugin.story().load());
+        swallow("回档后", "daily-data.yml", () -> plugin.dailyStore().load());
+        swallow("回档后", "season.yml", () -> plugin.seasons().loadState());
+        swallow("回档后", "hall-strengthen.yml", () -> plugin.hallOfFame().strengthen().load());
         // 铁砧会话与悬赏已领名单没有公开 reload：它们要么是瞬时态（砧位上的剑),
         // 要么在构造期读盘（bounty-data.yml）。这两项靠「回档后重启」兜底，见返回文案。
     }

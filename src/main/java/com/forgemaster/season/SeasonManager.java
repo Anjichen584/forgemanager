@@ -74,6 +74,20 @@ public final class SeasonManager {
         taskId = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 20L * 60, 20L * 60).getTaskId();
     }
 
+    /** v2.25：公开读档。回档（restore）后按盘上 season.yml 重建内存态。 */
+    public void loadState() {
+        if (stateFile.exists()) {
+            YamlConfiguration yml = YamlConfiguration.loadConfiguration(stateFile);
+            number = Math.max(1, yml.getInt("number", 1));
+            startedAt = yml.getLong("started-at", System.currentTimeMillis());
+        }
+    }
+
+    /** v2.25：公开落盘。回档前把当前赛季状态冲进 season.yml，防脏冲刷盖回。 */
+    public void save() {
+        saveState();
+    }
+
     public void shutdown() {
         if (taskId != -1) {
             Bukkit.getScheduler().cancelTask(taskId);

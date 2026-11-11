@@ -238,13 +238,14 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
                         + " talent reset confirm</white>");
                 return;
             }
-            long coins = store.coins(p.getUniqueId());
+            // v2.25：洗点扣费走 Wallet 收口（coin-sinks=server 时与服务器经济同账本）
+            long coins = plugin.wallet().coins(p);
             if (coins < cost) {
                 Msg.prefix(p, "<red>剑币不够：洗点要 <white>" + cost + "</white>，你只有 <white>"
                         + coins + "</white>。");
                 return;
             }
-            if (cost > 0 && !store.takeCoins(p.getUniqueId(), cost, com.forgemaster.econ.CoinReason.OTHER_OUT)) {
+            if (cost > 0 && !plugin.wallet().take(p, cost, com.forgemaster.econ.CoinReason.TALENT_RESET)) {
                 Msg.prefix(p, "<red>扣费失败，天赋没有重置。");
                 return;
             }
@@ -344,6 +345,12 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             return;
         }
         double score = args.length >= 5 ? parseDouble(args[4], 90) : Math.max(quality.minScore() + 2, 60);
+        // v2.25 修 P2：NaN / Infinity 能被 parseDouble 吃进去写进 PDC/Lore/bestScore，
+        // 排行榜从此渲染出 "NaN"。admin 命令也要夹：非法值回落默认 90，合法值夹 [0,100]
+        if (Double.isNaN(score) || Double.isInfinite(score)) {
+            score = 90;
+        }
+        score = Math.max(0, Math.min(100, score));
         var item = plugin.items().buildDirect(target.getName(), material, quality, score);
         Map<Integer, org.bukkit.inventory.ItemStack> left = target.getInventory().addItem(item);
         for (var rest : left.values()) {
@@ -1436,7 +1443,9 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             return;
         }
         long cost = com.forgemaster.affix.Reforge.costOf(item, index);
-        long coins = plugin.stats().coins(p.getUniqueId());
+        // v2.25 修 P1：命令路径原来直连 stats().coins/takeCoins —— coin-sinks=server 时
+        // 查的是 A 账、GUI（ReforgeMenu）扣的是 B 账，两本账分裂。统一走 Wallet + REFORGE 桶。
+        long coins = plugin.wallet().coins(p);
         if (coins < cost) {
             Msg.prefix(p, "<red>重铸费不够：需要 <white>" + cost + "</white>，你只有 <white>" + coins + "</white>。");
             return;
@@ -1446,7 +1455,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         // 重铸内部可能在写之前就失败（词条被服主删了 / 候选池被占满），
         // 先收钱就会出现「钱扣了物品没变」，所以只在真成功时才扣
         if (result.startsWith("<green>重铸成功")) {
-            plugin.stats().takeCoins(p.getUniqueId(), cost, com.forgemaster.econ.CoinReason.OTHER_OUT);
+            plugin.wallet().take(p, cost, com.forgemaster.econ.CoinReason.REFORGE);
         }
         Msg.prefix(p, result);
     }
@@ -2053,7 +2062,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         }
         switch (sub) {
             case "trend", "qushi" -> {
-                int days = clampDays(args.length > 1 ? args[1] : "7", svc.historyDays());
+                int days = clampDays(args.length > 2 ? args[2] : "7", svc.historyDays()); // v2.25 修 P1：args[1] 是 trend 子命令本身，天数在第 3 段
                 Msg.send(sender, "<white>近 <#ffd166>" + days + "</#ffd166> 天趋势（每行一天，产出/消耗/净额/锻造/碎裂）：</white>");
                 java.util.List<com.forgemaster.metrics.MetricsService.DayTotal> totals = svc.dayTotals(days);
                 if (totals.isEmpty()) {
@@ -2075,7 +2084,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
                 }
             }
             case "csv", "daochu" -> {
-                int days = clampDays(args.length > 1 ? args[1] : "30", svc.historyDays());
+                int days = clampDays(args.length > 2 ? args[2] : "30", svc.historyDays()); // v2.25 修 P1：同上，读第 3 段
                 svc.exportAsync(sender, days);
             }
             case "sample", "caiji" -> {
@@ -3616,7 +3625,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             case "fixattrs", "xiufu" -> tabFixAttrs(args);
             case "stats" -> tabPlayerArg(sender, args);
             case "profile", "dangan" -> tabPlayerArg(sender, args);
-            case "top", "legacy" -> tabTop(args);
+            case "top" -> tabTop(args); // v2.25 修 P2："legacy" 是 top 的第 2 段参数，误放顶层分派只会补出未知子命令
             // ---- 无参子命令（再往下一层没有候选）----
             case "codex", "collection", "shoucang", "tujian", "relicset", "taozhuang",
                  "spectrum", "mingjian", "pu", "pass", "tongxingzheng", "salvage", "melt",

@@ -1036,6 +1036,11 @@ public final class ForgingMasterPlugin extends JavaPlugin {
     }
 
     /** 龙税周目（v2.14）：时钟 / 入贡 / 结算 / 圣物 */
+    /** v2.25：每日签到存档访问器（回档 flush/reload 用，此前无出口） */
+    public com.forgemaster.blackmarket.DailyStore dailyStore() {
+        return dailyStore;
+    }
+
     public com.forgemaster.contract.ContractManager contractManager() {
         return contractManager;
     }
