@@ -1,36 +1,33 @@
-const mineflayer = require('mineflayer')
-const wait = ms => new Promise(r => setTimeout(r, ms))
-const out = (...a) => console.log(...a)
-async function main(){
-  const bot = mineflayer.createBot({host:'127.0.0.1',port:25577,username:'TestBot',auth:'offline',version:'1.21.11'})
-  bot.on('error', e => out('ERR ' + e.message))
-  await new Promise((r,j)=>{bot.once('spawn',r); setTimeout(()=>j(new Error('join timeout')),30000)})
-  out('JOINED')
-  await wait(2500)
+// 现场探针：验证 /clear、/give、givefull 产物真伪
+const { wait, lore, title, join } = require('./common')
 
-  const readAttrs = (tag) => {
-    const a = bot.entity.attributes || {}
-    const keys = Object.keys(a)
-    out('[' + tag + '] keys=' + keys.filter(k=>k.includes('attack')||k.includes('armor')).join(','))
-    for (const k of keys) {
-      if (k.includes('attack_damage') || k.includes('attack_speed') || k === 'armor') {
-        out('   ' + k + ' = ' + a[k].value)
-      }
-    }
-  }
-
-  bot.chat('/clear TestBot'); await wait(1200)
-  bot.chat('/item replace entity TestBot hotbar.0 with air'); await wait(800)
-  bot.chat('/item replace entity TestBot weapon.mainhand with iron_sword'); await wait(1500)
-  out('手持 = ' + (bot.heldItem ? bot.heldItem.name : '空'))
-  readAttrs('原版铁剑')
-
+async function main() {
+  const bot = await join('TestBot')
+  const lines = []
+  bot.on('message', m => { lines.push(m.toString()); if (lines.length > 60) lines.shift() })
   await wait(800)
-  bot.chat('/zhujian give TestBot iron LEGENDARY 95'); await wait(1800)
-  bot.chat('/item replace entity TestBot weapon.mainhand from entity TestBot hotbar.0'); await wait(1800)
-  out('手持 = ' + (bot.heldItem ? bot.heldItem.name : '空'))
-  readAttrs('锻造铁剑')
+  console.log('gamemode=', bot.game && bot.game.gameMode)
 
-  bot.quit(); process.exit(0)
+  const run = async (cmd, ms = 900) => { lines.length = 0; bot.chat(cmd); await wait(ms); return lines.join(' | ') }
+
+  console.log('clear 回执:', await run('/clear', 1200))
+  await wait(400)
+  console.log('清空后背包:', JSON.stringify(bot.inventory.items().map(i => `${i.slot}:${i.name}x${i.count}`)))
+
+  console.log('give 书回执:', await run('/give TestBot minecraft:book 32', 1200))
+  await wait(400)
+  console.log('给书后背包:', JSON.stringify(bot.inventory.items().map(i => `${i.slot}:${i.name}x${i.count}`)))
+
+  console.log('givefull 回执:', await run('/zhujian givefull TestBot iron mythic', 2500))
+  await wait(800)
+  const swords = bot.inventory.items().filter(i => /_sword$/.test(i.name))
+  for (const s of swords) {
+    console.log(`--- 剑 @${s.slot} ${title(s)} ---`)
+    console.log(lore(s).slice(0, 14).join('\n'))
+  }
+  await run('/clear', 800)
+  bot.quit()
+  await wait(300)
+  process.exit(0)
 }
-main().catch(e=>{out('FATAL ' + e.message); process.exit(1)})
+main().catch(e => { console.error('FATAL', e); process.exit(2) })

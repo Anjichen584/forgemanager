@@ -1876,6 +1876,33 @@ pwsh -NoProfile -File rcon.ps1 -Command "stop"
 > ② RCON 默认 `ReadTimeoutMs 1500` 只能拿到空响应，自检输出有 14KB；
 > ③ 日志文件被服务端占用，读它要 `[System.IO.File]::Open(...)` 并给 `ReadWrite` 共享。
 
+### 全功能 bot 实测（v2.23.4 真机，2026-11-11）
+
+自检是进程内断言，命令分派、GUI 开合、物品流转这些「玩家真实走的路」还得靠 bot 实跑。
+`tools/guitest/fulltest.js` 一把梭：**61 个顶层子命令**全部分派一遍（断言不出现未知子命令/内部异常，
+有窗口就记录窗口快照），再加四段 deep 链路 —— 满配物品链（发剑 → 装备 → 战力/修复/强化规划/属性校准 →
+读 Lore 断言 +99）、关键子命令（sim/curve/gem list/rank text/metrics/config check/tomb list…）、
+别名抽样（`/zj` 命令别名 + zhanli/fumotai/qianghua/paihang 子命令别名）、原创附魔台闭环
+（放书 + 青金石 → 点附魔 → 出随机原创附魔书 → 放回书槽升级到 II → 关闭按钮），最后 15 个 GUI 契约。
+
+```
+=== 汇总：PASS 114 / WARN 1 / FAIL 0 ===
+WARN: 满配 Lore 战力段 — 战力只走 /zhujian power 命令输出，不写进 Lore（设计如此）
+报告: tools/guitest/fulltest-report.json（机器可读，每项含聊天回执/窗口快照）
+```
+
+同轮 RCON 自检 **483/483，失败 0**。这次跑出来的 14 条失败**全是测试设施问题，插件零缺陷**，
+三个坑留给下一个写 bot 脚本的人：
+
+| 坑 | 现象 | 解法 |
+| --- | --- | --- |
+| CMI 接管了 `/clear` | 回执是「Click to confirm inventory clear up」，背包根本没清 | 用命名空间原版命令 `/minecraft:clear` |
+| 创造模式 `/give` 不同步 | 回执「Giving 32 of Book」，背包里却没有（创造客户端对背包有权威） | 全程**生存模式**跑物品链路 |
+| givefull 产物被旧剑顶替 | 背包满时满配剑掉在脚下，`find(_sword)` 捡到上一轮的旧剑 | 先清包再发，断言「背包已空」再往下走 |
+
+另有两个「以为是 bug、实为设计」已写进脚本注释：`tomb list` 按设计就是开剑冢 GUI（TombManager 里
+`list`/`gui` 同分支）；`codex` 是纯文本图鉴，GUI 版叫 `collection`；行会 GUI 的入口是 `guild list`。
+
 ---
 
 ## 十四·补三、v2.23.3：机制型原创附魔（不是原版的数值皮肤）
