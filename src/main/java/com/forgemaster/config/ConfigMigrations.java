@@ -69,7 +69,7 @@ public final class ConfigMigrations {
      * 那个 step 对已在运行的服务器**永远不会执行**（steps 17/18/19 的教训各写了一遍，
      * 详见 step19 的注释）。v2.23.1 加 step22 时从 12 抬到 13，加 step23（战力评分）时再抬到 14，加 step24（属性天花板）时抬到 15。</p>
      */
-    public static final int CURRENT_VERSION = 18;
+    public static final int CURRENT_VERSION = 19;
 
     private ConfigMigrations() {
     }
@@ -107,6 +107,7 @@ public final class ConfigMigrations {
         step25DamageBudget(plugin, cfg);
         step26LegacyRepair(plugin, cfg);
         step27Enchant(plugin, cfg);
+        step28MechanicEnchant(plugin, cfg);
         cfg.set("config-version", CURRENT_VERSION);
         plugin.saveConfig();
     }
@@ -1218,15 +1219,16 @@ public final class ConfigMigrations {
     }
 
     /**
-     * step27（v2.23.2）：原创附魔台的配置骨架。
+     * step27（v2.23.2 / v2.23.3）：附魔台的**费用与守卫**骨架。
      *
-     * <p>只补**骨架**（caps / cost / guard / max-per-item），不逐条补 {@code defs.*}：
-     * 15 条附魔的默认定义在 {@link com.forgemaster.enchant.EnchantRegistry#defaults()} 里，
-     * config 缺键时注册表直接回落到代码定义。这样做的原因是 ——
-     * 如果迁移脚本往服主的 config 里塞 15 条 {@code defs}，
-     * 以后我们调整某条附魔的默认数值，老服永远不会跟上（盘上已经有一份「旧默认」了）。</p>
+     * <p>v2.23.3 把「机制上限」整段搬去了 step28 —— 因为机制换了
+     * （原版皮肤 → 溅射/蓄势/刻痕/卸力…），旧的上限键全部作废。
+     * 这里只剩与机制无关的部分：多少钱、耗几个矿、能带几条、白名单。</p>
      *
-     * <p>反之，caps 这类**上限**必须落盘：服主要看得见上限是多少，才谈得上自己调。</p>
+     * <p>故意不逐条补 {@code defs.*}：12 条机制的默认值在
+     * {@link com.forgemaster.enchant.EnchantRegistry#defaults()} 里，
+     * config 缺键时注册表直接回落到代码定义。如果迁移往服主盘上塞一份「旧默认」，
+     * 以后我们调整默认数值，老服就永远跟不上了。</p>
      */
     private static void step27Enchant(ForgingMasterPlugin plugin, FileConfiguration cfg) {
         YamlConfiguration disk;
@@ -1237,7 +1239,6 @@ public final class ConfigMigrations {
             disk = new YamlConfiguration();
         }
         int written = 0;
-        // 费用
         written += putIfAbsent(cfg, disk, "enchant.cost.base-coin", 40L, java.util.List.of(
                 "附魔台每次操作的固定费用"));
         written += putIfAbsent(cfg, disk, "enchant.cost.coin-per-level", 60L, java.util.List.of(
@@ -1246,38 +1247,6 @@ public final class ConfigMigrations {
                 "升一级消耗几个矿（按等级翻倍：4 / 8 / 16 ...）"));
         written += putIfAbsent(cfg, disk, "enchant.max-per-item", 4, java.util.List.of(
                 "一件装备最多几条原创附魔；同一条重复上书只升级不占条数"));
-        // 上限（比 combat.limits 更紧，是「最后一道」之上的第一道）
-        written += putIfAbsent(cfg, disk, "enchant.caps.max-damage-bonus", 0.25, java.util.List.of(
-                "原创附魔伤害总加成封顶（全部加法汇总后再夹，默认 +25%）"));
-        written += putIfAbsent(cfg, disk, "enchant.caps.max-lifesteal-add", 0.10, java.util.List.of(
-                "吸血加成封顶，之后还会再吃 combat.limits.max-lifesteal-pct"));
-        written += putIfAbsent(cfg, disk, "enchant.caps.max-fire-seconds", 4.0, java.util.List.of(
-                "点燃加成封顶（秒），之后还会再吃 combat.limits.max-fire-seconds"));
-        written += putIfAbsent(cfg, disk, "enchant.caps.max-attack-speed", 0.08, java.util.List.of(
-                "攻速加成封顶，之后还会再吃 compat.attack-speed-cap"));
-        written += putIfAbsent(cfg, disk, "enchant.caps.max-damage-reduce", 0.10, java.util.List.of(
-                "减伤加成封顶，之后还会再吃 combat.limits.max-damage-reduce"));
-        written += putIfAbsent(cfg, disk, "enchant.caps.max-bonus-health", 8.0, java.util.List.of(
-                "气血加成封顶，之后还会再吃 combat.limits.max-bonus-health"));
-        written += putIfAbsent(cfg, disk, "enchant.caps.max-thorns", 0.15, java.util.List.of(
-                "荆棘反弹百分比封顶"));
-        written += putIfAbsent(cfg, disk, "enchant.caps.max-thorns-flat", 2.0, java.util.List.of(
-                "荆棘单次反弹的绝对上限（防高伤反杀）"));
-        written += putIfAbsent(cfg, disk, "enchant.caps.max-fire-resist", 0.30, java.util.List.of(
-                "辟火：火焰伤害额外减免封顶"));
-        written += putIfAbsent(cfg, disk, "enchant.caps.max-exp-bonus", 0.50, java.util.List.of(
-                "通慧：经验加成封顶"));
-        written += putIfAbsent(cfg, disk, "enchant.caps.max-coin-bonus", 0.15, java.util.List.of(
-                "泉布：剑币产出加成封顶"));
-        written += putIfAbsent(cfg, disk, "enchant.caps.max-drop-chance", 0.35, java.util.List.of(
-                "探脉：挖矿额外掉落几率封顶（每次只多掉 1 份）"));
-        written += putIfAbsent(cfg, disk, "enchant.caps.execute-threshold", 0.25, java.util.List.of(
-                "摧枯：目标血量低于这个比例时才吃加成"));
-        written += putIfAbsent(cfg, disk, "enchant.caps.combo-stacks", 3, java.util.List.of(
-                "迭浪：最多叠几层"));
-        written += putIfAbsent(cfg, disk, "enchant.caps.combo-window-ms", 4000L, java.util.List.of(
-                "迭浪：两刀间隔超过这个毫秒数就重新计数"));
-        // 守卫
         written += putIfAbsent(cfg, disk, "enchant.guard.enabled", true, java.util.List.of(
                 "附魔白名单守卫：拦在附魔台与铁砧，只作用于本插件的锻造品"));
         written += putIfAbsent(cfg, disk, "enchant.guard.vanilla-whitelist",
@@ -1285,9 +1254,148 @@ public final class ConfigMigrations {
                         "允许的原版附魔 key（如 sharpness / protection）",
                         "留空 = 全部原版附魔都允许；想收紧时再列"));
         if (written > 0) {
-            plugin.getLogger().info("配置迁移 step27：补上 enchant（原创附魔台）" + written + " 键");
+            plugin.getLogger().info("配置迁移 step27：补上附魔台费用/守卫 " + written + " 键");
         }
     }
+
+    /**
+     * v2.23.3：机制型附魔的参数。
+     *
+     * <p>v2.23.2 的 step27 写的是「增伤 25% / 吸血 10% / 点燃 4 秒」这类**原版皮肤**的参数，
+     * 那一套已经被服主否掉，键也随之作废。这里写的是新机制的参数（溅射比例、蓄势窗口、
+     * 刻痕阈值、卸力上限……），并把作废的旧键**摘掉**——留着它们只会让服主以为还能调。</p>
+     *
+     * <p>只摘 {@code enchant.caps.*} 里的旧机制键，不碰 {@code enchant.defs.*}
+     * （defs 是服主可能自己调过的东西）。</p>
+     */
+    private static void step28MechanicEnchant(ForgingMasterPlugin plugin, FileConfiguration cfg) {
+        YamlConfiguration disk;
+        try {
+            disk = YamlConfiguration.loadConfiguration(
+                    new java.io.File(plugin.getDataFolder(), "config.yml"));
+        } catch (RuntimeException ex) {
+            disk = new YamlConfiguration();
+        }
+
+        // ---- 先摘掉已作废的旧机制上限（它们对应的机制已经整条删除）
+        int removed = 0;
+        for (String dead : new String[]{
+                "enchant.caps.max-damage-bonus",
+                "enchant.caps.max-lifesteal-add",
+                "enchant.caps.max-fire-seconds",
+                "enchant.caps.max-attack-speed",
+                "enchant.caps.max-damage-reduce",
+                "enchant.caps.max-bonus-health",
+                "enchant.caps.max-thorns",
+                "enchant.caps.max-thorns-flat",
+                "enchant.caps.max-fire-resist",
+                "enchant.caps.max-exp-bonus",
+                "enchant.caps.max-coin-bonus",
+                "enchant.caps.max-drop-chance",
+                "enchant.caps.execute-threshold",
+                "enchant.caps.combo-stacks",
+                "enchant.caps.combo-window-ms"}) {
+            if (cfg.contains(dead)) {
+                cfg.set(dead, null);
+                removed++;
+            }
+        }
+        // 旧的 defs 同样是作废机制，留着会让玩家抽出「认不出来的附魔」
+        for (String dead : new String[]{
+                "enchant.defs.edge", "enchant.defs.pierce", "enchant.defs.swift",
+                "enchant.defs.soulsip", "enchant.defs.ember", "enchant.defs.slayer",
+                "enchant.defs.execute", "enchant.defs.combo", "enchant.defs.bulwark",
+                "enchant.defs.thorns", "enchant.defs.fortitude", "enchant.defs.emberward",
+                "enchant.defs.lorekeeper", "enchant.defs.prospector", "enchant.defs.fortunes"}) {
+            if (cfg.contains(dead)) {
+                cfg.set(dead, null);
+                removed++;
+            }
+        }
+
+        // ---- 再补上新机制参数（putIfAbsent：绝不覆盖服主已调的数值）
+        int written = 0;
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-splash-ratio", 0.40, java.util.List.of(
+                "崩流：最多溅多少比例的伤害（再高单体剑就变范围武器）"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.splash-radius", 3.0, java.util.List.of(
+                "崩流：波及半径（格）"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-pyre-damage", 6.0, java.util.List.of(
+                "烬狱：击杀爆燃的固定伤害，不乘任何倍率"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.pyre-radius", 3.0, java.util.List.of(
+                "烬狱：爆燃半径（格）"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-lone-wolf", 0.15, java.util.List.of(
+                "孤锋：周围无旁人时的增伤封顶"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.lone-wolf-radius", 8.0, java.util.List.of(
+                "孤锋：判定半径（格），半径内有别的玩家就失效"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-charge", 0.25, java.util.List.of(
+                "蓄锋：停手够久后第一击的增伤封顶"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.charge-window-ms", 2500L, java.util.List.of(
+                "蓄锋：距上次命中超过这个毫秒数才算蓄满"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-hamper-seconds", 2.0, java.util.List.of(
+                "夺魄：减速+虚弱时长封顶（秒）"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.mark-threshold", 0.30, java.util.List.of(
+                "刻痕：对同一目标累计削掉其最大生命的这个比例后刻印"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-mark-bonus", 0.10, java.util.List.of(
+                "刻痕：刻印后的增伤封顶"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-delay-ratio", 0.50, java.util.List.of(
+                "卸力：最多把多少比例的伤害延后（1.0 = 免伤，禁止）"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.delay-ms", 2000L, java.util.List.of(
+                "卸力：延后多久结算完（分期扣，不是一次性）"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-cheat-heal", 0.30, java.util.List.of(
+                "替身：免死后回复的最大生命比例"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.cheat-cooldown-ms", 90000L, java.util.List.of(
+                "替身：冷却（毫秒），没有冷却就是永久免死"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-retaliate", 0.15, java.util.List.of(
+                "回响：受击后对攻击者的增伤封顶"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.retaliate-ms", 3000L, java.util.List.of(
+                "回响：受击后的生效窗口（毫秒）"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-regen-per-tick", 2.5, java.util.List.of(
+                "守夜：单次回复的生命封顶"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.regen-interval-ms", 2000L, java.util.List.of(
+                "守夜：多久回一次（毫秒）"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.out-of-combat-ms", 5000L, java.util.List.of(
+                "守夜：脱离战斗多久后才开始回"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-regen-level", 5, java.util.List.of(
+                "守夜：等级上限（内部夹子用）"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-salvage-chance", 0.30, java.util.List.of(
+                "拾遗：挖掘矿石额外得经验的几率封顶"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.max-sense-radius", 20.0, java.util.List.of(
+                "望气：侦测半径封顶（格）"));
+        written += putIfAbsent(cfg, disk, "enchant.caps.sense-interval-ms", 3000L, java.util.List.of(
+                "望气：侦测间隔（毫秒），防止动作栏刷屏"));
+
+        // 新机制的 defs 骨架（只补缺，不覆盖）
+        written += putIfAbsent(cfg, disk, "enchant.defs.splinter", null, java.util.List.of(
+                "崩流：每级 +8% 溅射比例"));
+        written += putIfAbsent(cfg, disk, "enchant.defs.pyre", null, java.util.List.of(
+                "烬狱：每级 +2 点爆燃伤害"));
+        written += putIfAbsent(cfg, disk, "enchant.defs.lone", null, java.util.List.of(
+                "孤锋：每级 +3% 独斗增伤"));
+        written += putIfAbsent(cfg, disk, "enchant.defs.charge", null, java.util.List.of(
+                "蓄锋：每级 +5% 蓄势增伤"));
+        written += putIfAbsent(cfg, disk, "enchant.defs.sever", null, java.util.List.of(
+                "夺魄：每级 +0.4 秒减速"));
+        written += putIfAbsent(cfg, disk, "enchant.defs.mark", null, java.util.List.of(
+                "刻痕：每级 +2% 刻印增伤"));
+        written += putIfAbsent(cfg, disk, "enchant.defs.unload", null, java.util.List.of(
+                "卸力：每级 +10% 伤害延后"));
+        written += putIfAbsent(cfg, disk, "enchant.defs.decoy", null, java.util.List.of(
+                "替身：每级 +10% 免死回气"));
+        written += putIfAbsent(cfg, disk, "enchant.defs.echo", null, java.util.List.of(
+                "回响：每级 +3% 受击反击"));
+        written += putIfAbsent(cfg, disk, "enchant.defs.vigil", null, java.util.List.of(
+                "守夜：每级 +0.5 点脱战回复"));
+        written += putIfAbsent(cfg, disk, "enchant.defs.salvage", null, java.util.List.of(
+                "拾遗：每级 +6% 额外经验几率"));
+        written += putIfAbsent(cfg, disk, "enchant.defs.insight", null, java.util.List.of(
+                "望气：每级 +2 格侦测半径"));
+
+        if (written > 0 || removed > 0) {
+            plugin.getLogger().info("配置迁移 step28：机制附魔 新增 " + written
+                    + " 键，摘掉作废旧键 " + removed + " 个");
+        }
+    }
+
 
     /** 键只在盘上确实没有时才写；返回写了几个（1 / 0），方便汇总日志 */
     private static int putIfAbsent(FileConfiguration cfg, YamlConfiguration disk,

@@ -724,183 +724,201 @@ public final class SelfTestRegression231 {
             }
         });
 
-        // ================================================================ v2.23.2 原创附魔
-        // 服主的原话是「都别超标」。这一组断言就是那句话的可执行版本：
-        // 全满级、全叠加、四件护甲合起来，每一项都必须落在封顶之内。
-        String e = "v2.23.2 原创附魔";
+        // ================================================================ v2.23.3 机制型原创附魔
+        //
+        // 服主两次否掉了前两版设计：
+        //   第一版 —— 名字是原版改字（锋锐/荆棘/御火）；
+        //   第二版 —— 名字改了，**机制还是原版那套**（增伤/减伤/吸血/点燃/反弹/时运）。
+        // 这一组断言守的是第三版的底线：每一条都必须是原版没有的机制，
+        // 并且这些新机制**不会因为组合而变成无敌**。
+        String e = "v2.23.3 机制附魔";
 
-        suite.addExternal(e, "附魔全满级也不越界（伤害总加成被封顶）", () -> {
+        suite.addExternal(e, "12 条机制，没有一条是原版的数值皮肤", () -> {
             var reg = plugin.enchants();
             require(reg != null, "注册表没初始化");
-            var caps = com.forgemaster.enchant.EnchantEffects.Caps.defaults();
-            var fx = new com.forgemaster.enchant.EnchantEffects();
-            java.util.List<com.forgemaster.enchant.EnchantEffects.Entry> all = new java.util.ArrayList<>();
-            for (var def : reg.all()) {
-                all.add(new com.forgemaster.enchant.EnchantEffects.Entry(def, def.maxLevel()));
+            require(reg.size() >= 12, "机制型附魔至少 12 条，实际 " + reg.size());
+            // 上一版被否掉的失效机制，一条都不许回来
+            for (String banned : new String[]{"edge", "pierce", "swift", "soulsip", "ember",
+                    "slayer", "execute", "combo", "bulwark", "thorns", "fortitude",
+                    "emberward", "lorekeeper", "prospector", "fortunes"}) {
+                require(reg.get(banned) == null,
+                        "机制 " + banned + " 是原版附魔的皮肤，不该出现在 v2.23.3 里");
             }
-            // 最坏情况：对敌对生物 + 目标残血 + 连击满层
-            double mul = fx.hitMultiplier(all, caps, true, 0.01, caps.comboStacks());
-            require(mul > 1.0, "全满级至少要有加成，否则附魔没生效");
-            require(mul <= 1.0 + caps.maxDamageBonus() + 1e-9,
-                    "伤害倍率 " + mul + " 超过了封顶 " + (1.0 + caps.maxDamageBonus()));
-            require(mul <= 1.26, "倍率上限本身就该在 1.25 附近，实际 " + mul);
-        });
-
-        suite.addExternal(e, "附魔加成是加法不是乘法（叠 8 条不会膨胀）", () -> {
-            // 乘法叠乘会让每条「看起来很小」：1.075×1.06×1.10×1.15×1.09 ≈ 1.59。
-            // 这里用两条已知附魔验证：锋锐 I(+1.5%) + 破甲 I(+1.2%) 必须正好是 +2.7%。
-            var reg = plugin.enchants();
-            var caps = com.forgemaster.enchant.EnchantEffects.Caps.defaults();
-            var fx = new com.forgemaster.enchant.EnchantEffects();
-            var edge = reg.get("edge");
-            var pierce = reg.get("pierce");
-            require(edge != null && pierce != null, "edge / pierce 定义缺失");
-            java.util.List<com.forgemaster.enchant.EnchantEffects.Entry> two =
-                    java.util.List.of(
-                            new com.forgemaster.enchant.EnchantEffects.Entry(edge, 1),
-                            new com.forgemaster.enchant.EnchantEffects.Entry(pierce, 1));
-            double mul = fx.hitMultiplier(two, caps, false, 1.0, 0);
-            double expected = 1.0 + edge.perLevel() + pierce.perLevel();
-            require(Math.abs(mul - expected) < 1e-9,
-                    "两条附魔应为加法叠加 " + expected + "，实际 " + mul);
-        });
-
-        suite.addExternal(e, "吸血/点燃/减伤/气血各自有独立封顶", () -> {
-            var reg = plugin.enchants();
-            var caps = com.forgemaster.enchant.EnchantEffects.Caps.defaults();
-            var fx = new com.forgemaster.enchant.EnchantEffects();
-            java.util.List<com.forgemaster.enchant.EnchantEffects.Entry> all = new java.util.ArrayList<>();
-            for (var def : reg.all()) {
-                all.add(new com.forgemaster.enchant.EnchantEffects.Entry(def, def.maxLevel()));
+            // 新机制必须齐全
+            for (String id : new String[]{"splinter", "pyre", "lone", "charge", "sever", "mark",
+                    "unload", "decoy", "echo", "vigil", "salvage", "insight"}) {
+                require(reg.get(id) != null, "机制 " + id + " 缺失");
             }
-            var w = fx.weapon(all, caps);
-            require(w.lifestealAdd() <= caps.maxLifestealAdd() + 1e-9, "吸血超过封顶: " + w.lifestealAdd());
-            require(w.fireAddSeconds() <= caps.maxFireSeconds() + 1e-9, "点燃超过封顶: " + w.fireAddSeconds());
-            require(w.attackSpeedAdd() <= caps.maxAttackSpeed() + 1e-9, "攻速超过封顶: " + w.attackSpeedAdd());
-            var a = fx.armor(all, caps);
-            require(a.reduceAdd() <= caps.maxReduce() + 1e-9, "减伤超过封顶: " + a.reduceAdd());
-            require(a.healthAdd() <= caps.maxHealth() + 1e-9, "气血超过封顶: " + a.healthAdd());
-            require(a.thornsPct() <= caps.maxThorns() + 1e-9, "荆棘超过封顶: " + a.thornsPct());
-            require(a.fireResist() <= caps.maxFireResist() + 1e-9, "御火超过封顶: " + a.fireResist());
-            require(fx.expMul(all, caps) <= 1.0 + caps.maxExpBonus() + 1e-9, "经验加成超顶");
-            require(fx.coinMul(all, caps) <= 1.0 + caps.maxCoinBonus() + 1e-9, "剑币加成超顶");
-            require(fx.dropChance(all, caps) <= caps.maxDropChance() + 1e-9, "掉落几率超顶");
         });
 
-        suite.addExternal(e, "四件护甲合并后再夹（不是各自夹完相加）", () -> {
-            // 四件各带满级坚壁：各自夹到 10% 再相加就是 40%，必须在合并后只夹一次。
-            var reg = plugin.enchants();
+        suite.addExternal(e, "崩流：溅射有上限，且不会递归触发自己", () -> {
             var caps = com.forgemaster.enchant.EnchantEffects.Caps.defaults();
             var fx = new com.forgemaster.enchant.EnchantEffects();
-            var bulwark = reg.get("bulwark");
-            require(bulwark != null, "bulwark 定义缺失");
-            var one = new com.forgemaster.enchant.EnchantEffects.Entry(bulwark, bulwark.maxLevel());
-            var single = fx.armor(java.util.List.of(one), caps);
-            var merged = fx.mergeArmor(java.util.List.of(single, single, single, single), caps);
-            require(merged.reduceAdd() <= caps.maxReduce() + 1e-9,
-                    "四件合并后减伤 " + merged.reduceAdd() + " 超过封顶 " + caps.maxReduce());
-            require(merged.reduceAdd() <= 0.6, "绝不能到 60% 以上（那是完全免疫的门口）");
+            var reg = plugin.enchants();
+            var splinter = reg.get("splinter");
+            require(splinter != null, "splinter 缺失");
+            var m = fx.of(java.util.List.of(
+                    new com.forgemaster.enchant.EnchantEffects.Entry(splinter, splinter.maxLevel())), caps);
+            require(m.splashRatio() > 0, "满级崩流必须有溅射比例");
+            require(m.splashRatio() <= caps.maxSplashRatio() + 1e-9,
+                    "溅射比例 " + m.splashRatio() + " 超过封顶 " + caps.maxSplashRatio());
+            // 溅射伤害基于「已经夹过的伤害」，所以不可能反过来顶穿上限
+            double dealt = 60.0;
+            double splash = fx.splashDamage(m, caps, dealt);
+            require(splash <= dealt * caps.maxSplashRatio() + 1e-9,
+                    "溅射 " + splash + " 应按主目标伤害的比例封顶");
+            require(splash < dealt, "溅射必须小于主伤害，否则单体武器变成范围武器更划算");
         });
 
-        suite.addExternal(e, "附魔 id 编解码往返 + 脏数据不抛", () -> {
+        suite.addExternal(e, "卸力：四件叠满也不会变成无敌", () -> {
+            // 这是机制型附魔最容易崩的地方：摊 100% = 伤害永不结算 = 无敌。
+            var caps = com.forgemaster.enchant.EnchantEffects.Caps.defaults();
+            var fx = new com.forgemaster.enchant.EnchantEffects();
             var reg = plugin.enchants();
-            var def = reg.get("edge");
-            require(def != null, "edge 缺失");
-            String enc = com.forgemaster.enchant.EnchantEffects.encode(
-                    java.util.List.of(new com.forgemaster.enchant.EnchantEffects.Entry(def, 3)));
-            require("edge:3".equals(enc), "编码格式应为 edge:3，实际 " + enc);
+            var unload = reg.get("unload");
+            require(unload != null, "unload 缺失");
+            var one = fx.of(java.util.List.of(
+                    new com.forgemaster.enchant.EnchantEffects.Entry(unload, unload.maxLevel())), caps);
+            var merged = fx.merge(java.util.List.of(one, one, one, one), caps);
+            require(merged.delayRatio() <= caps.maxDelayRatio() + 1e-9,
+                    "四件卸力合并后 " + merged.delayRatio() + " 超过封顶 " + caps.maxDelayRatio());
+            require(merged.delayRatio() < 1.0, "卸力绝不能到 100%（那是免伤）");
+            // 至少还有一半要当场结算
+            double damage = 20.0;
+            double delayed = fx.delayedPortion(merged, caps, damage);
+            require(delayed < damage, "延后部分 " + delayed + " 必须小于总伤害 " + damage);
+            require(damage - delayed >= damage * (1.0 - caps.maxDelayRatio()) - 1e-9,
+                    "当场结算的部分不能低于 " + (1.0 - caps.maxDelayRatio()) * 100 + "%");
+        });
+
+        suite.addExternal(e, "替身：有冷却，回气有上限，不是永久免死", () -> {
+            var caps = com.forgemaster.enchant.EnchantEffects.Caps.defaults();
+            require(caps.cheatCooldownMs() >= 30_000L,
+                    "替身冷却至少 30 秒，实际 " + caps.cheatCooldownMs() + "ms");
+            var fx = new com.forgemaster.enchant.EnchantEffects();
+            var reg = plugin.enchants();
+            var decoy = reg.get("decoy");
+            require(decoy != null, "decoy 缺失");
+            var m = fx.of(java.util.List.of(
+                    new com.forgemaster.enchant.EnchantEffects.Entry(decoy, decoy.maxLevel())), caps);
+            double heal = fx.cheatHeal(m, caps, 20.0);
+            require(heal > 0 && heal <= 20.0 * caps.maxCheatHeal() + 1e-9,
+                    "免死回气 " + heal + " 超过上限 " + (20.0 * caps.maxCheatHeal()));
+            require(heal < 20.0, "免死不能直接回满血，否则等于无限复活");
+        });
+
+        suite.addExternal(e, "条件型增伤：三项相加后再夹，且只在这一击生效", () -> {
+            var caps = com.forgemaster.enchant.EnchantEffects.Caps.defaults();
+            var fx = new com.forgemaster.enchant.EnchantEffects();
+            var reg = plugin.enchants();
+            var lone = reg.get("lone");
+            var charge = reg.get("charge");
+            var mark = reg.get("mark");
+            require(lone != null && charge != null && mark != null, "孤锋/蓄锋/刻痕缺失");
+            var entries = java.util.List.of(
+                    new com.forgemaster.enchant.EnchantEffects.Entry(lone, lone.maxLevel()),
+                    new com.forgemaster.enchant.EnchantEffects.Entry(charge, charge.maxLevel()),
+                    new com.forgemaster.enchant.EnchantEffects.Entry(mark, mark.maxLevel()));
+            var m = fx.of(entries, caps);
+            // 三个条件全满足
+            double all = fx.conditionalBonus(m, caps, true, caps.chargeWindowMs() + 1, true);
+            double cap = caps.maxLoneWolf() + caps.maxCharge() + caps.maxMarkBonus();
+            require(all <= cap + 1e-9, "三项叠加 " + all + " 超过合计上限 " + cap);
+            // 一个条件都不满足 → 0（不是常驻增伤）
+            double none = fx.conditionalBonus(m, caps, false, 0, false);
+            require(Math.abs(none) < 1e-9, "条件不满足时必须是 0，实际 " + none);
+            // 只有孤锋满足 → 只加孤锋那一份
+            double onlyLone = fx.conditionalBonus(m, caps, true, 0, false);
+            require(Math.abs(onlyLone - m.loneWolf()) < 1e-9,
+                    "只满足孤锋时应只加 " + m.loneWolf() + "，实际 " + onlyLone);
+        });
+
+        suite.addExternal(e, "烬狱：范围伤害有上限，且不会伤到自己", () -> {
+            var caps = com.forgemaster.enchant.EnchantEffects.Caps.defaults();
+            var fx = new com.forgemaster.enchant.EnchantEffects();
+            var reg = plugin.enchants();
+            var pyre = reg.get("pyre");
+            require(pyre != null, "pyre 缺失");
+            var m = fx.of(java.util.List.of(
+                    new com.forgemaster.enchant.EnchantEffects.Entry(pyre, pyre.maxLevel())), caps);
+            double dmg = fx.pyreDamage(m, caps);
+            require(dmg > 0 && dmg <= caps.maxPyreDamage() + 1e-9,
+                    "爆燃伤害 " + dmg + " 超过上限 " + caps.maxPyreDamage());
+            require(caps.pyreRadius() <= 4.0, "爆燃半径不该超过 4 格，实际 " + caps.pyreRadius());
+        });
+
+        suite.addExternal(e, "机制参数编解码往返 + 脏数据不抛", () -> {
+            var reg = plugin.enchants();
+            var def = reg.get("splinter");
+            require(def != null, "splinter 缺失");
+            String enc = com.forgemaster.enchant.EnchantEffects.encode(java.util.List.of(
+                    new com.forgemaster.enchant.EnchantEffects.Entry(def, 3)));
+            require("splinter:3".equals(enc), "编码应为 splinter:3，实际 " + enc);
             var back = com.forgemaster.enchant.EnchantEffects.parse(reg, enc);
             require(back.size() == 1 && back.get(0).level() == 3, "往返后等级应保持 3");
             var dirty = com.forgemaster.enchant.EnchantEffects.parse(reg,
-                    "no_such_ench:5|edge:999|::|edge:-2|garbage");
-            for (var x : dirty) {
-                require(x.level() >= 1 && x.level() <= x.def().maxLevel(),
-                        "脏数据等级必须夹进 1..maxLevel，实际 " + x.level());
-            }
+                    "no_such:5|splinter:999|::|splinter:-2|garbage|splinter:2");
+            require(dirty.size() == 1, "脏数据里只有合法的 splinter 该留下来，实际 " + dirty.size());
+            require(dirty.get(0).level() == 2,
+                    "同 id 多次出现应取最高等级且夹进范围，实际 " + dirty.get(0).level());
             require(com.forgemaster.enchant.EnchantEffects.encode(java.util.List.of()) == null,
-                    "空列表必须编码成 null（调用方据此 remove 键，而不是存空串）");
+                    "空列表必须编码成 null（调用方据此 remove 键）");
         });
 
-        suite.addExternal(e, "部位匹配：武器附魔上不了护甲", () -> {
-            var reg = plugin.enchants();
-            var edge = reg.get("edge");       // WEAPON
-            var bulwark = reg.get("bulwark"); // ARMOR
-            var lore = reg.get("lorekeeper"); // ANY
-            require(edge != null && bulwark != null && lore != null, "定义缺失");
-            require(com.forgemaster.enchant.EnchantService.slotMatches(edge, Material.DIAMOND_SWORD),
-                    "武器附魔必须能上剑");
-            require(!com.forgemaster.enchant.EnchantService.slotMatches(edge, Material.DIAMOND_CHESTPLATE),
-                    "武器附魔不能上胸甲");
-            require(com.forgemaster.enchant.EnchantService.slotMatches(bulwark, Material.DIAMOND_CHESTPLATE),
-                    "护甲附魔必须能上胸甲");
-            require(!com.forgemaster.enchant.EnchantService.slotMatches(bulwark, Material.DIAMOND_SWORD),
-                    "护甲附魔不能上剑");
-            require(com.forgemaster.enchant.EnchantService.slotMatches(lore, Material.DIAMOND_SWORD)
-                            && com.forgemaster.enchant.EnchantService.slotMatches(lore, Material.DIAMOND_BOOTS),
-                    "通用附魔两边都能上");
-        });
-
-        suite.addExternal(e, "连击追踪器：null 安全，不抛", () -> {
-            require(com.forgemaster.enchant.ComboTracker.consecutive(null, null, 4000, 3) == 0,
-                    "null 输入必须返回 0，不能抛");
-            require(com.forgemaster.enchant.ComboTracker.peek(null) == 0, "peek(null) 必须是 0");
-            com.forgemaster.enchant.ComboTracker.clear(null); // 不应抛
+        suite.addExternal(e, "状态层：null 安全，目标消失时刻痕必须被清", () -> {
+            // 内存纪律：刻痕表按「玩家 → 目标」存，目标死了不清就是一万条垃圾
+            require(!com.forgemaster.enchant.EnchantState.isBranded(null, null), "null 输入必须 false");
+            require(com.forgemaster.enchant.EnchantState.msSinceLastHit(null) > 0, "null 玩家不抛");
+            com.forgemaster.enchant.EnchantState.noteHit(null);
+            com.forgemaster.enchant.EnchantState.noteCheatDeath(null);
+            com.forgemaster.enchant.EnchantState.noteCombat(null);
+            require(com.forgemaster.enchant.EnchantState.tracked() >= 0, "tracked 可读");
         });
 
         suite.addExternal(e, "注册表：config 缺 defs 段时回落到代码默认", () -> {
-            // 老盘 config 没有 enchant.defs.*，注册表不能因此变空 ——
-            // 变空的话物品上已有的附魔会全部认不出来（Lore 变裸 id、效果全丢）。
             var reg = plugin.enchants();
-            require(reg.size() >= 15, "原创附魔至少 15 条，实际 " + reg.size());
-            require(reg.get("edge") != null, "edge 必须在");
-            require(reg.forSlot(com.forgemaster.enchant.CustomEnchant.Slot.WEAPON).size() >= 8,
-                    "武器附魔至少 8 条");
+            require(reg.size() >= 12, "原创附魔至少 12 条，实际 " + reg.size());
+            require(reg.get("splinter") != null, "splinter 必须在");
+            require(reg.forSlot(com.forgemaster.enchant.CustomEnchant.Slot.WEAPON).size() >= 6,
+                    "武器机制至少 6 条");
             require(reg.forSlot(com.forgemaster.enchant.CustomEnchant.Slot.ARMOR).size() >= 4,
-                    "护甲附魔至少 4 条");
+                    "护甲机制至少 4 条");
             require(reg.forSlot(com.forgemaster.enchant.CustomEnchant.Slot.WEAPON).stream()
-                            .anyMatch(d -> d.id().equals("lorekeeper")),
-                    "通用附魔必须出现在武器候选里");
+                            .anyMatch(d -> d.id().equals("insight")),
+                    "通用机制必须出现在武器候选里");
         });
 
-        suite.addExternal(e, "附魔台：成功率随等级不增、好矿只涨不跌", () -> {
-            var svc = plugin.enchantTable();
-            require(svc != null, "附魔台服务没初始化");
-            double prev = 2.0;
-            for (int lv = 2; lv <= 6; lv++) {
-                double c = svc.upgradeCost(lv, Material.LAPIS_LAZULI).chance();
-                require(c <= 1.0 + 1e-9, "成功率不能超过 100%: " + c);
-                require(c <= prev + 1e-9, "成功率必须随等级不增，lv" + lv + " = " + c);
-                prev = c;
-            }
-            double lapis = svc.upgradeCost(5, Material.LAPIS_LAZULI).chance();
-            double scrap = svc.upgradeCost(5, Material.NETHERITE_SCRAP).chance();
-            require(scrap >= lapis - 1e-9, "好矿不能降低成功率");
-            require(svc.upgradeCost(3, Material.LAPIS_LAZULI).oreCost()
-                            > svc.upgradeCost(2, Material.LAPIS_LAZULI).oreCost(),
-                    "高等级的矿耗必须更高");
-        });
-
-        suite.addExternal(e, "附魔书：伪造标记认得出，普通附魔书不认", () -> {
-            // 「再限制一层」的身份凭据：ENCH_BOOK 标记 + 合法 id:level。
-            // 玩家把普通附魔书的 Lore 改成「锋锐 V」也造不出这两样东西。
+        suite.addExternal(e, "附魔书：合法标记认得出，普通附魔书不认", () -> {
             var reg = plugin.enchants();
-            var def = reg.get("edge");
-            require(def != null, "edge 缺失");
+            var def = reg.get("splinter");
+            require(def != null, "splinter 缺失");
             var book = com.forgemaster.enchant.EnchantItem.book(plugin,
                     new com.forgemaster.enchant.EnchantEffects.Entry(def, 2));
             require(com.forgemaster.enchant.EnchantItem.isBook(book), "产出的书必须带 ENCH_BOOK 标记");
             var entry = com.forgemaster.enchant.EnchantItem.bookEntry(plugin, book);
-            require(entry != null && entry.def().id().equals("edge") && entry.level() == 2,
-                    "书上的附魔应读回 edge:2");
-            // 普通附魔书（原版来源）不是我们的书
+            require(entry != null && entry.def().id().equals("splinter") && entry.level() == 2,
+                    "书上的机制应读回 splinter:2");
             require(!com.forgemaster.enchant.EnchantItem.isBook(new ItemStack(Material.ENCHANTED_BOOK)),
                     "原版附魔书不能被当成本插件的书");
-            require(com.forgemaster.enchant.EnchantItem.bookEntry(plugin,
-                            new ItemStack(Material.ENCHANTED_BOOK)) == null,
-                    "原版附魔书上不该读出原创附魔");
-            // 书本身也得是 ENCHANTED_BOOK 才不会和其它系统打架
             require(book.getType() == Material.ENCHANTED_BOOK, "书必须是 ENCHANTED_BOOK");
         });
+
+        suite.addExternal(e, "部位匹配：武器机制上不了护甲", () -> {
+            var reg = plugin.enchants();
+            var splinter = reg.get("splinter"); // WEAPON
+            var unload = reg.get("unload");     // ARMOR
+            var insight = reg.get("insight");   // ANY
+            require(splinter != null && unload != null && insight != null, "机制缺失");
+            require(com.forgemaster.enchant.EnchantService.slotMatches(splinter, Material.DIAMOND_SWORD),
+                    "武器机制必须能上剑");
+            require(!com.forgemaster.enchant.EnchantService.slotMatches(splinter,
+                    Material.DIAMOND_CHESTPLATE), "武器机制不能上胸甲");
+            require(com.forgemaster.enchant.EnchantService.slotMatches(unload, Material.DIAMOND_CHESTPLATE),
+                    "护甲机制必须能上胸甲");
+            require(!com.forgemaster.enchant.EnchantService.slotMatches(unload, Material.DIAMOND_SWORD),
+                    "护甲机制不能上剑");
+        });
+
     }
 
     /**

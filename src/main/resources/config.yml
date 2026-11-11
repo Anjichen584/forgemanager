@@ -286,45 +286,67 @@ enchant:
     ore-per-level: 4
   # 一件装备最多能带几条原创附魔（重复上书只升级，不占条数）
   max-per-item: 4
-  # 附魔自己的上限 —— 全部比 combat.limits 更紧，是「最后一道」之上的第一道
+  # 机制上限（v2.23.3）—— 每一项都对应一个「必须有上限，否则机制会崩」的地方。
+  # 注意：这些不是「增伤多少」，而是「机制允许多强」。原版附魔那套数值（增伤/减伤/
+  # 吸血/点燃/反弹/时运/经验）已经整条线移除，这里不再有 max-damage-bonus 之类。
   caps:
-    max-damage-bonus: 0.25
-    max-lifesteal-add: 0.10
-    max-fire-seconds: 4.0
-    max-attack-speed: 0.08
-    max-damage-reduce: 0.10
-    max-bonus-health: 8.0
-    max-thorns: 0.15
-    max-thorns-flat: 2.0
-    max-fire-resist: 0.30
-    max-exp-bonus: 0.50
-    max-coin-bonus: 0.15
-    max-drop-chance: 0.35
-    execute-threshold: 0.25
-    combo-stacks: 3
-    combo-window-ms: 4000
+    # 崩流（溅射）：以主目标实际伤害为基数，且溅射不触发附魔 → 不会递归放大
+    max-splash-ratio: 0.40      # 最多溅 40%：再高单体剑就变成范围武器，原版武器全失业
+    splash-radius: 3.0          # 波及半径（格）
+    # 烬狱（击杀爆燃）：固定值，不乘任何倍率
+    max-pyre-damage: 6.0
+    pyre-radius: 3.0
+    # 孤锋（独斗）：周围有别的玩家就失效 —— 这是「独狼向」而不是「白给增伤」
+    max-lone-wolf: 0.15
+    lone-wolf-radius: 8.0
+    # 蓄锋（蓄势）：停手够久后的第一击，惩罚乱挥
+    max-charge: 0.25
+    charge-window-ms: 2500
+    # 夺魄（打断）：只给减速+虚弱，不动 AI（改 AI 会让怪卡住）
+    max-hamper-seconds: 2.0
+    # 刻痕（累计）：打同一目标累计够三成血才刻印，长期战收益
+    mark-threshold: 0.30
+    max-mark-bonus: 0.10
+    # 卸力（伤害延后）：绝不能到 1.0，那是免伤
+    max-delay-ratio: 0.50
+    delay-ms: 2000
+    # 替身（免死）：回气 + 冷却，两者一起才防得住「永久免死」
+    max-cheat-heal: 0.30
+    cheat-cooldown-ms: 90000
+    # 回响（受击反击）：只对刚打过我的那个目标生效
+    max-retaliate: 0.15
+    retaliate-ms: 3000
+    # 守夜（脱战回复）：单次上限 + 间隔，防「站桩回满」
+    max-regen-per-tick: 2.5
+    regen-interval-ms: 2000
+    out-of-combat-ms: 5000
+    max-regen-level: 5
+    # 拾遗（额外经验）：给经验不给物品，绕开与时运叠加刷矿
+    max-salvage-chance: 0.30
+    # 望气（侦测）：节流，防动作栏每 tick 刷屏
+    max-sense-radius: 20.0
+    sense-interval-ms: 3000
   # 白名单守卫：拦在附魔台与铁砧，只管本插件的锻造品
   guard:
     enabled: true
     # 允许的原版附魔（按 key 写，如 sharpness / protection）。
     # 留空 = 全部原版附魔都允许；只有想收紧时才列。
     vanilla-whitelist: []
+  # 12 条机制。**这里只放数值，不放机制** —— 机制在代码里（enchant/CustomEnchant.Kind）。
+  # 想加新附魔：先实现机制，再来这里开数值；光改这里加不出新玩法。
   defs:
-    edge:        { enabled: true, max-level: 5, per-level: 0.015, weight: 100 }
-    pierce:      { enabled: true, max-level: 5, per-level: 0.012, weight: 90 }
-    swift:       { enabled: true, max-level: 4, per-level: 0.015, weight: 80 }
-    soulsip:     { enabled: true, max-level: 4, per-level: 0.015, weight: 70 }
-    ember:       { enabled: true, max-level: 3, per-level: 0.6,   weight: 70 }
-    slayer:      { enabled: true, max-level: 5, per-level: 0.02,  weight: 90 }
-    execute:     { enabled: true, max-level: 5, per-level: 0.03,  weight: 45 }
-    combo:       { enabled: true, max-level: 3, per-level: 0.01,  weight: 60 }
-    bulwark:     { enabled: true, max-level: 5, per-level: 0.015, weight: 100 }
-    thorns:      { enabled: true, max-level: 4, per-level: 0.03,  weight: 60 }
-    fortitude:   { enabled: true, max-level: 5, per-level: 1.5,   weight: 80 }
-    emberward:   { enabled: true, max-level: 4, per-level: 0.06,  weight: 55 }
-    lorekeeper:  { enabled: true, max-level: 5, per-level: 0.08,  weight: 75 }
-    prospector:  { enabled: true, max-level: 5, per-level: 0.06,  weight: 65 }
-    fortunes:    { enabled: true, max-level: 5, per-level: 0.02,  weight: 50 }
+    splinter:  { enabled: true, max-level: 5, per-level: 0.08, weight: 100 }  # 崩流：每级 +8% 溅射（上限 40%）
+    pyre:      { enabled: true, max-level: 3, per-level: 2.0,  weight: 70 }   # 烬狱：每级 +2 点爆燃（上限 6）
+    lone:      { enabled: true, max-level: 5, per-level: 0.03, weight: 85 }   # 孤锋：每级 +3%（上限 15%）
+    charge:    { enabled: true, max-level: 5, per-level: 0.05, weight: 80 }   # 蓄锋：每级 +5%（上限 25%）
+    sever:     { enabled: true, max-level: 5, per-level: 0.4,  weight: 75 }   # 夺魄：每级 +0.4 秒（上限 2 秒）
+    mark:      { enabled: true, max-level: 5, per-level: 0.02, weight: 60 }   # 刻痕：每级 +2%（上限 10%）
+    unload:    { enabled: true, max-level: 5, per-level: 0.10, weight: 95 }   # 卸力：每级 +10%（上限 50%）
+    decoy:     { enabled: true, max-level: 3, per-level: 0.10, weight: 45 }   # 替身：每级 +10% 回气（上限 30%）
+    echo:      { enabled: true, max-level: 5, per-level: 0.03, weight: 70 }   # 回响：每级 +3%（上限 15%）
+    vigil:     { enabled: true, max-level: 5, per-level: 0.5,  weight: 90 }   # 守夜：每级 +0.5 点/次（上限 2.5）
+    salvage:   { enabled: true, max-level: 5, per-level: 0.06, weight: 75 }   # 拾遗：每级 +6% 几率（上限 30%）
+    insight:   { enabled: true, max-level: 5, per-level: 2.0,  weight: 65 }   # 望气：每级 +2 格（上限 20 格）
 
 metrics:
   enabled: true

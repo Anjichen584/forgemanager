@@ -1,73 +1,85 @@
 package com.forgemaster.enchant;
 
 /**
- * 一条原创附魔的定义（v2.23.2）。
+ * 一条原创附魔的定义（v2.23.3 重做）。
  *
- * <h2>为什么不直接用原版 {@code Enchantment}</h2>
- * 原版附魔注册表是静态的，插件无法在运行时注册新的 {@code Enchantment} 实例
- * （除非动 NMS / 注册表注入，那会把兼容性赌在版本号上）。
- * 所以原创附魔走自己的通道：存 PDC（{@code Keys.CUSTOM_ENCH}），
- * 效果由插件自己在事件里算。
+ * <h2>设计红线：不做原版的数值皮肤</h2>
+ * v2.23.2 的第一版被否掉了，原因值得写在这里：那 15 条全是「把原版附魔换个名字 + 调个百分比」——
+ * 断金=锋利、燎原=火焰附加、芒刺=荆棘、辟火=火焰保护、探脉=时运、通慧=经验修补。
+ * 玩家一眼就看穿是换皮，因为<b>机制完全一样，只是数字不同</b>。
  *
- * <h2>数值纪律（这一条比功能重要）</h2>
- * 每条附魔**只声明「每级给多少」和「最多几级」**，绝对不给「最终值」。
- * 最终值一律由 {@link EnchantEffects} 汇总后再过一次全局夹子
- * （{@code enchant.caps.*}）。原因很直白：
+ * <p>所以这一版的判据不是「数值调多少」，而是：</p>
+ * <ol>
+ *   <li><b>原版有没有这个机制？</b>有的一律不做（增伤、减伤、吸血、点燃、反弹、时运、经验加成全部剔除）。</li>
+ *   <li><b>它改变的是打法，还是只是数字？</b>只改数字的不做。
+ *       改打法的才留：溅射改变站位、蓄势改变出手节奏、刻痕改变持久战、替身改变送死成本。</li>
+ *   <li><b>能不能用一句话说清「你应该因此改变什么行为」？</b>说不清就是数值皮肤。</li>
+ * </ol>
  *
- * <ul>
- *   <li>附魔会叠——武器上 8 条、护甲上 4 条，每条单独看都温和，加起来就能顶穿上限；</li>
- *   <li>叠加如果按乘法算，1.075 × 1.06 × 1.10 × 1.15 × 1.09 ≈ 1.59，
- *       看起来「每条都很小」，实际却是 +59%；</li>
- *   <li>所以这里<b>全部按加法汇总</b>，再统一夹到配置上限。加法可预测、可验证、可解释。</li>
- * </ul>
+ * <h2>数值纪律（沿用）</h2>
+ * 每条附魔只声明「每级参数」，最终效果由 {@link EnchantEffects} 汇总后再过全局夹子。
+ * 新机制虽然是「新」，但只要是伤害来源，就一样要被 {@code combat.limits} 管住 ——
+ * 新机制不等于免检通道。
  *
- * <p>另外每一类效果上限都比 {@code combat.limits.*} 更紧：
- * 附魔只是「在已有预算里再分一小块」，不能变成绕过伤害预算的后门。</p>
- *
- * @param id       稳定 id（存盘用，改了就是另一条附魔，不能动）
- * @param display  显示名（可改，只影响 Lore）
+ * @param id       稳定 id（存盘用）
+ * @param display  显示名
  * @param maxLevel 最高等级
- * @param kind     效果类别
+ * @param kind     机制
  * @param slot     适用部位
- * @param perLevel 每级贡献（含义由 {@link Kind} 决定）
- * @param weight   随机产出权重（越大越常见）
- * @param desc     一行说明（Lore 用，{@code %v} 会被换成当前数值）
+ * @param perLevel 每级参数（含义由 {@link Kind} 决定）
+ * @param weight   随机产出权重
+ * @param desc     说明（{@code %v} 会被换成当前等级数值）
  */
 public record CustomEnchant(String id, String display, int maxLevel, Kind kind, Slot slot,
                             double perLevel, double weight, String desc) {
 
-    /** 效果类别。每一项都在 {@link EnchantEffects} 里有且仅有一个消费点。 */
+    /**
+     * 机制类型。**每一项都是原版没有的**。
+     *
+     * <p>逐条对照原版附魔，确认不重复：</p>
+     * <table border="1">
+     *   <caption>与原版机制的区别</caption>
+     *   <tr><th>本插件</th><th>原版最接近的</th><th>差别在哪</th></tr>
+     *   <tr><td>崩流（溅射）</td><td>横扫之刃</td><td>横扫只对「正面扇形 + 非玩家生物」且伤害固定；
+     *       崩流是真正的圆形溅射，且溅射伤害独立结算、不触发附魔</td></tr>
+     *   <tr><td>烬狱（击杀爆燃）</td><td>无</td><td>原版没有任何「击杀触发范围伤害」的机制</td></tr>
+     *   <tr><td>孤锋（独斗）</td><td>无</td><td>原版伤害与「周围有没有队友」无关</td></tr>
+     *   <tr><td>蓄锋（蓄势）</td><td>无</td><td>原版没有「出手间隔」概念，蓄势奖励的是「不乱挥」</td></tr>
+     *   <tr><td>夺魄（打断）</td><td>无</td><td>原版没有打断施法/减速攻击者的机制</td></tr>
+     *   <tr><td>刻痕（累计刻印）</td><td>无</td><td>原版伤害不随「对同一目标累计输出」成长</td></tr>
+     *   <tr><td>卸力（伤害延后）</td><td>无</td><td>原版减伤是即时结算，卸力把伤害摊到 2 秒里</td></tr>
+     *   <tr><td>替身（免死）</td><td>不死图腾</td><td>图腾是消耗品；替身是附魔，靠冷却而非消耗</td></tr>
+     *   <tr><td>回响（受击反击）</td><td>无</td><td>原版没有「被谁打就对谁更痛」的窗口机制</td></tr>
+     *   <tr><td>守夜（脱战回复）</td><td>无</td><td>原版回血靠饱食度，与战斗状态无关</td></tr>
+     *   <tr><td>拾遗（额外经验）</td><td>经验修补</td><td>经验修补是「经验修耐久」，拾遗是「挖矿多给经验」</td></tr>
+     *   <tr><td>望气（侦测）</td><td>无</td><td>原版没有主动侦测附近敌人的机制</td></tr>
+     * </table>
+     */
     public enum Kind {
-        /** 最终伤害加成（加法百分比） */
-        DAMAGE_MUL,
-        /** 破甲：额外伤害（加法百分比，等价于无视一部分护甲） */
-        ARMOR_PIERCE,
-        /** 攻速加成 */
-        ATTACK_SPEED,
-        /** 吸血加成（仍受 DamageBudget 三道夹子） */
-        LIFESTEAL_ADD,
-        /** 点燃时长加成（秒，仍受 max-fire-seconds 夹） */
-        FIRE_ADD,
-        /** 对敌对生物额外伤害 */
-        VS_MONSTER,
-        /** 斩杀：目标血量低于阈值时额外伤害 */
-        EXECUTE,
-        /** 连击：连续命中同目标叠层 */
-        COMBO,
-        /** 受伤减免（仍受 max-damage-reduce 夹） */
-        DAMAGE_REDUCE,
-        /** 荆棘：反弹受到伤害的百分比 */
-        THORNS,
-        /** 生命上限加成（仍受 max-bonus-health 夹） */
-        HEALTH_ADD,
-        /** 火焰伤害减免 */
-        FIRE_RESIST,
-        /** 经验加成 */
-        EXP_BONUS,
-        /** 挖矿额外掉落几率 */
-        DROP_BONUS,
-        /** 剑币产出加成 */
-        COIN_BONUS
+        /** 溅射：命中时对目标周围的敌人造成独立伤害 */
+        SPLASH,
+        /** 击杀爆燃：击杀目标时尸身爆燃，对周围造成伤害 */
+        PYRE,
+        /** 独斗：周围无其他玩家时增伤 */
+        LONE_WOLF,
+        /** 蓄势：距上次命中够久，本击增伤 */
+        CHARGE,
+        /** 打断：命中时使目标减速 + 虚弱 */
+        HAMPER,
+        /** 刻痕：对同一目标累计输出达标后刻印，此后对其增伤 */
+        MARK,
+        /** 卸力：受到伤害的一部分延后分期结算 */
+        DELAY_DAMAGE,
+        /** 替身：致命伤时免死一次（有冷却） */
+        CHEAT_DEATH,
+        /** 回响：受击后一段时间内对攻击者增伤 */
+        RETALIATE,
+        /** 守夜：脱战后周期性回复 */
+        REGEN,
+        /** 拾遗：挖掘方块时额外获得经验 */
+        SALVAGE,
+        /** 望气：周期性提示最近敌对生物的方向与距离 */
+        SENSE
     }
 
     /** 适用部位 */
@@ -87,12 +99,7 @@ public record CustomEnchant(String id, String display, int maxLevel, Kind kind, 
         }
     }
 
-    /**
-     * 某一级实际贡献多少。
-     *
-     * <p>唯一入口，别在别处再乘一次 {@code perLevel} —— 那正是「散落多份公式」
-     * 这类 bug 的起手式。</p>
-     */
+    /** 某一级实际参数（唯一入口，别在别处再乘一次 perLevel） */
     public double at(int level) {
         int lv = Math.max(0, Math.min(level, maxLevel));
         return perLevel * lv;
@@ -102,12 +109,13 @@ public record CustomEnchant(String id, String display, int maxLevel, Kind kind, 
     public String valueText(int level) {
         double v = at(level);
         return switch (kind) {
-            case FIRE_ADD -> trim(v) + "秒";
-            case ATTACK_SPEED, DAMAGE_MUL, ARMOR_PIERCE, VS_MONSTER, EXECUTE, COMBO,
-                 DAMAGE_REDUCE, THORNS, FIRE_RESIST, EXP_BONUS, DROP_BONUS, COIN_BONUS ->
+            case SPLASH, LONE_WOLF, CHARGE, MARK, RETALIATE, DELAY_DAMAGE, SALVAGE ->
                     "+" + trim(v * 100) + "%";
-            case LIFESTEAL_ADD -> "+" + trim(v * 100) + "%";
-            case HEALTH_ADD -> "+" + trim(v);
+            case PYRE -> trim(v) + " 点";
+            case HAMPER -> trim(v) + " 秒";
+            case REGEN -> trim(v) + " 点/次";
+            case CHEAT_DEATH -> "+" + trim(v * 100) + "% 生命";
+            case SENSE -> trim(v) + " 格";
         };
     }
 

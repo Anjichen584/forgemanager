@@ -9,36 +9,25 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ThreadLocalRandom;
+import java.util.Random;
 
 /**
- * 原创附魔注册表（v2.23.2）。
+ * 原创附魔注册表（v2.23.3 重做）。
  *
- * <p>15 条，全部 config 驱动：`enchant.defs.<id>` 下的 {@code enabled / max-level / per-level / weight}
- * 都能改，改了立刻生效（注册表在 load 时重建，不缓存静态常量）。</p>
+ * <p>12 条，<b>每一条都是原版没有的机制</b>（对照表见 {@link CustomEnchant.Kind}）。
+ * 全部 config 驱动：{@code enchant.defs.<id>} 下的 enabled / max-level / per-level / weight 可改。</p>
  *
- * <h2>数值上限一览（为什么不会超标）</h2>
- * 每条附魔的 {@code per-level × max-level} 都刻意压得很低，而且**汇总时按加法并再过全局夹子**：
- *
- * <table border="1">
- *   <caption>最坏情况（全满级、全部叠满）</caption>
- *   <tr><th>类别</th><th>理论合计</th><th>{@code enchant.caps} 封顶</th><th>再叠一层</th></tr>
- *   <tr><td>伤害（断金+贯札+诛邪+摧枯+迭浪满层）</td><td>+47.5%</td><td>+25%</td><td>—</td></tr>
- *   <tr><td>吸血加成</td><td>+6%</td><td>+10%</td><td>{@code combat.limits} 20%</td></tr>
- *   <tr><td>点燃时长</td><td>+1.8 秒</td><td>+4 秒</td><td>{@code combat.limits} 10 秒</td></tr>
- *   <tr><td>减伤加成（四件合计）</td><td>+30%</td><td>+10%</td><td>{@code combat.limits} 35%</td></tr>
- *   <tr><td>生命加成（四件合计）</td><td>+30</td><td>+8</td><td>{@code combat.limits} 20</td></tr>
- * </table>
- *
- * <p>注意伤害那一行：<b>理论上限 +47.5% 会被夹到 +25%</b>，
- * 也就是说「把 8 条武器附魔全堆满」也只能拿到 +25%，而不是叠出 +47.5%。
- * 这就是「加法汇总 + 只夹一次」的意义 —— 每条各自合法、加起来不越界。</p>
+ * <h2>为什么是 12 条而不是 15/20 条</h2>
+ * 机制型附魔的编写成本不是「多写一个百分比」，而是「多一个能被破坏的系统」：
+ * 溅射要防递归、卸力要防叠到无敌、替身要防刷命、刻痕要防内存泄漏。
+ * 与其塞 20 条里一半是数值皮肤、一半半成品，不如 12 条全部落地可验证。
+ * 服主想加，往 {@code enchant.defs} 里加就是了 —— 但新机制得先在代码里实现。
  */
 public final class EnchantRegistry {
 
     private final ForgingMasterPlugin plugin;
 
-    /** 插入顺序保持稳定：GUI 排序、Lore 排序都靠它 */
+    /** 插入顺序稳定：GUI 排序、Lore 排序都靠它 */
     private final Map<String, CustomEnchant> byId = new LinkedHashMap<>();
 
     public EnchantRegistry(ForgingMasterPlugin plugin) {
@@ -47,50 +36,53 @@ public final class EnchantRegistry {
     }
 
     /**
-     * 内置 15 条的定义。**这是默认值，不是唯一来源** —— config 里同名键会覆盖。
+     * 内置 12 条。这是默认值，config 同名键会覆盖。
      *
-     * <p>放在代码里而不是只放 config，是因为：config 被服主删掉某一段时，
-     * 从 config 重建注册表会让那些物品上的附魔「消失」（id 认不出来），
-     * Lore 变成一串裸 id。代码里有兜底，至少显示名和数值仍然是对的。</p>
+     * <p>放在代码里而不是只放 config：config 被删掉某段时，从 config 重建会让
+     * 那些物品上的附魔「消失」（id 认不出来），Lore 变成一串裸 id。
+     * 代码里有兜底，至少显示名和参数仍然正确。</p>
      */
     public static List<CustomEnchant> defaults() {
         return List.of(
-                // ---- 武器 ----
-                // 取名口径：全部避开原版附魔的官方中文译名（锋利/穿刺/火焰附加/亡灵杀手/
-                // 荆棘/保护/时运...都不许沾），改走「熔铸工序 + 古兵器 + 天象」这一路。
-                // 「断金」取自《易》「二人同心，其利断金」；「贯札」是札甲之札，贯穿甲片。
-                new CustomEnchant("edge", "断金", 5, CustomEnchant.Kind.DAMAGE_MUL,
-                        CustomEnchant.Slot.WEAPON, 0.015, 100, "锋过之处，伤害 %v"),
-                new CustomEnchant("pierce", "贯札", 5, CustomEnchant.Kind.ARMOR_PIERCE,
-                        CustomEnchant.Slot.WEAPON, 0.012, 90, "穿透甲片，伤害 %v"),
-                new CustomEnchant("swift", "掣电", 4, CustomEnchant.Kind.ATTACK_SPEED,
-                        CustomEnchant.Slot.WEAPON, 0.015, 80, "出鞘如电，攻速 %v"),
-                new CustomEnchant("soulsip", "饮锋", 4, CustomEnchant.Kind.LIFESTEAL_ADD,
-                        CustomEnchant.Slot.WEAPON, 0.015, 70, "刃饮其血，吸血 %v"),
-                new CustomEnchant("ember", "燎原", 3, CustomEnchant.Kind.FIRE_ADD,
-                        CustomEnchant.Slot.WEAPON, 0.6, 70, "星火不熄，点燃 %v"),
-                new CustomEnchant("slayer", "诛邪", 5, CustomEnchant.Kind.VS_MONSTER,
-                        CustomEnchant.Slot.WEAPON, 0.02, 90, "妖祟辟易，伤害 %v"),
-                new CustomEnchant("execute", "摧枯", 5, CustomEnchant.Kind.EXECUTE,
-                        CustomEnchant.Slot.WEAPON, 0.03, 45, "摧枯拉朽，残躯时伤害 %v"),
-                new CustomEnchant("combo", "迭浪", 3, CustomEnchant.Kind.COMBO,
-                        CustomEnchant.Slot.WEAPON, 0.01, 60, "一浪接一浪，每层 %v"),
-                // ---- 护甲 ----
-                new CustomEnchant("bulwark", "砥柱", 5, CustomEnchant.Kind.DAMAGE_REDUCE,
-                        CustomEnchant.Slot.ARMOR, 0.015, 100, "中流不移，受伤减免 %v"),
-                new CustomEnchant("thorns", "芒刺", 4, CustomEnchant.Kind.THORNS,
-                        CustomEnchant.Slot.ARMOR, 0.03, 60, "触之则伤，反弹 %v"),
-                new CustomEnchant("fortitude", "培元", 5, CustomEnchant.Kind.HEALTH_ADD,
-                        CustomEnchant.Slot.ARMOR, 1.5, 80, "固本培元，气血 %v"),
-                new CustomEnchant("emberward", "辟火", 4, CustomEnchant.Kind.FIRE_RESIST,
-                        CustomEnchant.Slot.ARMOR, 0.06, 55, "火不能侵，减免 %v"),
-                // ---- 通用 ----
-                new CustomEnchant("lorekeeper", "通慧", 5, CustomEnchant.Kind.EXP_BONUS,
-                        CustomEnchant.Slot.ANY, 0.08, 75, "见微知著，经验 %v"),
-                new CustomEnchant("prospector", "探脉", 5, CustomEnchant.Kind.DROP_BONUS,
-                        CustomEnchant.Slot.ANY, 0.06, 65, "循脉而知藏，额外掉落 %v"),
-                new CustomEnchant("fortunes", "泉布", 5, CustomEnchant.Kind.COIN_BONUS,
-                        CustomEnchant.Slot.ANY, 0.02, 50, "泉布自至，剑币 %v")
+                // ---------------------------------------------------------- 武器：改变打法的
+                new CustomEnchant("splinter", "崩流", 5, CustomEnchant.Kind.SPLASH,
+                        CustomEnchant.Slot.WEAPON, 0.08, 100,
+                        "刃气迸散，波及周围敌人 %v / 每级 ×8%"),
+                new CustomEnchant("pyre", "烬狱", 3, CustomEnchant.Kind.PYRE,
+                        CustomEnchant.Slot.WEAPON, 2.0, 70,
+                        "击杀则尸身爆燃，周围 %v 点伤害"),
+                new CustomEnchant("lone", "孤锋", 5, CustomEnchant.Kind.LONE_WOLF,
+                        CustomEnchant.Slot.WEAPON, 0.03, 85,
+                        "八格内无旁人时伤害 %v"),
+                new CustomEnchant("charge", "蓄锋", 5, CustomEnchant.Kind.CHARGE,
+                        CustomEnchant.Slot.WEAPON, 0.05, 80,
+                        "停手两秒半后的第一击伤害 %v"),
+                new CustomEnchant("sever", "夺魄", 5, CustomEnchant.Kind.HAMPER,
+                        CustomEnchant.Slot.WEAPON, 0.4, 75,
+                        "命中则滞其身，减速虚弱 %v"),
+                new CustomEnchant("mark", "刻痕", 5, CustomEnchant.Kind.MARK,
+                        CustomEnchant.Slot.WEAPON, 0.02, 60,
+                        "对同一目标累计削其三成血后刻印，此后伤害 %v"),
+                // ---------------------------------------------------------- 护甲：改变容错的
+                new CustomEnchant("unload", "卸力", 5, CustomEnchant.Kind.DELAY_DAMAGE,
+                        CustomEnchant.Slot.ARMOR, 0.10, 95,
+                        "受伤的 %v 摊到两秒内，不当场致死"),
+                new CustomEnchant("decoy", "替身", 3, CustomEnchant.Kind.CHEAT_DEATH,
+                        CustomEnchant.Slot.ARMOR, 0.10, 45,
+                        "致命伤时留一线生机，回气 %v（冷却 90 秒）"),
+                new CustomEnchant("echo", "回响", 5, CustomEnchant.Kind.RETALIATE,
+                        CustomEnchant.Slot.ARMOR, 0.03, 70,
+                        "受击后三秒内对其伤害 %v"),
+                new CustomEnchant("vigil", "守夜", 5, CustomEnchant.Kind.REGEN,
+                        CustomEnchant.Slot.ARMOR, 0.5, 90,
+                        "脱战五秒后每两秒回 %v"),
+                // ---------------------------------------------------------- 通用：改变作息的
+                new CustomEnchant("salvage", "拾遗", 5, CustomEnchant.Kind.SALVAGE,
+                        CustomEnchant.Slot.ANY, 0.06, 75,
+                        "采掘时 %v 几率另得经验"),
+                new CustomEnchant("insight", "望气", 5, CustomEnchant.Kind.SENSE,
+                        CustomEnchant.Slot.ANY, 2.0, 65,
+                        "每数秒察知 %v 内敌踪")
         );
     }
 
@@ -102,12 +94,11 @@ public final class EnchantRegistry {
             String path = "enchant.defs." + def.id();
             ConfigurationSection sec = cfg.getConfigurationSection(path);
             if (sec == null) {
-                // config 没有这一段（老配置 / 服主删了）：用代码里的默认定义，别让物品失忆
                 byId.put(def.id(), def);
                 continue;
             }
             if (!sec.getBoolean("enabled", true)) {
-                continue; // 明确关掉的才不注册
+                continue;
             }
             int max = Math.max(1, sec.getInt("max-level", def.maxLevel()));
             double per = sec.getDouble("per-level", def.perLevel());
@@ -141,7 +132,7 @@ public final class EnchantRegistry {
     }
 
     /** 随机抽一条（按 weight）。{@code slot} 为 null 时不限部位。 */
-    public CustomEnchant random(java.util.Random rnd, CustomEnchant.Slot slot) {
+    public CustomEnchant random(Random rnd, CustomEnchant.Slot slot) {
         List<CustomEnchant> pool = slot == null ? new ArrayList<>(byId.values()) : forSlot(slot);
         if (pool.isEmpty()) {
             return null;
@@ -162,10 +153,5 @@ public final class EnchantRegistry {
             }
         }
         return pool.get(pool.size() - 1);
-    }
-
-    public CustomEnchant random(CustomEnchant.Slot slot) {
-        return random(ThreadLocalRandom.current() == null
-                ? new java.util.Random() : new java.util.Random(), slot);
     }
 }

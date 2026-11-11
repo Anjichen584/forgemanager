@@ -163,16 +163,29 @@ public final class CombatListener implements Listener {
         double lifesteal = pdc.getOrDefault(Keys.LIFESTEAL, PersistentDataType.DOUBLE, 0.0);
         int fireTicks = pdc.getOrDefault(Keys.FIRE_TICKS, PersistentDataType.INTEGER, 0);
 
-        // 原创附魔（v2.23.2）：武器侧的伤害 / 吸血 / 点燃加成。
-        // 全部**加法汇总后再夹**（EnchantEffects 内部只夹一次），且夹子比 combat.limits 更紧 ——
-        // 附魔只能在伤害预算里分一小块，不能顶穿上限。
+        // 原创附魔（v2.23.3 机制版）：这里**不再**给吸血/点燃加数值 ——
+        // 那是原版附魔的皮肤，已经被否掉。现在只做「条件型增伤」：
+        //   孤锋（周围无旁人） / 蓄锋（停手够久） / 刻痕（目标已被刻印） / 回响（刚被打过）
+        // 四项相加后由 EnchantEffects 夹一次，且夹子比 combat.limits 更紧。
         var enchCaps = com.forgemaster.enchant.EnchantEffects.Caps.fromConfig(plugin.getConfig());
         var enchEntries = com.forgemaster.enchant.EnchantItem.of(plugin, weapon);
-        var enchWeapon = plugin.enchantEffects().weapon(enchEntries, enchCaps);
-        lifesteal += enchWeapon.lifestealAdd();
-        if (enchWeapon.fireAddSeconds() > 0) {
-            fireTicks += (int) Math.round(enchWeapon.fireAddSeconds() * 20);
+        var enchMech = enchEntries.isEmpty()
+                ? com.forgemaster.enchant.EnchantEffects.Mechanics.none()
+                : plugin.enchantEffects().of(enchEntries, enchCaps);
+        // 回响在护甲上，要把四件一起算进来
+        var fullMech = plugin.enchantEffects().merge(java.util.List.of(enchMech), enchCaps);
+        boolean alone = countNearbyPlayers(player, enchCaps.loneWolfRadius()) == 0;
+        long sinceLastHit = com.forgemaster.enchant.EnchantState.msSinceLastHit(player);
+        boolean marked = com.forgemaster.enchant.EnchantState.isBranded(player, event.getEntity());
+        double enchBonus = plugin.enchantEffects().conditionalBonus(
+                fullMech, enchCaps, alone, sinceLastHit, marked);
+        if (fullMech.retaliate() > 0 && com.forgemaster.enchant.EnchantState.isRetaliationTarget(
+                player, event.getEntity(), enchCaps.retaliateMs())) {
+            enchBonus += fullMech.retaliate();
         }
+        // 兜底：即便配置被改成离谱的值，这一击的附魔增伤也越不过「四项上限之和」
+        enchBonus = Math.min(enchBonus, enchCaps.maxLoneWolf() + enchCaps.maxCharge()
+                + enchCaps.maxMarkBonus() + enchCaps.maxRetaliate());
 
         // 崩刃：耐久见底的剑只是一把普通剑
         int durability = pdc.getOrDefault(Keys.DURABILITY, PersistentDataType.INTEGER, -1);
@@ -215,22 +228,10 @@ public final class CombatListener implements Listener {
         //
         // v2.23.1 修 P2-D：本次实际伤害统一收在 dealt 里，吸血只认它，不再二次读 getFinalDamage()
         double dealt = event.getDamage();
-        // 原创附魔的伤害倍率（v2.23.2）：夹在暴击之前 —— 它和暴击一样属于「本插件加成」，
+        // 原创附魔的条件型增伤（v2.23.3）：夹在暴击之前 —— 它和暴击一样属于「本插件加成」，
         // 必须一起被下面的 DamageBudget 管住。放在夹子之后就等于给它开了后门。
-        if (enchWeapon.damageMul() > 1.0 || enchWeapon.comboStacks() > 0) {
-            boolean monster = event.getEntity() instanceof org.bukkit.entity.Monster;
-            double hpRatio = 1.0;
-            if (event.getEntity() instanceof org.bukkit.entity.LivingEntity livingTarget) {
-                var attr = livingTarget.getAttribute(org.bukkit.attribute.Attribute.MAX_HEALTH);
-                double maxHp = attr == null ? 20.0 : attr.getValue();
-                hpRatio = maxHp <= 0 ? 1.0 : Math.max(0, Math.min(1.0, livingTarget.getHealth() / maxHp));
-            }
-            // 迭浪层数：本刀之前已经连了几刀（第一刀是 0）
-            long comboWindow = plugin.getConfig().getLong("enchant.caps.combo-window-ms", 4000L);
-            int combos = com.forgemaster.enchant.ComboTracker.consecutive(
-                    player, event.getEntity(), comboWindow, Math.max(1, enchCaps.comboStacks()));
-            dealt *= plugin.enchantEffects().hitMultiplier(enchEntries, enchCaps,
-                    monster, hpRatio, combos);
+        if (enchBonus > 0) {
+            dealt *= 1.0 + enchBonus;
         }
         var crit = com.forgemaster.combat.Crit.fromConfig(plugin, critChance, critDamage);
         if (crit.roll(ThreadLocalRandom.current())) {
@@ -287,5 +288,17 @@ public final class CombatListener implements Listener {
     private com.forgemaster.combat.DamageBudget.Limits limits() {
         // 上限默认值只在 DamageBudget.Limits 里存一份，这里绝不重复写数字
         return com.forgemaster.combat.DamageBudget.Limits.fromConfig(plugin.getConfig());
+    }
+
+    /** 统计指定半径内的**其它玩家**数量（孤锋用：有队友在旁边就失效） */
+    private static int countNearbyPlayers(org.bukkit.entity.Player player, double radius) {
+        int n = 0;
+        for (org.bukkit.entity.Entity e : player.getNearbyEntities(radius, radius, radius)) {
+            if (e instanceof org.bukkit.entity.Player other && !other.equals(player)
+                    && other.getGameMode() == org.bukkit.GameMode.SURVIVAL) {
+                n++;
+            }
+        }
+        return n;
     }
 }

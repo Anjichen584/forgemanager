@@ -416,46 +416,16 @@ public final class ForgeListener implements Listener {
         double reduce = com.forgemaster.affix.EquipmentDamageScan
                 .scan(player, event, null).affixReduce();
 
-        // 原创附魔的护甲侧（v2.23.2）：砥柱减伤 / 辟火 / 荆棘。
-        // 四件护甲各自读、合并后**只夹一次**，不是各自夹完相加（四件各 10% 就成了 40%）。
-        var enchCaps = com.forgemaster.enchant.EnchantEffects.Caps.fromConfig(plugin.getConfig());
-        var armorParts = new java.util.ArrayList<com.forgemaster.enchant.EnchantEffects.Armor>(4);
-        for (org.bukkit.inventory.ItemStack piece : player.getInventory().getArmorContents()) {
-            if (piece == null || piece.getType().isAir()) {
-                continue;
-            }
-            var entries = com.forgemaster.enchant.EnchantItem.of(plugin, piece);
-            if (!entries.isEmpty()) {
-                armorParts.add(plugin.enchantEffects().armor(entries, enchCaps));
-            }
-        }
-        var enchArmor = plugin.enchantEffects().mergeArmor(armorParts, enchCaps);
-        reduce += enchArmor.reduceAdd();
-
-        // 辟火：只对火源伤害额外减（不然它就变成一条万能减伤）
-        boolean fire = event.getCause() == org.bukkit.event.entity.EntityDamageEvent.DamageCause.FIRE
-                || event.getCause() == org.bukkit.event.entity.EntityDamageEvent.DamageCause.FIRE_TICK
-                || event.getCause() == org.bukkit.event.entity.EntityDamageEvent.DamageCause.LAVA
-                || event.getCause() == org.bukkit.event.entity.EntityDamageEvent.DamageCause.HOT_FLOOR;
-        if (fire) {
-            reduce += enchArmor.fireResist();
-        }
-
+        // 原创附魔的护甲侧（v2.23.3）已全部搬到 EnchantListener：
+        //   卸力（HIGH）负责「把伤害摊到 2 秒后」、替身（HIGH）负责免死、
+        //   回响/守夜靠状态与周期任务。
+        // 这里**故意不再做「减伤 / 御火 / 荆棘」** —— 那是原版保护、火焰保护、荆棘的皮肤。
+        // 剩下的只有词条减伤（原有的 affix 系统），本监听器不再叠加附魔减伤，
+        // 避免「两层减伤各自 60%」叠成 84% 这种账面看不出来的结果。
         if (reduce > 0) {
             // 四件套叠满也不会完全免疫，最多减 60%
             reduce = Math.min(0.6, reduce);
             event.setDamage(event.getDamage() * (1.0 - reduce));
-        }
-
-        // 荆棘：反弹受到的一部分伤害给攻击者，单次有绝对值上限（防「高伤反杀」）
-        if (enchArmor.thornsPct() > 0
-                && event instanceof org.bukkit.event.entity.EntityDamageByEntityEvent byEntity
-                && byEntity.getDamager() instanceof org.bukkit.entity.LivingEntity attacker
-                && !attacker.equals(player)) {
-            double reflect = Math.min(event.getDamage() * enchArmor.thornsPct(), enchArmor.thornsFlat());
-            if (reflect > 0) {
-                attacker.damage(reflect, player);
-            }
         }
     }
 

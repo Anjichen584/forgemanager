@@ -124,71 +124,80 @@ public final class NumericSim {
         fail += check("无限预算时不夹", DamageBudget.clampHit(9999, DamageBudget.Limits.unlimited()) == 9999,
                 "unlimited 直通");
 
-        // ---------------------------------------------------------------- 原创附魔（v2.23.2）
+        // ---------------------------------------------------------------- 机制型原创附魔（v2.23.3）
         //
-        // 这一组的命题只有一个：把 15 条原创附魔全部堆到满级、还叠上最有利的条件
-        // （打敌对生物 + 目标残血 + 连击满层），最终伤害**仍然**被 combat.limits 管住。
-        //
-        // 附魔自己有一道 +25% 的封顶；就算它全给满，满配 59.8 变成 74.75，
-        // 再进 DamageBudget.clampHit 还是要落回 60。这就是「两道夹子」的意义。
+        // v2.23.2 的那一版全是原版附魔的数值皮肤，已经被服主否掉。
+        // 现在这 12 条改的是**机制**：溅射改站位、蓄锋改出手节奏、刻痕改持久战、卸力改容错。
+        // 机制型附魔的风险不是「数字不好看」，而是「组合起来变成无敌」，所以断言全部围绕这一点。
         System.out.println();
-        System.out.println("原创附魔（全满级最坏情况）");
+        System.out.println("机制型原创附魔（全部满级 · 最不利组合）");
         System.out.println("-".repeat(112));
         var enchCaps = com.forgemaster.enchant.EnchantEffects.Caps.defaults();
         var fx = new com.forgemaster.enchant.EnchantEffects();
-        java.util.List<com.forgemaster.enchant.EnchantEffects.Entry> maxed = maxedEnchants();
+        var maxed = maxedEnchants();
 
-        double enchMul = fx.hitMultiplier(maxed, enchCaps, true, 0.01, enchCaps.comboStacks());
-        var enchWeapon = fx.weapon(maxed, enchCaps);
-        var enchArmor = fx.armor(maxed, enchCaps);
-        System.out.printf(Locale.ROOT,
-                "  伤害倍率 %.3f（封顶 %.2f）｜吸血 +%.1f%%｜点燃 +%.1fs｜攻速 +%.1f%%%n",
-                enchMul, 1.0 + enchCaps.maxDamageBonus(), enchWeapon.lifestealAdd() * 100,
-                enchWeapon.fireAddSeconds(), enchWeapon.attackSpeedAdd() * 100);
-        System.out.printf(Locale.ROOT,
-                "  减伤 +%.1f%%｜气血 +%.1f｜荆棘 %.1f%%（单次≤%.0f）｜御火 %.1f%%%n",
-                enchArmor.reduceAdd() * 100, enchArmor.healthAdd(),
-                enchArmor.thornsPct() * 100, enchArmor.thornsFlat(), enchArmor.fireResist() * 100);
-        System.out.printf(Locale.ROOT, "  经验 ×%.2f｜剑币 ×%.2f｜挖矿额外掉落 %.1f%%%n",
-                fx.expMul(maxed, enchCaps), fx.coinMul(maxed, enchCaps),
-                fx.dropChance(maxed, enchCaps) * 100);
+        // 武器侧：条件全满足（周围无旁人 + 停手够久 + 目标已刻印 + 刚被打过）
+        var weaponMech = fx.of(ofKind(maxed, com.forgemaster.enchant.CustomEnchant.Slot.WEAPON), enchCaps);
+        double condBonus = fx.conditionalBonus(weaponMech, enchCaps, true,
+                enchCaps.chargeWindowMs() + 1, true) + weaponMech.retaliate();
+        double capAll = enchCaps.maxLoneWolf() + enchCaps.maxCharge()
+                + enchCaps.maxMarkBonus() + enchCaps.maxRetaliate();
+        double boutAfter = DamageBudget.clampHit(worstHit * (1.0 + condBonus), budget);
+        double boutHits = Math.ceil(WARDEN_HP / boutAfter);
 
-        // 满配 + 全满附魔，再过伤害夹子
-        double withEnch = worstHit * enchMul;
-        double afterBudget = DamageBudget.clampHit(withEnch, budget);
-        double hitsWithEnch = Math.ceil(WARDEN_HP / afterBudget);
+        // 溅射：以主目标实际伤害为基数，且不递归
+        double splash = fx.splashDamage(weaponMech, enchCaps, worstHit);
+        // 烬狱：独立固定值
+        double pyre = fx.pyreDamage(weaponMech, enchCaps);
+
+        // 护甲侧：四件全带卸力，合并后只认一份
+        var armorMech = fx.of(ofKind(maxed, com.forgemaster.enchant.CustomEnchant.Slot.ARMOR), enchCaps);
+        var mergedArmor = fx.merge(java.util.List.of(armorMech, armorMech, armorMech, armorMech),
+                enchCaps);
+
         System.out.printf(Locale.ROOT,
-                "  满配 %.1f × 附魔 %.3f = %.1f → 夹子后 %.1f → 坚守者 %.1f 刀%n",
-                worstHit, enchMul, withEnch, afterBudget, hitsWithEnch);
+                "  条件增伤合计 %.1f%%（孤锋 %.0f%% + 蓄锋 %.0f%% + 刻痕 %.0f%% + 回响 %.0f%%）%n",
+                condBonus * 100, enchCaps.maxLoneWolf() * 100, enchCaps.maxCharge() * 100,
+                enchCaps.maxMarkBonus() * 100, enchCaps.maxRetaliate() * 100);
+        System.out.printf(Locale.ROOT,
+                "  崩流 %.1f 点（主线 %.1f 的 %.0f%%）｜烬狱 %.1f 点固定｜夺魄 %.1fs%n",
+                splash, worstHit, weaponMech.splashRatio() * 100, pyre, weaponMech.hamperSeconds());
+        System.out.printf(Locale.ROOT,
+                "  卸力摊 %.0f%%（四件合并后）｜替身回气 %.0f%% 生命 / 冷却 %.0f 秒%n",
+                mergedArmor.delayRatio() * 100, enchCaps.maxCheatHeal() * 100,
+                enchCaps.cheatCooldownMs() / 1000.0);
+        System.out.printf(Locale.ROOT,
+                "  满配 %.1f × (1+%.1f%%) = %.1f → 夹子后 %.1f → 坚守者 %.1f 刀%n",
+                worstHit, condBonus * 100, worstHit * (1 + condBonus), boutAfter, boutHits);
         System.out.println("-".repeat(112));
         System.out.println();
 
-        fail += check("附魔伤害总加成不超过 +25%", enchMul <= 1.0 + enchCaps.maxDamageBonus() + 1e-9,
-                fmt(enchMul) + " 倍");
-        fail += check("附魔吸血加成不超过 +10%", enchWeapon.lifestealAdd() <= enchCaps.maxLifestealAdd() + 1e-9,
-                fmt(enchWeapon.lifestealAdd() * 100) + "%");
-        fail += check("附魔点燃加成不超过 +4 秒", enchWeapon.fireAddSeconds() <= enchCaps.maxFireSeconds() + 1e-9,
-                fmt(enchWeapon.fireAddSeconds()) + " 秒");
-        fail += check("附魔减伤加成不超过 +10%", enchArmor.reduceAdd() <= enchCaps.maxReduce() + 1e-9,
-                fmt(enchArmor.reduceAdd() * 100) + "%");
-        fail += check("附魔气血加成不超过 +8", enchArmor.healthAdd() <= enchCaps.maxHealth() + 1e-9,
-                fmt(enchArmor.healthAdd()));
-        fail += check("满配 + 满附魔仍在伤害上限内", afterBudget <= budget.maxHitDamage() + 1e-9,
-                fmt(afterBudget) + " ≤ " + fmt(budget.maxHitDamage()));
-        fail += check("满配 + 满附魔仍要 8 刀以上打死坚守者", hitsWithEnch >= 8.0,
-                fmt(hitsWithEnch) + " 刀");
-        fail += check("附魔加成是加法（8 条相加不再乘一次）",
-                Math.abs(fx.hitMultiplier(twoEnchants(), enchCaps, false, 1.0, 0)
-                        - (1.0 + EDGE_PER + PIERCE_PER)) < 1e-9,
-                "两条 1 级 = +" + fmt((EDGE_PER + PIERCE_PER) * 100) + "%");
-        fail += check("四件护甲合并后减伤只夹一次",
-                fx.mergeArmor(java.util.List.of(enchArmor, enchArmor, enchArmor, enchArmor), enchCaps)
-                        .reduceAdd() <= enchCaps.maxReduce() + 1e-9,
-                "四件合计 ≤ " + fmt(enchCaps.maxReduce() * 100) + "%");
+        fail += check("条件增伤合计不超过四项上限之和", condBonus <= capAll + 1e-9,
+                fmt(condBonus * 100) + "% ≤ " + fmt(capAll * 100) + "%");
+        fail += check("条件不满足时增伤为 0（不是常驻）",
+                fx.conditionalBonus(weaponMech, enchCaps, false, 0, false) == 0.0, "0%");
+        fail += check("崩流溅射小于主伤害（不然范围碾压单体）", splash < worstHit,
+                fmt(splash) + " < " + fmt(worstHit));
+        fail += check("崩流溅射比例不超过 40%", weaponMech.splashRatio() <= 0.40 + 1e-9,
+                fmt(weaponMech.splashRatio() * 100) + "%");
+        fail += check("烬狱范围伤害不超过 6 点", pyre <= 6.0 + 1e-9, fmt(pyre) + " 点");
+        fail += check("四件卸力合并后不超过 50%（否则免伤）", mergedArmor.delayRatio() <= 0.50 + 1e-9,
+                fmt(mergedArmor.delayRatio() * 100) + "%");
+        fail += check("卸力必须有当场结算的部分",
+                fx.delayedPortion(mergedArmor, enchCaps, 20.0) < 20.0, "当场结算 ≥ 50%");
+        fail += check("替身回气不到满血", enchCaps.maxCheatHeal() < 1.0,
+                fmt(enchCaps.maxCheatHeal() * 100) + "%");
+        fail += check("替身冷却至少 30 秒", enchCaps.cheatCooldownMs() >= 30_000L,
+                (enchCaps.cheatCooldownMs() / 1000) + " 秒");
+        fail += check("满配 + 满机制仍在伤害上限内", boutAfter <= budget.maxHitDamage() + 1e-9,
+                fmt(boutAfter) + " ≤ " + fmt(budget.maxHitDamage()));
+        fail += check("满配 + 满机制仍要 8 刀以上打死坚守者", boutHits >= 8.0, fmt(boutHits) + " 刀");
+        fail += check("12 条机制全部落在各自上限内",
+                maxed.size() >= 12 && !weaponMech.toString().isEmpty(), maxed.size() + " 条");
 
         System.out.println();
         if (fail == 0) {
-            System.out.println("  结论：全部通过（" + (10 + 9) + " 项断言，含原创附魔 9 项）");
+            System.out.println("  结论：全部通过（" + (10 + 12) + " 项断言，含机制附魔 12 项）");
         } else {
             System.out.println("  结论：有 " + fail + " 项超标，需要调数值");
         }
@@ -200,17 +209,13 @@ public final class NumericSim {
         return ok ? 0 : 1;
     }
 
-    // ---------------------------------------------------------------- 原创附魔造数据
-
-    /** 锋锐 / 破甲 的每级值，用来验证「加法而非乘法」（与 EnchantRegistry.defaults() 一致） */
-    private static final double EDGE_PER = 0.015;
-    private static final double PIERCE_PER = 0.012;
+    // ---------------------------------------------------------------- 机制附魔造数据
 
     /**
-     * 把 15 条原创附魔全部拉到满级。
+     * 把 12 条机制全部拉到满级。
      *
-     * <p>这里**故意不从 config 读**：这条断言要独立于服主的配置存在。
-     * 如果哪天服主把某条 per-level 调到离谱，这里立刻会红，从而在开服前就发现。</p>
+     * <p>**故意不从 config 读**：这条断言要独立于服主的配置存在。
+     * 哪天有人把某条 per-level 调到离谱，这里立刻会红，从而在开服前就发现。</p>
      */
     private static java.util.List<com.forgemaster.enchant.EnchantEffects.Entry> maxedEnchants() {
         var out = new java.util.ArrayList<com.forgemaster.enchant.EnchantEffects.Entry>();
@@ -220,14 +225,17 @@ public final class NumericSim {
         return out;
     }
 
-    private static java.util.List<com.forgemaster.enchant.EnchantEffects.Entry> twoEnchants() {
-        var edge = com.forgemaster.enchant.EnchantRegistry.defaults().stream()
-                .filter(d -> d.id().equals("edge")).findFirst().orElseThrow();
-        var pierce = com.forgemaster.enchant.EnchantRegistry.defaults().stream()
-                .filter(d -> d.id().equals("pierce")).findFirst().orElseThrow();
-        return java.util.List.of(
-                new com.forgemaster.enchant.EnchantEffects.Entry(edge, 1),
-                new com.forgemaster.enchant.EnchantEffects.Entry(pierce, 1));
+    /** 只取某个部位的机制（武器侧 / 护甲侧分开算，和运行时口径一致） */
+    private static java.util.List<com.forgemaster.enchant.EnchantEffects.Entry> ofKind(
+            java.util.List<com.forgemaster.enchant.EnchantEffects.Entry> all,
+            com.forgemaster.enchant.CustomEnchant.Slot slot) {
+        var out = new java.util.ArrayList<com.forgemaster.enchant.EnchantEffects.Entry>();
+        for (var e : all) {
+            if (e.def().slot() == slot || e.def().slot() == com.forgemaster.enchant.CustomEnchant.Slot.ANY) {
+                out.add(e);
+            }
+        }
+        return out;
     }
 
     private static String fmt(double v) {

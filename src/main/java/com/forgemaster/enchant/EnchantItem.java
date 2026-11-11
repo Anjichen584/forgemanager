@@ -143,7 +143,6 @@ public final class EnchantItem {
 
         if (entries == null || entries.isEmpty()) {
             meta.lore(lore);
-            applyHealthModifier(meta, null, caps);
             return;
         }
 
@@ -159,53 +158,6 @@ public final class EnchantItem {
         }
         lore.addAll(block);
         meta.lore(lore);
-        applyHealthModifier(meta, entries, caps);
-    }
-
-    /**
-     * 韧骨（气血加成）走**物品自身的属性修饰符**，不是给玩家挂 modifier。
-     *
-     * <p>为什么这样更好：物品属性修饰符由 MC 在穿/脱时自动结算，
-     * 插件不需要监听「玩家换了护甲」「下线再上线」「死亡重生」这些时机，
-     * 也就不会出现「脱了装备血条不回缩」这类经典 bug。</p>
-     *
-     * <p>修饰符 key 固定（{@link #HEALTH_MODIFIER_KEY}），每次先删再加 ——
-     * 重复上书只会替换数值，不会叠出一堆同名 modifier 把气血叠到天上。</p>
-     */
-    public static final String HEALTH_MODIFIER_KEY = "forgemaster:ench_fortitude";
-
-    private static void applyHealthModifier(ItemMeta meta, List<EnchantEffects.Entry> entries,
-                                            EnchantEffects.Caps caps) {
-        org.bukkit.attribute.Attribute attr = org.bukkit.attribute.Attribute.MAX_HEALTH;
-        // 先清掉自己上一次加的
-        var existing = meta.getAttributeModifiers(attr);
-        if (existing != null) {
-            for (var m : new ArrayList<>(existing)) {
-                if (m.getKey().getKey().startsWith("ench_fortitude")) {
-                    meta.removeAttributeModifier(attr, m);
-                }
-            }
-        }
-        if (entries == null || entries.isEmpty()) {
-            return;
-        }
-        double add = 0;
-        for (EnchantEffects.Entry e : entries) {
-            if (e.def().kind() == CustomEnchant.Kind.HEALTH_ADD) {
-                add += e.def().at(e.level());
-            }
-        }
-        if (add <= 0) {
-            return;
-        }
-        // 与 combat.limits.max-bonus-health 同一口径：附魔自己再加一道更紧的夹子
-        double cap = caps == null ? 0 : caps.maxHealth();
-        add = Math.min(add, Math.max(0, cap));
-        meta.addAttributeModifier(attr, new org.bukkit.attribute.AttributeModifier(
-                org.bukkit.NamespacedKey.fromString(HEALTH_MODIFIER_KEY),
-                add,
-                org.bukkit.attribute.AttributeModifier.Operation.ADD_NUMBER,
-                org.bukkit.inventory.EquipmentSlotGroup.ARMOR));
     }
 
     // ------------------------------------------------------------ 附魔书工厂
