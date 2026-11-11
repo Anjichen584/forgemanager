@@ -59,10 +59,15 @@ public final class CombatListener implements Listener {
         if (loss <= 0) {
             return;
         }
-        // 护甲没吃到减伤的伤害（如饥饿 / 虚空 / 掉落），磨不到护甲条
+        // 护甲没吃到减伤的伤害（如饥饿 / 虚空 / 掉落），磨不到护甲条。
+        // v2.23.6 修「装备不掉虚拟耐久」：本版 Paper 的
+        // getDamage(DamageModifier.ARMOR) 返回的是带符号的修正量 ——
+        // 减免越多值越负（真机实测 -1.158 / final 0.289），旧代码拿它做
+        // {@code absorbed <= 0} 早退，等于所有有护甲减伤的伤害全被拦掉，
+        // 护甲一次账都扣不到。取绝对值才是真正的「吃到了多少减免」。
         double absorbed;
         try {
-            absorbed = event.getDamage(EntityDamageEvent.DamageModifier.ARMOR);
+            absorbed = Math.abs(event.getDamage(EntityDamageEvent.DamageModifier.ARMOR));
         } catch (UnsupportedOperationException unsupported) {
             absorbed = event.getFinalDamage() > 0 ? 1 : 0;
         }
@@ -135,6 +140,15 @@ public final class CombatListener implements Listener {
      */
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onHit(EntityDamageByEntityEvent event) {
+        // v2.23.6 修「武器一刀掉 2~3 点虚拟耐久」：一次挥击在原版里是
+        // ENTITY_ATTACK + N 个 ENTITY_SWEEP_ATTACK 事件（横扫每蹭到一只
+        // 挤在一起的怪就是独立一个事件），本监听器对每个事件都走一遍全套
+        // 结算 —— 暴击 / 吸血 / 点燃 / 剑灵养灵 / 虚拟耐久全被横扫重复触发。
+        // 横扫是原版的 AoE 回声（固定 1.0 伤害，不吃暴击与点燃），按原版
+        // 口径整体跳过：只有主挥击那一次事件进结算。
+        if (event.getCause() == EntityDamageEvent.DamageCause.ENTITY_SWEEP_ATTACK) {
+            return;
+        }
         // v2.23.1 修 P1-C：玩家本人，或玩家射出的投掷物；其余（骷髅的箭等）保持不结算
         Player player;
         if (event.getDamager() instanceof Player direct) {

@@ -16,6 +16,8 @@ node forge.js      # 锻造五阶段
 node stage.js      # 加热→锻打阶段推进
 node fulltest.js   # 全功能实测：61 个子命令 + 满配物品链 + 附魔台闭环 + 15 个 GUI 契约
 node durability-check.js  # 内置耐久真机对照：give 一把 -> 连击 -> 读 PDC 与 Lore 耐久行
+node reach-check.js   # v2.23.6 回归：武器一刀只掉 1 点（横扫不再重复扣账）
+node armor-dur.js     # v2.23.6 回归：锻造护甲挨打掉虚拟耐久（ARMOR 修正量取绝对值）
 node st-run.js     # 起一个 bot 在线后跑 /zhujian selftest，只打摘要与可疑行
 node rq.js "list" "zhujian config check"   # 纯 RCON 发命令（不需要 bot）
 ```
@@ -27,6 +29,15 @@ node rq.js "list" "zhujian config check"   # 纯 RCON 发命令（不需要 bot�
 - 打**普通僵尸**没用：满配剑两刀就把它打死，之后没有 damage 事件，耐久当然不动。
   要 `attribute @e[tag=...] minecraft:max_health base set 20000` 再 `data merge ... {Health:20000f}`。
 - 创造模式不影响插件扣账（`EntityDamageByEntityEvent` 照常触发），只是原版耐久条本来就不动。
+
+`armor-dur.js` 的两个坑：
+
+- mineflayer 的 `bot.inventory.slots` 是**协议窗口索引**：护甲在 5-8（头/胸/腿/靴），
+  Bukkit 的 36-39 到了这里全是热键栏；创造模式装备不进客户端缓存，穿甲要在生存模式下做。
+- 满配甲把伤害磨到个位数血条也掉得慢，bot 打几轮没死就先看 PDC，别等死亡掉落。
+
+**v2.23.6 真因存档**：武器一刀掉 2~3 是 `ENTITY_SWEEP_ATTACK` 每次都进结算；护甲不掉是
+`getDamage(DamageModifier.ARMOR)` 在本版 Paper 返回**负的减免量**，`<=0` 早退把正账全拦了。
 
 `fulltest.js` 是覆盖面最广的一把：跑完输出 `PASS/WARN/FAIL` 汇总，明细落 `fulltest-report.json`（机器可读）。
 最近一次（v2.23.4 真机）：**PASS 114 / WARN 1 / FAIL 0**。
