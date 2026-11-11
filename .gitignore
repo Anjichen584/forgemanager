@@ -1,0 +1,54 @@
+# ---- 构建产物 ----
+target/
+build/
+out/
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# ---- 本地测试服（部署验证用，不该进版本库）----
+testserver/
+logs/
+*.log
+crash-reports/
+
+# ---- 运行时数据（插件在服务端写出来的，不是源码）----
+plugins/
+world/
+world_nether/
+world_the_end/
+
+# ---- IDE ----
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+*.code-workspace
+
+# ---- 系统 ----
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# ---- 临时 / 缓存 ----
+*.tmp
+*.bak
+*.swp
+*~
+.tmp/
+.cache/
+*.zcode-session
+
+# ---- AI / 工具生成的会话记录（不是源码，别进公开仓库）----
+.workbuddy/
+.zcode/
+.serena/
+*.zcode
+
+# ---- 一次性测试输出 ----
+selftest-stage2.txt
+selftest-stage*.txt
+RESULT-selftest-*.txt

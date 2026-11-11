@@ -1,0 +1,2137 @@
+# ============================================================
+#  铸剑大师 ForgingMaster  ·  Minecraft 1.21.11
+#  玩法：加热（控温）→ 锻打（节奏敲击）→ 淬火（选介质定词条）
+#  文本全部使用 MiniMessage：<red> <gradient:#ffd166:#ff7a18> <#4ee36b>
+# ============================================================
+
+settings:
+  # 一个阶段闲置多久自动作废（秒）
+  idle-timeout-seconds: 90
+  # 每 tick 自然降温（1 秒 = 20 tick）。0.075 ≈ 每秒 1.5°
+  heat-decay-per-tick: 0.075
+  # 拉一次风箱加多少度
+  bellows-gain: 8.0
+  # 风箱冷却 tick（4 = 0.2 秒）
+  bellows-cooldown-ticks: 4
+  # 指针移动间隔 tick（2 = 0.1 秒走一格，1 最快；越小越难）
+  hammer-interval-ticks: 2
+  # 每道工序开场提示停留多少 tick（14 ≈ 0.7 秒，0 = 不提示）
+  stage-intro-ticks: 14
+  # 传说及以上全服广播
+  broadcast-legendary: true
+  # 潜行 + 右键铁砧 直接打开锻造台
+  anvil-shortcut: true
+  # 是否消耗配置里的材料
+  consume-cost: true
+  particles: true
+  sounds: true
+
+  # ---- 铁砧演出（Display 实体，不动真实地形）----
+  # 锻造时在铁砧上放一把剑 + 一把锤子，落锤有火星、淬火有白汽
+  anvil-animation: true
+  # 锻造 GUI 会挡住屏幕下半部分，而且打开后视角锁死不转，演出必须抬高到 GUI 上沿以上（格）
+  stage-height-offset: 1.4
+  # 附近没有真铁砧时，替身舞台生成在视线正前方几格、并高出视线多少
+  stage-front-distance: 2.5
+  stage-lift-above-eye: 1.1
+  # 附近 4 格内有真铁砧就演在真铁砧上
+  anvil-search-radius: 4
+  # 附近没有铁砧时，临时生成一个"替身铁砧"的 BlockDisplay（不会真的放方块）
+  spawn-temp-anvil: true
+
+  # ---- 工序开关（关掉的工序权重会按比例让给其它工序，总分仍是 100）----
+  folding-enabled: true          # 叠钢：按序列连点，决定钢纹层数
+  folding-base-seconds: 2.5      # 叠钢保底时间
+  folding-seconds-per-step: 0.7  # 每多一层多给的时间
+  grinding-enabled: true         # 开刃：把刃压保持在绿区
+  grind-duration-ticks: 120      # 开刃持续时长（tick，20 tick = 1 秒，最小 20）
+  grind-press-step: 6.0          # 每次加压/减压的压力值（最小 1.0）
+
+  # ---- 收尾双工序（v2.19）----
+  polishing-enabled: true        # 抛光：光泽指针往返扫，在亮区上下刀
+  polishing-passes: 3            # 抛光一共下几刀（1~6）
+  polishing-speed: 2.6           # 指针每 tick 扫过的百分点（0.6~8.0，越大越难）
+  polishing-window: 16.0         # 亮区半宽（百分点，4.0~40.0，越小越难）
+  inlay-enabled: true            # 嵌银丝：银丝节点逐个亮起，亮窗内点中才算嵌上
+  inlay-window-ticks: 14         # 单根银丝的亮窗时长（tick，5~40，越小越难）
+  inlay-length: 3                # 银丝基础根数（2~8，实际根数还随材料档位 +1）
+
+  # ---- 专精等级 ----
+  progression-enabled: true      # 锻造就给经验，升级换取更宽判定
+
+  # ---- 耐久与研磨（v1.2）----
+  durability-enabled: true       # 打怪掉耐久（武器砍怪 / 护甲挨打），掉光就崩刃
+  durability-loss-per-hit: 1     # 每砍一刀 / 每次挨打掉多少耐久
+  durability-lore-step: 5        # Lore 耐久数字的刷新档宽（%）：5 = 每掉 5% 跳一次数字，0 = 每刀实时刷新
+  armor-wear-throttle-ms: 500    # 护甲扣账节流窗口（毫秒）：火焰等逐 tick 伤害在窗口内只扣一次账，0 = 不节流
+  repair-cost-amount: 2          # 研磨一次消耗几个该剑胚的材料
+  repair-zone-width: 7.0         # 研磨绿区宽度（比开刃宽，好修）
+  repair-duration-ticks: 80      # 研磨时长：80 tick = 4 秒
+
+  # ---- 双人比试（v1.2）----
+  duel-enabled: true             # /zhujian duel <玩家> 同种子比总分
+
+  # 成品随机取名池
+  weapon-names:
+    - 裂空
+    - 断岳
+    - 赤霄
+    - 霜鸣
+    - 无咎
+    - 烬骨
+    - 长庚
+    - 逐暗
+
+  # ---- 剑谱库（v1.3）----
+  manual-max-entries: 200        # 剑谱库最多存多少本
+
+# ---- 难度曲线（v2.3）----
+# 节奏按材料档位递进：档位越高，指针越快、降温越快、叠钢时限越短、绿区越窄、总分越低。
+# 想让高品更好出就调小这些系数；想让手残劝退就调大。
+difficulty:
+  enabled: true
+  hammer-speed-per-tier: 0.12    # 每高一档，指针速度 +12%
+  heat-decay-per-tier: 0.14      # 每高一档，降温 +14%
+  fold-time-per-tier: 0.11       # 每高一档，叠钢时限 -11%（最低 45%）
+  grind-drift-per-tier: 0.16     # 每高一档，开刃漂移 +16%
+  grind-width-per-tier: 0.09     # 每高一档，绿区 -9%（最低 55%）
+  polish-speed-per-tier: 0.16    # 每高一档，抛光指针 +16%（越快越难）
+  polish-window-per-tier: 0.09   # 每高一档，抛光亮区 -9%（最低 55%）
+  inlay-window-per-tier: 0.10    # 每高一档，银丝亮窗 -10%（最低 50%）
+  score-penalty-per-tier: 0.015  # 每高一档，总分 -1.5%（星陨满分约 94）
+
+
+# ---- 锻造大赛（v1.3）----
+contest:
+  enabled: true
+  interval-minutes: 30           # 每隔多少分钟自动开一场
+  duration-seconds: 300          # 一场多久
+  min-players: 1                 # 至少几个在线才开
+  # 实时观战（v2.7）：面板行数、刷新间隔、是否显示已离开的人
+  watch:
+    rows: 6                      # clamp 3~6
+    refresh-ticks: 20            # 20 tick = 1 秒
+    show-left: true
+
+# ---- 排行榜（A4）----
+rank:
+  enabled: true                  # 是否开放 /zhujian rank 排行 GUI
+  strengthen:                    # v2.5：强化等级维度（历史最高，强化成功时落库）
+    enabled: true                # 关掉后该维度按钮不画、点击空操作
+    snapshot-seconds: 5          # 缓存秒数（0 = 每次现扫）
+
+# ---- 赛季（E2）----
+season:
+  enabled: true                  # 是否按时长自动结算赛季（关闭后只能手动 /zhujian season end）
+  duration-days: 30              # 一季多少天
+  number: 1                      # 首次启动时的起始赛季编号；之后以 plugins/ForgingMaster/season.yml 为准
+  # 剑传承（v2.7）：赛季结算时把全服最强的一把剑刻进名人堂，存档 hall-legacy.yml，只增不删。
+  # 复合分 = 品质序号 × quality + 评分 × score + 强化等级 × strengthen
+  legacy:
+    enabled: true
+    broadcast: true              # 刻录成功时全服播报
+    show-row: true               # 名人堂是否摆「历代名剑」这一排
+    show-count: 5                # 陈列最多最近几季（1~50）
+    weight:
+      quality: 1000.0
+      score: 1.0
+      strengthen: 50.0
+
+# ============================================================
+#  赛季通行证（拓展第二档 · 免费轨道）
+#  /zhujian pass|tongxingzheng 打开。积分够了逐级手动领（必须从第 1 级按顺序领，
+#  等级 = 已领的最高级），不自动发放——防挂机白拿。已领记录存 pass-data.yml，
+#  键 = 赛季编号 + 玩家 uuid。积分来源是登记式的（各结算处一行登记，不扫描存档），
+#  每次成功都记，不做每级去重。
+#
+#  赛季切换语义：当前赛季号现读 SeasonManager.number()，不建调度任务。新赛季开始后
+#  旧赛季进度只读不领——未领取的奖励过期即作废，不补领、不清档（旧数据留在
+#  pass-data.yml 里只作履历）；积分从 0 重爬，等同「赛季重置一起重爬」。
+#
+#  奖励三种：coins（剑币）/ material（id + amount，认 MaterialRegistry 材料或原版
+#  Material 名）/ charm（符：talisman 护胚符 / steady 稳胚符 / charm-kindle 旺火符）。
+#  Java 不硬编码任何等级数值，levels 想配几级配几级（GUI 一页最多摆 21 级）。
+# ============================================================
+season-pass:
+  enabled: true
+  # ---- 付费轨道（v2.23）----
+  # 买断价（剑币，当季一次性；0 = 免费解锁）。GUI 里点锁格两步确认购买。
+  # 付费轨与免费轨共用上面的 levels 门槛，并行各领各的；
+  # 每级奖励默认走代码内置表，可用 pass.premium.rewards.<级> 按级覆盖（格式同 reward）。
+  premium:
+    cost: 5000
+  # 各行为给多少积分（登记式；来源没配 / 配 0 就是不给）
+  points:
+    forge: 20         # 锻造成功（炸剑粗糙不算）
+    strengthen: 5     # 强化成功（成功 / 大成 / 无损连击都算，每次都记）
+    evolution: 50     # 蜕变成功（每次成功都记）
+    tomb-win: 30      # 剑冢残影挑战胜利
+    duel-win: 40      # 比试获胜（平局 / 负方不给）
+    commission: 25    # 委托交付成功
+  # 轨道：need = 领这一级需要的累计积分（绝对阈值，不是增量），按顺序逐级领
+  levels:
+    - { need: 100,  reward: { coins: 500 } }
+    - { need: 250,  reward: { coins: 800 } }
+    - { need: 400,  reward: { material: { id: netherite_ingot, amount: 2 } } }
+    - { need: 550,  reward: { coins: 1200, charm: { id: charm-kindle, amount: 2 } } }
+    - { need: 700,  reward: { coins: 1500 } }
+    - { need: 850,  reward: { material: { id: netherite_ingot, amount: 3 } } }
+    - { need: 1000, reward: { coins: 2000, charm: { id: steady, amount: 2 } } }
+    - { need: 1150, reward: { coins: 2500 } }
+    - { need: 1300, reward: { charm: { id: talisman, amount: 2 } } }
+    - { need: 1450, reward: { coins: 3000, material: { id: netherite_ingot, amount: 4 } } }
+    - { need: 1600, reward: { coins: 3500 } }
+    - { need: 1750, reward: { charm: { id: charm-kindle, amount: 3 } } }
+    - { need: 1900, reward: { coins: 4000 } }
+    - { need: 2050, reward: { material: { id: netherite_ingot, amount: 5 } } }
+    - { need: 2200, reward: { coins: 5000, charm: { id: steady, amount: 3 } } }
+    - { need: 2400, reward: { coins: 6000 } }
+    - { need: 2600, reward: { charm: { id: talisman, amount: 3 } } }
+    - { need: 2800, reward: { coins: 8000, material: { id: netherite_ingot, amount: 6 } } }
+    - { need: 3000, reward: { coins: 10000 } }
+    - { need: 3200, reward: { coins: 15000, charm: { id: talisman, amount: 5 } } }
+
+# ---- 剑币（v2.0 · A1）----
+# 锻造：(forge-base + 品质序号×forge-per-quality + round(分数)×forge-per-score) × 连锻倍率，最少 1 币
+# 连锻倍率 = 第 N 连 ×(1 + 0.15(N-1))，上限 ×3（见 StatsStore.streakMultiplier）
+# 委托：commission-base + 声望奖励×commission-per-rep（不乘连锻）
+# 大赛：按名次发放，第 4 名起用 contest-other
+# ---- 货币（v2.1）----
+# 锻造费优先从服务器经济扣：Vault（CMI / EssentialsX 等都会注册 Vault 经济），
+# 没有 Vault 就直连 CMI，两者都没有时回退插件内置剑币。
+economy:
+  provider: auto            # auto / vault / cmi / coins
+  unit: "金币"              # 内置剑币或没有 format 接口时的显示后缀
+  # v2.19.1：消费口径。插件里有两本账，混用会出「明明有币却提示不足」。
+  #   plugin —— 宝石 / 黑市 / 签到 / 重铸 扣【剑币】（StatsStore），和拍卖行 / 商会 / 强化同一本账。
+  #             这是 README 写死的设计：剑币是本插件唯一货币，锻造奖励赚的就是它。
+  #   server —— 改扣【服务器经济】（Vault / CMI）。想让宝石也吃服务器金币的服再开这个。
+  # 锻造费是唯一例外，永远走服务器经济（README「锻造费走服务器经济」）。
+  # 没装 Vault / CMI 时两条路完全等价（都落到内置剑币）。
+  coin-sinks: plugin
+
+# ---- 服主数据看板（v2.20）----
+# 剑币流水聚合：产出/消耗按理由分组统计，给服主看经济是否健康。
+# 只统计「服务器生命周期累计」，不参与赛季重置。
+# ---- 暴击结算口径（v2.21）----
+# 暴击率与暴伤是「词条 + 宝石 + 剑灵」三方叠加的 PDC 数。没有上限时满配能叠到
+# 179% 暴击率（= 永久暴击）与 +630% 暴伤（×7.3），而且玩家完全看不出来。
+combat:
+  crit:
+    # 暴击率上限。1.0 是硬天花板，配置给再大也不会超过它
+    # v2.23.1：0.75 → 0.50。75% 意味着满配几乎刀刀暴击，暴击从「惊喜」变成「默认值」
+    max-chance: 0.50
+    # 暴伤上限（在原版暴击倍率之上「再加多少」）。1.5 + 1.1 → 最高 ×2.6
+    # v2.23.1：2.5 → 1.10。原来 ×4.0 叠在 26 点基础攻击上就是「一刀 130、四刀一只坚守者」
+    max-damage: 1.10
+    # 暴击倍率底数。原版跳跃暴击就是 ×1.5，底数低于它会出现「词条暴击不如跳劈」
+    base-multiplier: 1.5
+
+  # ---- 伤害预算（v2.23.1 新增）----
+  # 四层乘区（材质×品质 / 强化 / 蜕变 / 词条）各自都合理，叠起来就失控。
+  # 这里给三层硬天花板，全部可关（写 0 = 不限）。
+  limits:
+    # 单个物品攻击属性（fm_atk）的绝对值上限。
+    # 参考：原版下界合金剑 = 8；满配锻造剑压在 22（约 2 倍原版）属于「强但有代价」
+    max-attack-attribute: 22.0
+    # 单次命中的最终伤害上限（已含暴击，未计护甲）。
+    # 结算在暴击之后 —— 放在之前的话暴击照样能顶穿，等于没管
+    max-hit-damage: 60.0
+    # 吸血比例上限。词条 0.14 × 星陨档 1.65 × 5 条 ≈ 115%，不夹就是「一刀回半管」
+    max-lifesteal: 0.20
+    # 单次吸血回血的绝对值上限（半颗心 = 1.0）
+    max-lifesteal-per-hit: 2.0
+    # 单次吸血最多回「最大生命值的百分之几」（0.10 = 20 血回 2 点）
+    max-lifesteal-max-health: 0.10
+    # 单件装备的减伤上限。四件 + 全词条原始累加能到 58%（实战侧另有 60% 总夹子）
+    max-damage-reduce: 0.35
+    # 生命上限加成上限。气血词条 2~5 点 × 星陨档 1.65 × 5 条 = 单件 +41 生命，不夹就是肉盾
+    max-bonus-health: 20.0
+    # 点燃时长上限（秒）。叠 5 条燃烬能烧 40 秒，目标早死了，纯属浪费性能
+    max-fire-seconds: 10.0
+
+# ---- 存量物品收敛（v2.23.1 新增）----
+# 版本升级前锻出来的装备里躺着旧数值（攻 73 / 吸血 115% / 点燃 40 秒 / 气血 +41）。
+# 产出侧的夹子只对新锻、再强化的物品生效，玩家挂在墙上供着的那把就永远是旧数。
+# 这里负责把它们收敛回当前上限。
+legacy-repair:
+  # 玩家上线时自动扫他的背包 + 盔甲 + 副手 + 末影箱。
+  # 之所以选「上线」而不是「开服扫全服」：离线背包在 playerdata 里，
+  # 强行加载每个玩家档案的风险远大于修几个数值的收益。
+  on-join: true
+  # 登录后延迟多少 tick 再扫。太早会「客户端显示旧值、服务端是新值」，
+  # 玩家得重开背包才看得到。40 tick = 2 秒
+  on-join-delay-ticks: 40
+  # 修过之后是否告诉玩家（建议开着，否则玩家只会觉得数值莫名其妙少了）
+  notify-player: true
+
+metrics:
+  enabled: true
+  top-n: 10                      # 报表里每类理由显示前几条，其余合并成「其它 N 项」
+  gini-warn: 0.55                # 基尼系数超过这个值，看板标红提醒（0 = 永不警告）
+  history-days: 30               # 趋势快照保留天数（metrics trend / csv 的窗口上限）
+  snapshot-interval-minutes: 30  # 多久采一次样（分钟，下限 1）；每天一份 metrics-<yyyyMMdd>.yml
+  # 用法：/zhujian admin metrics            实时体检（剑币产出/消耗构成、总量、基尼）
+  #      /zhujian admin metrics trend 7    近 7 天逐日产出/消耗/净额/锻造/碎裂 + 趋势总结
+  #      /zhujian admin metrics csv 30     导出 30 天窗口 CSV 到 metrics-export/
+  #      /zhujian admin metrics sample     立刻采一次样（调参后马上看效果）
+
+# ---- 出站 Webhook 播报（v2.23 拓展 C）----
+# 事件走有界队列 + 独立守护线程，绝不在主线程做网络 IO；未配置 url 时是空壳。
+# 每类事件 10 秒限流，失败静默（不重试、不刷屏），连续失败 5 次熔断 60 秒。
+webhook:
+  enabled: false                 # 总开关：false = 完全不启动消费线程
+  url: ""                        # 接收地址（http/https）。留空 = 不发送
+  username: "铸剑大师"            # 发送方显示名（JSON 的 username 字段）
+  timeout-seconds: 10            # 单次请求超时（秒）
+  queue-size: 64                 # 有界队列长度：满了丢最新一条，绝不阻塞主线程
+  events:                        # 要播报的事件 id；写成 [] = 全开
+    - forge_success              # 锻造成功
+    - strengthen_break           # 强化碎剑
+    - evolution_success          # 蜕变成功
+    - season_end                 # 赛季结算
+    # 可选：strengthen_success / tomb_win / duel_win / guild_quest_done
+
+# ---- 装备锻造（v2.1）----
+# 装备不单独配置档位：直接继承同档剑胚的耗材、温度手感与锻造费，
+# 只按部位换成对应的护甲材质（头盔 / 胸甲 / 护腿 / 靴子）。
+armor:
+  enabled: true
+  price-multiplier: 1.0     # 装备锻造费 = 同档武器锻造费 × 该系数
+  # 各档装备的护甲 / 韧性（会乘品质倍率，再随锻造等级放大）
+  # v2.10 修正：这里的数是「整套四件」的总量，不是单件。
+  # 数值对齐原版（铁套 15 / 钻套 20），COMMON 品质下约等于原版八折，FINE 起还原。
+  # 2.10 之前这里是单件 0.35 这种量级，等于没穿甲——老装备会在下次穿上时自动校准。
+  tiers:
+    iron:      { armor: 15.0, toughness: 0.0 }
+    gold:      { armor: 11.0, toughness: 0.0 }
+    copper:    { armor: 12.0, toughness: 0.0 }
+    diamond:   { armor: 20.0, toughness: 12.0 }
+    netherite: { armor: 20.0, toughness: 16.0 }
+    starfall:  { armor: 24.0, toughness: 20.0 }
+  # 整套总量按部位拆分；比例照原版（钻石套 3/8/6/3）
+  # 四个部位以前拿的是同一个数，胸甲和靴子一样厚，这里一并修掉
+  slot-factor:
+    helmet:     { armor: 0.15, toughness: 0.0 }
+    chestplate: { armor: 0.40, toughness: 0.40 }
+    leggings:   { armor: 0.30, toughness: 0.30 }
+    boots:      { armor: 0.15, toughness: 0.30 }
+
+# ---- 锻造等级（强化）----
+# v2.16 起强化只有一条路：把剑放上铁砧，用重锤敲（ForgeTax 式），没有界面。
+# 下面这一段只剩「总开关 + 属性成长 + 保底符」这些跨玩法共用的口径。
+# 概率 / 消耗 / 连击全部搬到 anvil-forge 段，见本段之后。
+strengthen:
+  enabled: true
+  bonus-per-level: 0.006    # 每级 +0.6% 基础属性；神话 +99 满打满算 +59.4%，全程线性不提前触顶
+  max-bonus: 0.60           # 总加成封顶（+60%，只是保险夹）
+  # 属性天花板 = 配置算出的基础值 × 本值。默认 1.0 = 严格按配置。
+  # 作用：任何物品的基础属性都不可能超过「当前配置为这把胚子算出的值」，
+  # 从而彻底堵死「越强化越离谱」的滚雪球（老版本会把已乘倍率的值再当基石用一次）。
+  # 只压虚高、不抬正常值；写小于 1 会被忽略。存量膨胀物品用 /zhujian fixattrs 修。
+  base-tolerance: 1.0
+  caps:
+    1: 20                   # 铁 / 金      （旧版按档位；v2.16 起由 anvil-forge.max-level 统一，此处仅存档兼容）
+    2: 22                   # 铜
+    3: 25                   # 钻石
+    4: 28                   # 下界合金
+    5: 32                   # 星陨
+  cost:
+    base: 40                # 第 1 级基础费用（v2.16 起改用 anvil-forge.cost）
+    per-level: 18           # 每升一级再加多少
+    tier-factor: 1.45       # 每高一档，费用 × 该系数
+    # 2.10.3 下调（原 60 / 30 / 1.7）：铁剑点满 +20 的累计手续费 7500 → 4580 剑币，
+    # 星陨 +32 从 6.2 万 → 2.0 万。强化本来就要反复失败重试，旧曲线一轮下来太劝退。
+  # 成功率：旧版 base − per-level × 当前等级（v2.16 起改用 anvil-forge.success 的线性曲线）
+  success:
+    base: 1.08
+    per-level: 0.035
+    floor: 0.15
+  # 赛季追赶（v2.6）：赛季越往后，低等级段的成功率越高，让新人追得上老玩家。
+  # 加成 = min(max-bonus, 本季已过天数 × per-day)，再夹到「剩余空间的 90%」，
+  # 也就是 +3 级在赛季末最多到 99.75%，必成只留给炉火与旺火符。
+  # 只帮 level-threshold 及以下的等级，高等级段不受益。赛季结算瞬间会断崖归零（新赛季一起重爬）。
+  season-catchup:
+    enabled: true
+    max-bonus: 0.25           # 赛季末最多抬 25 个百分点
+    level-threshold: 12       # 只帮 +12 及以下
+    per-day: 0.01             # 每过一天抬 1 个百分点
+  # 失败后果：先掷「碎剑胚」，没碎再降级
+  fail:
+    downgrade: true         # 没碎的话降 1 级
+    break-base: 0.05        # 碎裂基础概率
+    break-per-level: 0.01   # 每级再加
+    break-max: 0.35         # 碎裂概率封顶
+    tomb-record: true       # 强化失败（碎剑 / 掉级）是否记进剑冢挑战记录（v2.19.2）
+  # 材料消耗：吃这把剑自己的锻造材料（铁剑吃铁锭），数量随等级涨、档位越贵越多
+  material:
+    base: 2                 # +1 需要几个
+    per-level: 0.6          # 每级再加几个（2.10.3：1 → 0.6）
+    tier-factor: 1.10       # 每高一档，数量 × 该系数（2.10.3：1.15 → 1.10）
+    # 铁剑点满 +20 的累计材料 250 → 174 个；星陨约 437 → 250 个
+  # 护胚符：碎裂判定命中时自动顶一次，把「碎」换成「降 1 级」
+  talisman:
+    enabled: true
+    item: ECHO_SHARD
+  # 旺火符：本次强化成功率 +N 个百分点（v2.17.3 起收进配置；此前 0.15 只写在代码里）
+  kindle:
+    bonus: 0.15
+  # 炉火保底：每失败一次攒 1 点，攒满则下一级必成，成功后清零
+  # 攒满所需点数按当前等级分档
+  furnace:
+    need-low: 3             # 等级 ≤ 10
+    need-mid: 5             # 等级 ≤ 20
+    need-high: 8            # 更高
+
+  # ---- 五态明牌抽票（v2.13，ForgeTax 式）----
+  # 每一锤按五态掷骰：碎裂 / 损伤 / 空锤 / 大成(+2级) / 成功(+1级)，概率全部明牌展示。
+  # 成功率 = anvil-forge.success 曲线 + 赛季追赶 + 连击加成；大成从成功率里切一块出来。
+  tickets:
+    great-base: 0.08          # 大成基础概率（+2 级）
+    great-per-combo: 0.03     # 连击每点 +3% 大成
+    # 失败里「损伤 vs 空锤」的占比。0.5 = 一半一半；v2.19.1 从 0.5 降到 0.35，
+    # 让高段的失败更多表现为空锤（原地踏步）而不是降级——降级是负漂移，
+    # 顶段所有「非碎代价」都会复利成「这辈子锤不上去」。
+    damage-share: 0.35
+  # 炉魂狂热：每 10 次锤击（成功失败都算）攒满炉魂，接下来 3 锤不碎 + 成功率加成
+  frenzy:
+    hits: 10
+    attempts: 3
+    success-bonus: 0.10
+  # 剑魂传承：+N 的剑碎了，下一把新铸的剑自带 floor(N × rate) 级（免费，不超 cap）
+  # v2.19.1：0.25/+10 → 0.35/+20。碎剑是高段常态，回收太弱等于每次碎都从零再爬。
+  inherit:
+    rate: 0.35
+    cap: 20
+
+  # ---- 剑体成长曲线（v2.22.1 只管砧上剑身）----
+  # 铁砧上每敲一锤剑身都会长一点（+33 ×2 / +66 ×4 / +99 ×8），
+  # 砧上大小 = anvil-forge.display.sword-scale × 这条曲线的倍数。
+  # v2.22.1 起「手上悬浮剑」与「穿护甲体型放大」已按服主要求移除，
+  # 这一段只剩曲线本身，不再生成任何实体、不再改任何玩家属性。
+  big-sword:
+    enabled: true
+    min-level: 0             # 成长曲线起点：0 = 从 +1 起每锤都大一点点
+    milestones: [33, 66, 99] # 三个加倍点：+33 ×2、+66 ×4、+99 ×8
+    multiplier: 2.0          # 每个里程碑在上一个基础上乘这个数
+    max-scale: 8.0           # 硬上限，防止配置写错把模型放到穿模
+
+# ---- 铁砧强化（v2.16，ForgeTax 式重写）----
+# 强化只有一条路，全部在方块上完成，没有界面：
+#   ① 主手拿锻造品，右键铁砧 → 剑放上去，手上那把收走
+#   ② 手持重锤，左键铁砧 → 落一锤（扣材料 + 剑币，按明牌概率结算）
+#   ③ 再右键铁砧 → 把剑取回来
+# 砧子上方会浮起剑 + 一块全息，写明「当前强化等级 / 成功率 / 碎裂率 / 连击」。
+# 连击攒够触发「无损连击强化」：下一锤必成、不碎、不掉级，打出去之后连击归零。
+anvil-forge:
+  enabled: true
+  # 强化上限：v2.17 起按「锻造品质」逐级提高，见下面的 caps。
+  # 这条只剩两个用处：老物品没有品质键时的兜底、以及成功率 / 碎裂率曲线的分母（+max-level 时落到 floor / max）。
+  max-level: 99
+  # 各品质的强化上限（0 = 由下面的 caps 决定，别再指望这一项统一）
+  # 粗糙 → 普通 → 精良 → 史诗 → 传说 → 神话，必须严格递增；
+  # 神话封顶 +99，粗略算下来一把剑从出生到 99 要锤掉上千个材料，别指望一夜满级。
+  caps:
+    ROUGH: 40
+    COMMON: 50
+    FINE: 60
+    EPIC: 72
+    LEGENDARY: 86
+    MYTHIC: 99
+  owner-only: true            # 只有放剑的人能敲 / 能取
+  # 两锤之间最短间隔：按住左键客户端会一直发点击事件，
+  # 这个值就是「锤子抬起来需要多久」。调小=敲得快但动画串，调大=稳但拖。
+  strike-cooldown-ms: 450
+  # 批量落锤：按住 Shift 手持重锤左键铁砧，一次最多连敲几锤
+  #（逐锤照常结算，中途剑碎 / 材料耗尽 / 敲满级自动收手并总结消耗）
+  batch-max: 10
+  session-timeout-minutes: 0  # 砧位超时自动还剑；0 = 不超时（关服会落盘恢复）
+  hammer:
+    item: MACE                # （老配置的单项键，仅为兼容保留；新配置看下面的 items）
+    # 能当重锤用的材质，第一项是 /zhujian hammer 发的那把。
+    # 原版重锤要打试炼密室才拿得到，门槛太高，所以默认给铁斧当「铁匠重锤」；重锤照样认。
+    items: [IRON_AXE, MACE, STONE_AXE, IRON_PICKAXE]
+    allow-vanilla: true       # 允许直接拿上述材质的原版物品当锤（关掉就只认 /zhujian hammer 发的）
+  # 成功率：+0 时 start，线性降到 +max-level 时的 floor，之后贴着下限
+  # 默认 90% → 10%：低段随便锤，高段每一锤都在赌，靠连击抹平风险
+  success:
+    start: 0.90
+    # v2.19.1：0.10 → 0.14。严格算过：0.10 时 +60 达成率 0.7%、+72 0.011%（约 9000 把剑），
+    # 上限写到 99 也没人走得到；0.14 时 +60 是 5.9%、+72 约 180 把剑。
+    floor: 0.14
+  # 碎裂率：只在「这一锤失败」时再掷一次，base 起步、max-level 封顶
+  # 全息上显示的是乘过失败率的「整体碎裂率」，玩家看到多少就真是多少
+  break:
+    base: 0.02                # +0 时失败后的碎裂概率
+    # v2.19.1：0.30 → 0.18。顶段整体碎率从 ~27% 压到 ~16%；
+    # 再往上压会让符失去意义，再往下调会让高段重新变成死胡同。
+    max: 0.18                 # +99 时失败后的碎裂概率
+  # 连击：连续成功（含大成）累加，失败 / 碎裂清零
+  combo:
+    no-loss-threshold: 5      # 攒到 5 连 → 下一锤无损连击强化（必成 · 不碎 · 不掉级）；0 = 关闭
+    success-bonus-per: 0.03   # 连击每点 +3% 成功率
+    success-bonus-max: 0.15   # 连击成功率加成封顶（+15%）
+    break-shield: 4           # 连击 ≥4：本次碎裂转损伤（基石护体，每把剑一次；0 = 关闭）
+  # 费用：每级固定值 + 档位系数（越贵的胚子敲一次越贵）
+  cost:
+    base: 40
+    per-level: 6
+    tier-factor: 1.20
+  # 材料：每锤固定吃几个（铁剑吃铁锭、星陨剑吃星陨锭），档位越高要得越多
+  material:
+    base: 2
+    tier-factor: 1.20
+  display:
+    height: 1.35              # 全息文字离方块底面多高（剑在下面，字在上面）
+    # 剑的姿态：NONE = 自己算角度（默认，剑是真的平躺在砧面上、原尺寸）
+    #           GROUND = 老行为，用原版掉落物姿态（会先缩到一半、再下沉 2/16 格，看着像插进砧子里）
+    #           FIXED = 立着（只有调试用）
+    sword-transform: NONE
+    sword-height: 1.03        # 剑平躺时的高度：砧面在 y+1.0，1.03 让剑身恰好贴在面上不穿模
+    sword-yaw: 90             # 剑在砧面上的朝向（90 = 横着躺，正对玩家）
+    sword-pitch: -90          # NONE 姿态下 -90 = 把立着的模型扳倒成平躺；GROUND 下保持 0
+    sword-scale: 0.95         # 剑的大小：NONE 没有原版那层 0.5 缩放，0.95 刚好铺满砧面不出边
+    # 敲一锤剑就长一点。v2.22 起成长走 strengthen.big-sword.* 的统一曲线（和手上大剑同一条），
+    # 下面两个键只在 strengthen.big-sword.enabled=false 的回退模式里生效：
+    # +0 时是 sword-scale，到品质上限时长到 sword-scale-max；SQRT 前段快、LINEAR 匀速。
+    sword-scale-max: 1.30
+    sword-growth-curve: SQRT  # SQRT / LINEAR
+  # 落锤演出：锤柄钉住不动，锤头绕柄砸下来 + 火星 / 火焰（纯客户端视觉，不改判定）
+  animation:
+    enabled: true
+    duration-ticks: 12        # 整段演出几 tick（12 = 0.6 秒）
+    impact-tick: 7            # 第几 tick 砸中（之后是反震 + 收锤）
+    hammer-item: MACE         # 演出里画的那把锤子：MACE 就是原版重锤
+    hammer-scale: 1.10        # 演出锤子的大小（砧面 1 格宽，1.1 刚好压住）
+    billboard: CENTER         # CENTER = 永远面向玩家（任何角度都看得见整把锤子）；FIXED = 固定朝向
+    # ---- 动作：绕柄旋转，不是整体平移 ----
+    # start 与 hit 别取对称值（如 30/150）：那会让锤头轨迹的弦正好是一条竖直线，
+    # 看着像「从上面垂直掉下来」。负角起手 + 越过 170° 砸中，才是明显的抡弧。
+    pivot-height: 2.10        # 柄底（手的位置）高度，从方块底面算：砧面 1.0，2.10 = 砧面上方 1.10
+                              # 锤头全长约 1.05 格，pivot 太低砸中时锤头会埋进砧子
+    handle-length: 0.46       # 柄底到锤身中心的长度（模型单位 × hammer-scale），决定画弧的半径
+    swing-start-deg: -25      # 起手角度：负数 = 锤头向后扬起（0 = 锤头朝上，正角 = 越过竖直往下压）
+    swing-hit-deg: 170        # 砸中角度：锤头几乎转到正下方，正好落在剑面上方一点
+    swing-rebound-deg: 12     # 砸中后被砧面顶回多少度
+    # ---- 火焰 ----
+    flame:
+      enabled: true           # 落锤带火（飞行拖尾 + 砸中爆发）
+      trail: 2                # 飞行段每 tick 在锤头位置撒几颗火星
+      count: 18               # 砸中时那一捧火的粒子数
+      spread: 0.30            # 砸中火焰的扩散半径（格）
+  # 下面四个是 v2.16 的「整体垂直下落」参数，v2.17.2 起不再生效，留着只为老配置不报错
+  # roll-deg / windup-deg / start-height / hit-height
+  spark:
+    enabled: true
+    count: 18                 # 每次落锤迸多少颗火花
+    spread: 0.35              # 迸溅半径（格）
+
+# ---- 锻阶（蜕变，v2.12）----
+# ForgeTax 式养成线：强化到门槛级 → 蜕变质变 → 继续锻。
+# 品质是出身不是天花板：蜕变上限全品质统一（仍受强化上限约束），
+# 高品质吃成功率加成与材料折扣，低品质也有终点。
+evolution:
+  enabled: true
+  quality-bonus-per-tier: 0.02    # 品质序数每档加 2% 蜕变成功率（神话 +10%）
+  material-discount-per-tier: 0.05 # 品质序数每档少 5% 蜕变材料（神话 75 折，最低剩 1 个）
+  pity-attempts: 3                # 蜕变炉火保底：失败 3 次后必成（与强化共用炉火计数）
+  glint-stage: 3                  # 第几阶开始挂附魔光效
+  broadcast-stage: 5              # 第几阶开始蜕变成功全服播报
+  # 阶段定义：level=门槛强化等级；bonus=本阶独立乘区（总乘区=各阶连乘）；
+  # success-base=明牌基础成功率；fail-drop=失败最多掉几级强化（1..N 随机）
+  # bonus 各阶连乘 ≈ ×1.77：+60 满蜕变总乘区 ≈ 1.6 × 1.77 ≈ ×2.8（25 伤害 → 70 上下）。
+  # 以前是 1.25~1.40 连乘 ≈ ×5.0，叠上强化 +60% 直接 +699%，已重定。
+  # 整段删掉就用内置默认（下面的值）；只写部分阶也行，缺的号用内置默认补
+  stages:
+    1: { level: 5,  title: "精钢", color: "#7fd3ff", bonus: 1.06, cost-coins: 600,   material-amount: 8,  success-base: 0.95, fail-drop: 1 }
+    2: { level: 10, title: "寒钢", color: "#4ee36b", bonus: 1.07, cost-coins: 1400,  material-amount: 16, success-base: 0.88, fail-drop: 1 }
+    3: { level: 15, title: "流星", color: "#b06bff", bonus: 1.09, cost-coins: 3000,  material-amount: 24, success-base: 0.78, fail-drop: 2 }
+    4: { level: 20, title: "传世", color: "#ffb84d", bonus: 1.10, cost-coins: 6000,  material-amount: 32, success-base: 0.66, fail-drop: 2 }
+    5: { level: 25, title: "不朽", color: "#ff3d6e", bonus: 1.12, cost-coins: 12000, material-amount: 48, success-base: 0.52, fail-drop: 3 }
+    6: { level: 30, title: "造化", color: "#ffd166", bonus: 1.15, cost-coins: 24000, material-amount: 64, success-base: 0.40, fail-drop: 3 }
+
+# ---- 龙税周目（v2.14，ForgeTax 核心循环）----
+# 每 MC 游戏日：黄昏开贡品窗口 → 午夜巨龙验收。每人独立契约：
+# 交满龙吃剑并发圣物三选一；连续交不上破契约（周目重开+圣物没收+扣币）。
+contract:
+  enabled: true
+  auto-join: true            # 锻出第一把剑自动入契
+  world: ""                  # 结算用哪个世界的时间；空 = 主世界
+  window-open: 13000         # 黄昏：贡品窗口开（刻）
+  settle-time: 18000         # 午夜：巨龙验收（刻）
+  tax:
+    base: 200                # 第 1 天税额（估值）
+    growth: 1.30             # 每天递增系数
+    grace: 2                 # 连续交不上几次破契约
+    miss-penalty: 0.30       # 欠税一次，之后税额 +30%/次（叠加）
+    carry-rate: 0.30         # 交满后超额部分结转到明天的比例
+    full-clear-bonus: 300    # 交满一天的额外剑币赏金
+    break-coin-pct: 0.20     # 破契约扣当前剑币的比例
+    event-multiplier: 1.0    # 【占位，未生效】龙潮事件期间的契约税额乘数；本版只做公告占位：
+                             # ContractManager 没有 hook 点，结算逻辑未接入（下一版再接），1.0 = 纯公告
+  value:                     # 剑的估值曲线：品质基数 ×（1+0.15×强化级）× 锻阶 × 剑型 × 圣物
+    base-per-quality: [40, 80, 160, 320, 640, 1280]
+    per-strengthen-level: 0.15
+    stage-weight: 1.0        # 锻阶乘区的参与度（0.5 = 锻阶只吃一半效果）
+  relics:
+    disabled: []             # 拉黑的圣物 id（如 phoenix-ash）
+
+# ---- 剑型（v2.14，ForgeTax sword forms 移植）----
+# 锻造结算时按权重随机，写进成品：只影响 Lore 外观与估值乘区，不改属性。
+# 整段删掉用内置默认；weight 0 = 不出但保留定义。
+forms:
+  plain:  { display: "朴素",   color: "#9e9e9e", weight: 34, value-mult: 1.0 }
+  shadow: { display: "影太刀", color: "#7fd3ff", weight: 24, value-mult: 1.25 }
+  heavy:  { display: "重剑",   color: "#ffb84d", weight: 20, value-mult: 1.45 }
+  famed:  { display: "名刀",   color: "#b06bff", weight: 14, value-mult: 1.8 }
+  moon:   { display: "偃月",   color: "#ff3d6e", weight: 8,  value-mult: 2.3 }
+  # 名剑谱特型（拓展第二档）：weight 0 不参与普通抽取，只能通过名剑谱解锁。
+  # 已解锁的玩家锻造时按 spectrum.special-form-chance（默认 30%）优先抽中。
+  yuehen:      { display: "月痕",   color: "#ffd166", weight: 0, value-mult: 3.0 }
+  qianchuiwen: { display: "千锤纹", color: "#e8d7a0", weight: 0, value-mult: 2.2 }
+
+# ---- 每日悬赏（v2.14）----
+# 按世界天数种子每天刷 count 条：主手拿达标锻造品 /zhujian shangjin claim <序号>，剑被收走换剑币。
+bounty:
+  enabled: true
+  count: 3
+  reward-base: 400
+
+# ---- 竞技分级（v2.5）----
+# 按双方主手锻造等级分档，防止 +32 吊打 +5。
+duel:
+  strengthen-tier:
+    enabled: true           # false = 回到无差别竞技
+    bounds: [10, 20]        # 档位边界 → 0-9 / 10-19 / 20+
+    allow-cross: false      # 允许跨档开打；false 时直接拒绝
+    balance: true           # 跨档时把高等级方临时压到低等级方（仅 allow-cross=true 生效）
+
+# ---- 词条重铸（v2.5）----
+# 花材料/剑币只重抽其中一条，不能抽出与其它词条重复的。
+reforge:
+  enabled: true
+  consume-materials: false  # true = 重铸也吃对应锻造材料（不只有剑币）
+  permission: forgemaster.use  # 进重铸界面需要的权限（v2.19.2 补进配置）
+  confirm-ticks: 60         # 点「确认重铸」后维持多久有效（tick，60 = 3 秒）
+  # 装备重铸的防御词条池（v2.19.2 补进配置）；抽不满也不回退到武器词条
+  armor-pool:
+    - armor_plate
+    - tough_plate
+    - vitality
+    - knockback_resist
+    - aegis
+  cost:
+    base: 160               # 第 1 条的重铸费
+    per-index: 90           # 每往后一条再加多少
+    tier-factor: 1.45       # 每高一档，费用 × 该系数
+    # 品质乘区（v2.19.2 补进配置）：原先只写在代码里，服主看不到也无法调
+    quality:
+      rough: 0.80
+      common: 1.00
+      fine: 1.25
+      epic: 1.70
+      legendary: 2.40
+      mythic: 3.40
+    # 2.10.5 下调（原 320 / 180 / 1.75）：传说铁剑轮三条 3600 → 1800 剑币，
+    # 星陨神话轮三条 4.8 万 → 1.1 万。重铸本来就用来反复洗词条，旧价一轮就破产。
+  material:
+    base: 2
+    per-index: 1
+    tier-factor: 1.15
+
+# ---- 词条符：剥离 / 移植（v2.8）----
+# 把一条词条从一把剑上剥下来，装到另一把剑上。数值原样搬运，不回滚、不重抽。
+#   剥离：/zhujian strengthen strip <序号>   主手锻造品 → 产出「词条符」物品
+#   移植：/zhujian strengthen graft          主手锻造品 + 副手词条符
+# 规则：同 id 不重复；武器词条只能进武器，装备词条只能进护甲。
+imprint:
+  enabled: true
+  max-affixes: 6              # 一件物品最多几条词条（与锻造上限一致）
+  strip:                      # 剥离费 = (cost-base + cost-per-index × 序号) × tier-factor^(档位-1)
+    cost-base: 260
+    cost-per-index: 120
+    tier-factor: 1.5
+  graft:                      # 移植费 = cost-base × tier-factor^(档位-1)
+    cost-base: 480
+    tier-factor: 1.6
+  merge:                      # 词条合成：/zhujian imprint merge（也认 /zhujian strengthen merge）
+    enabled: true             # 3 张同名（同 affix id）词条符 → 1 张数值 ×mult 的同名词条符
+    cost-coins: 2000          # 合成费（内置剑币）；失败（名字不一致 / 数量不足 / 钱不够）一张都不消耗
+    mult: 1.5                 # 数值倍率：取三张里最高那张 × mult
+    cap-mult: 2.0             # 数值上限 = 该词条配置 max × cap-mult，超出截断；不足 0.1 的零头向下截断
+
+# ---- 剑魄分解（v2.18）----
+# /zhujian dissolve [confirm]（别名 jiapo / fenjie）：主手持锻造品，确认后销毁并产出「剑尘」。
+#   数量 = (base-dust + per-level × 强化等级 + per-stage × 蜕变阶) × 品质系数，向下取整。
+#   神话另给 1 个下界之星；履历有碎剑记录的不打折。
+#   剑魂传承按碎剑的 50% 记账（碎剑是被动损失给全额补偿，分解是主动回收还拿剑尘，给一半防套利）。
+# 剑尘（GUNPOWDER 外观，PDC 键 fm_dust=1）：平时无用，强化时材料不够会自动按 1:1 抵扣差额。
+dissolve:
+  enabled: true
+  base-dust: 5                # 基础剑尘
+  per-level: 1                # 每级强化折多少
+  per-stage: 8                # 每阶蜕变折多少
+  # 品质系数（dissolve.quality-coeff.<ROUGH|COMMON|FINE|EPIC|LEGENDARY|MYTHIC> 可逐项覆盖）
+  quality-coeff:
+    ROUGH: 0.5
+    COMMON: 1.0
+    FINE: 1.5
+    EPIC: 2.0
+    LEGENDARY: 3.0
+    MYTHIC: 4.0
+  max-offset-per-strike: 10   # 单次强化最多用多少剑尘抵扣（剑币手续费不抵）
+
+# ---- 名人堂 / 排行：强化维度（v2.5）----
+# 这两个子段分别挂在下面的 rank: 与 hall-of-fame: 顶层键里，不要在这里另起顶层键。
+
+# ---- 专精等级与经验曲线（v2.9）----
+# v2.9 把经验砍陡了一刀：原来一次锻造 10 + 8×品质序号 + 评分÷10，曲线 80 + 40×Lv；
+# 现在 6 + 5×品质序号 + 0.05×评分，曲线 120 + 55×Lv。
+# 同样一把精良剑（75 分）从 ~37 经验降到 ~25，升到 10 级大约从 70 把变成 155 把。
+# 老玩家的等级与经验不会掉，只是下一次锻造时按新曲线补级。
+progression:
+  curve-base: 120          # 升到下一级所需 = curve-base + curve-per-level × 当前等级
+  curve-per-level: 55
+  gain-base: 6             # 一次锻造 = gain-base + gain-per-quality×品质序号 + gain-per-score×评分
+  gain-per-quality: 5
+  gain-per-score: 0.05
+  max-level: 60
+
+# ---- 匠人天赋（v2.9）----
+# 每 points-per-level 级给 1 点，自己分配到七项（手感/眼力/控火/稳手/刃感/火候/勤学）。
+# 60 级共 12 点，七项点满要 20 点，所以必然要取舍。洗点收剑币，防「先练级再洗成战斗力」。
+talent:
+  points-per-level: 5
+  reset-cost: 2000
+
+# ---- 剑意 / 武器熟练度（v2.6）----
+# 用锻造品击杀生物攒剑意，跨档给固定百分比攻击加成（ADD_SCALAR，叠在强化放大之后）。
+# 剑意值写在物品 PDC 里，跟着剑走；不统计 PVP 击杀（proficiency.pvp 可改）。
+proficiency:
+  enabled: true
+  lore: true                       # 是否在 Lore 里显示「剑意」行
+  tiers: [100, 500, 2000, 5000]    # 四档门槛，严格递增
+  tier-names: ["生涩", "顺手", "趁手", "心意相通", "剑即是我"]   # 比门槛多一个（含 0 档）
+  bonuses: [0.02, 0.04, 0.07, 0.10]  # 对应 1..4 档，0 档恒为 0
+  pvp: false                       # 是否统计 PVP 击杀
+  keep-on-death: true              # 玩家死亡时保底回写剑意，防丢
+  tier-up-sound: "BLOCK_ANVIL_USE"
+  tier-up-message: "<#ffd166>剑意精进</#ffd166> <dark_gray>»</dark_gray> <gray>这把剑已至 <white>{name}</white> <dark_gray>(剑意 {kills} · 攻击 +{bonus}%)</dark_gray>"
+  broadcast-min-tier: 0            # 0 = 不播报；设 3 则「心意相通」起全服播报
+
+# ---- 词条套装（v2.7）----
+# 集齐指定词条组合触发隐藏效果。requires 里的 id 必须在上面 affixes 段里存在，
+# 对不上的套装会被跳过（只 warning，不崩）。整段不配也能按内置四套跑。
+# 修饰符键名 fm_set_<套装id>，与基础属性 / 剑意（fm_prof_atk）互不干扰。
+affix-set:
+  enabled: true               # 总开关
+  lore: true                  # 是否在 Lore 显示套装行
+  progress: true              # 未集齐但差一条时显示灰色「套装: 饮血 2/3」
+  max-damage-reduce: 0.30     # 铁壁类减伤总上限，别叠成免伤
+  sets:
+    bloodthirst:              # 饮血
+      name: "饮血"
+      requires: ["attack_damage", "lifesteal", "crit_chance"]
+      bonus-attack: 0.05
+      heal-percent: 0.08
+      effect-text: "命中回复 {heal}% 伤害"
+    bulwark:                  # 铁壁
+      name: "铁壁"
+      requires: ["armor_plate", "tough_plate", "aegis"]
+      bonus-attack: 0.02
+      damage-reduce: 0.06
+      effect-text: "受到伤害减少 {reduce}%"
+    executioner:              # 断罪
+      name: "断罪"
+      requires: ["attack_damage", "crit_damage", "attack_speed"]
+      bonus-attack: 0.06
+      execute-threshold: 0.30
+      execute-bonus: 0.15
+      effect-text: "目标血量低于 {threshold}% 时伤害 +{execute}%"
+    venom:                    # 淬毒
+      name: "淬毒"
+      requires: ["fire", "crit_chance", "lifesteal"]
+      bonus-attack: 0.03
+      slow-seconds: 3
+      slow-amplifier: 0
+      effect-text: "命中附加 {slow} 秒缓慢"
+
+# ---- 套装效果 2.0（拓展第二档）----
+# 与词条套装（affix-set，按词条组合判定）完全独立：这里按「材料件数」判定——
+# 穿着同一个材料 id 的锻造护甲（armor-<剑胚id>-<部位>，同 id 才算同套）达到档位
+# 件数就吃对应加成；主手拿同套武器才能放主动技。
+# 只内置星陨一套示例；其它材质按同样格式加段落即可生效——服务是数据驱动的，
+# Java 里不认任何具体材料名（星陨没有硬编码），删掉这段就等于关掉这个玩法。
+relic-set:
+  # v2.23 起内置五套（铁卫/鎏金/铜辉/坚晶/渊黑，iron/gold/copper/diamond/netherite），
+  # 与下面配置的套装按「内置在前、同名覆盖、新段追加」合并；sets.<id> 段可自由追加。
+  # 预览面板：/zhujian relicset 打开列表页，点套装看详情。
+  enabled: true               # 总开关
+  cooldown-seconds: 30        # 主动技默认冷却秒数（套装段可用 cooldown-seconds 覆盖）
+  skills:                     # 主动技参数表（套装档位里用 active: <技能id> 引用）
+    # v2.23 新增四个内置套装的主动技（默认值即可用，下面只是可调旋钮）：
+    swift-burst:             # 鎏金·疾风爆发（速度 + 急迫）
+      duration-seconds: 8
+      speed-amplifier: 1
+      haste-amplifier: 0
+    aegis-shield:            # 坚晶·坚壁护盾（抗性减伤）
+      duration-seconds: 8
+      amplifier: 0
+    vital-spring:            # 铜辉·生机回涌（再生）
+      duration-seconds: 10
+      amplifier: 1
+    heavy-reap:              # 渊黑·重击吸血（范围重击按伤害回血）
+      radius: 2.5
+      damage-multiplier: 1.2
+      heal-ratio: 0.5
+    fallen-star:              # 落星斩：潜行 + 主手同套武器左键
+      distance: 3.0           # 落点在玩家面前几格
+      radius: 3.0             # 落点周围几格内的敌人挨打
+      damage-multiplier: 1.5  # 伤害 = 玩家攻击伤害 × 该倍率（标准攻击事件，归属玩家）
+  sets:
+    starfall:                 # 星陨（材料 id：starfall / armor-starfall-<部位>）
+      name: "星陨"
+      2: { armor-bonus: 4.0 }                       # 2 件套被动：穿戴时额外护甲 +4
+      4: { armor-bonus: 8.0, active: fallen-star }  # 4 件套被动：护甲 +8 + 主动技落星斩
+
+
+# ---- 宝石（v2.2）----
+# 三步走：开孔 → 熔炼宝石 → 镶嵌。宝石不能直接粘到装备上。
+gems:
+  enabled: true
+  # 宝石孔数按材料档位定（品质不再影响孔数）
+  sockets:
+    tiers:
+      1: 1                  # 铁 / 金
+      2: 1                  # 铜
+      3: 2                  # 钻石
+      4: 2                  # 下界合金
+      5: 3                  # 星陨
+  # 附魔孔数（v2.10 起与宝石孔分开，各算各的）
+  # 想让附魔更难堆，把这里的数调小即可，不影响宝石那边
+  enchant-sockets:
+    tiers:
+      1: 1                  # 铁 / 金
+      2: 1                  # 铜
+      3: 2                  # 钻石
+      4: 2                  # 下界合金
+      5: 3                  # 星陨
+  socket:                   # 宝石开孔
+    cost-coins: 500         # 开第 N 个宝石孔要 N × 500
+    cost-item: IRON_BLOCK
+    cost-amount: 2
+  enchant-socket:           # 附魔开孔（v2.10）
+    cost-coins: 800         # 附魔孔更贵，靠书来垫
+    cost-item: BOOK
+    cost-amount: 8
+  smelt:                    # 星熔：只认下界之星，一颗出 1 级宝石
+    star-amount: 1          # 一次消耗几颗下界之星
+    star-cost-coins: 300   # 星熔费用
+  inlay:                    # 宝石镶嵌：主手装备 + 副手宝石
+    cost-coins: 200
+  enchant:                  # 附魔镶嵌：主手装备 + 副手附魔书（走独立的附魔孔）
+    cost-coins: 300
+  enchant-extract:          # 附魔取回：把最后一颗镶进去的附魔拆成附魔书
+    cost-coins: 300
+    success: 0.8            # 失败附魔消失，装备无损，孔位照样空出来
+  extract:                  # 拆卸：把最后一颗宝石取下来
+    cost-coins: 300
+    success: 0.8            # 失败宝石碎裂，装备无损
+  merge:                    # 三合一：3 颗同级同种 → 高一级（最高 Lv.5）
+    cost-coins: 200
+    chance-1: 0.85          # Lv.1 → Lv.2
+    chance-2: 0.65          # Lv.2 → Lv.3
+    chance-3: 0.45          # Lv.3 → Lv.4
+    chance-4: 0.25          # Lv.4 → Lv.5
+
+# ---- 反作弊兼容（v2.2）----
+# Vulcan / Grim 这类反作弊的速度检测是拿「实际移动」对比「预期速度」，
+# 移速与攻击击退加成过猛时可能被误判成 Velocity。检测到反作弊时自动收敛这两类属性。
+compat:
+  anticheat-aware: true
+  speed-cap: 0.05           # 检测到反作弊时：移速加成上限（5%）
+  knockback-cap: 0.6        # 检测到反作弊时：攻击击退上限
+  speed-cap-loose: 0.35     # 没检测到反作弊时的上限
+  knockback-cap-loose: 2.0
+  attack-speed-cap: 0.6     # v2.17.3：单条攻速词条/宝石上限 +0.6（不看反作弊，永远生效）
+
+# ------------------------------------------------------------
+# 原版交互 —— 只拦插件锻造品
+#   原版物品（普通钻石剑、铁甲、书……）照常附魔、修理、改名，一点不受影响。
+#   只有 /zhujian 造出来的装备武器，放进附魔台 / 铁砧会被弹出来。
+#
+#   拦截入口：光标放入 / shift 点击 / 数字键 / 副手 / 拖拽 / 铁砧出结果 / 附魔事件。
+#   往里放拦死，往外拿放行 —— 不然万一锻造品已经在里面，玩家会卡死拿不出来。
+#
+#   block-all: true 退回老行为：整个台子封死，连原版物品也不让用。
+# ------------------------------------------------------------
+vanilla-guard:
+  enabled: true
+  # false（默认）= 只拦本插件锻造出来的装备武器，原版物品照常附魔 / 修理 / 改名。
+  # true = 退回老行为，把整个附魔台和铁砧封死，连原版物品也不让用。
+  block-all: false
+  enchanting-table: true      # 锻造品不能进附魔台
+  anvil: true                 # 锻造品不能进铁砧
+  grindstone: false           # 锻造品不能进砂轮（默认不封，需要就改 true）
+  message:
+    enchanting-table: "<red>这把锻造品不能进附魔台——用 <white>/zhujian gem inlay</white> 把附魔书镶进孔里。"
+    anvil: "<red>这把锻造品不能进铁砧——修剑用 <white>/zhujian repair</white>，强化把剑放到铁砧上、手持重锤左键敲。"
+    grindstone: "<red>这把锻造品不能进砂轮。"
+
+coins:
+  forge-base: 12          # 每把成品的底薪（粗糙品也有）
+  forge-per-quality: 15   # 每高一档品质 +多少币（粗糙0 / 普通1 / 精良2 ...）
+  forge-per-score: 1      # 总分每 1 分 +多少币（四舍五入）
+  commission-base: 40     # 委托交货底薪
+  commission-per-rep: 2   # 委托声望奖励每 1 点 +多少币
+  contest-first: 300      # 大赛第 1 名
+  contest-second: 180     # 大赛第 2 名
+  contest-third: 100      # 大赛第 3 名
+  contest-other: 40       # 大赛第 4 名起
+
+# ---- 锻造委托（v1.2）----
+commissions:
+  enabled: true
+  slots: 3                       # 同时挂在板上的委托数量（1-3）
+  expire-hours: 6                # 几小时不交就作废
+  clients:                       # 委托人名字池
+    - 铁匠铺老板
+    - 城防军队长
+    - 独行游侠
+    - 矿工头子
+    - 拍卖行管事
+    - 隐居的老铸剑师
+
+# ------------------------------------------------------------
+# 剑胚材料
+#   tier            阶级（只影响展示星数）
+#   item            成品物品
+#   icon            菜单图标
+#   ideal-temperature / tolerance   最佳炉温与容差
+#   strikes         需要敲多少锤
+#   zone-width      命中区半径（0 = 只有正中一格，1 = 三格，越大越简单）
+#   cost-item/amount 消耗材料
+#   bonus-attack    基础攻击力加成（会乘品质倍率）
+#   bonus-speed     基础攻速加成
+# ------------------------------------------------------------
+materials:
+  iron:
+    display: "<gray>铁剑</gray>"
+    item: IRON_SWORD
+    icon: IRON_INGOT
+    tier: 1
+    ideal-temperature: 62
+    tolerance: 10
+    strikes: 5
+    zone-width: 1
+    cost-item: IRON_INGOT
+    cost-amount: 8
+    price: 200               # 锻造费（服务器货币，走 Vault / CMI）
+    base-durability: 250
+    # 基础属性已按「砍一刀」下调 30%，靠锻造等级补回去
+    bonus-attack: 1.4
+    bonus-speed: 0.07
+
+  gold:
+    display: "<gold>金剑</gold>"
+    item: GOLDEN_SWORD
+    icon: GOLD_INGOT
+    tier: 1
+    ideal-temperature: 45
+    tolerance: 13
+    strikes: 4
+    zone-width: 2
+    cost-item: GOLD_INGOT
+    cost-amount: 8
+    price: 400
+    base-durability: 150
+    bonus-attack: 1.05
+    bonus-speed: 0.56
+
+  copper:
+    display: "<#e08a52>铜剑</#e08a52>"
+    item: COPPER_SWORD
+    icon: COPPER_INGOT
+    tier: 2
+    ideal-temperature: 55
+    tolerance: 11
+    strikes: 5
+    zone-width: 1
+    cost-item: COPPER_INGOT
+    cost-amount: 10
+    price: 500
+    base-durability: 300
+    bonus-attack: 1.75
+    bonus-speed: 0.21
+
+  diamond:
+    display: "<aqua>钻石剑</aqua>"
+    item: DIAMOND_SWORD
+    icon: DIAMOND
+    tier: 3
+    ideal-temperature: 78
+    tolerance: 8
+    strikes: 6
+    zone-width: 1
+    cost-item: DIAMOND
+    cost-amount: 6
+    price: 1000
+    base-durability: 800
+    bonus-attack: 2.45
+    bonus-speed: 0.28
+
+  netherite:
+    display: "<#8a5a4a>下界合金剑</#8a5a4a>"
+    item: NETHERITE_SWORD
+    icon: NETHERITE_INGOT
+    tier: 4
+    ideal-temperature: 88
+    tolerance: 6
+    strikes: 7
+    zone-width: 1
+    cost-item: NETHERITE_INGOT
+    cost-amount: 4
+    price: 2000
+    base-durability: 1300
+    bonus-attack: 3.15
+    bonus-speed: 0.35
+
+  starfall:
+    display: "<#b06bff>星陨剑</#b06bff>"
+    item: NETHERITE_SWORD
+    icon: NETHER_STAR
+    tier: 5
+    ideal-temperature: 95
+    tolerance: 5
+    strikes: 8
+    zone-width: 0
+    # 最高档不收锭，改收五种矿物块各一块。
+    # v2.17.3：costs 顺序即强化材料（costItem 取第一项），把钻石块放第一位——
+    # 以前第一位是铁块，星陨剑强化实际吃铁块，与档位完全脱钩（audit/03-economy §0#12）。
+    costs:
+      - item: DIAMOND_BLOCK
+        amount: 1
+      - item: IRON_BLOCK
+        amount: 1
+      - item: GOLD_BLOCK
+        amount: 1
+      - item: COPPER_BLOCK
+        amount: 1
+      - item: NETHERITE_BLOCK
+        amount: 1
+    price: 5000
+    base-durability: 1600
+    # v2.17.3：bonus-speed 0.56 → 0.28——满配攻速 4.37/s 超原版 4.0 基准，
+    # 攻速是手感不是无限连点机；词条/宝石的全局攻速夹子另行生效
+    bonus-attack: 5.25
+    bonus-speed: 0.28
+
+# ------------------------------------------------------------
+# 词条数值按材料档位缩放
+#   低档材料（铁 / 金）词条基础值低、随机波动也小；
+#   档位越高，基准越高、波动越宽，能出极品也能出平庸货。
+#   value  数值倍率：该档词条的基准倍数
+#   spread 波动倍率：该档词条的上下浮动半宽倍数
+#   最终值 = (min+max)/2 × value ± (max-min)/2 × spread
+# ------------------------------------------------------------
+affix-scaling:
+  enabled: true
+  tiers:
+    1: { value: 0.50, spread: 0.40 }   # 铁 / 金：低且稳
+    2: { value: 0.70, spread: 0.60 }   # 铜
+    3: { value: 1.00, spread: 1.00 }   # 钻石（基准）
+    4: { value: 1.30, spread: 1.25 }   # 下界合金
+    5: { value: 1.65, spread: 1.55 }   # 星陨：高且飘
+
+# ------------------------------------------------------------
+# 词条
+#   kind      ATTRIBUTE / CRIT_CHANCE / CRIT_DAMAGE / LIFESTEAL / FIRE
+#   attribute 仅 ATTRIBUTE 用：attack_damage, attack_speed, attack_knockback,
+#            movement_speed, max_health, armor, armor_toughness,
+#            knockback_resistance, sweeping_damage_ratio
+#   min/max   随机取值区间
+#   percent   仅影响显示（true 时显示成 15%）
+#   unit      显示后缀
+#   weight    抽取权重
+# ------------------------------------------------------------
+affixes:
+  attack_damage:
+    display: 锋锐
+    kind: ATTRIBUTE
+    attribute: attack_damage
+    min: 0.8
+    max: 2.6
+    unit: 攻击力
+    weight: 20
+
+  attack_speed:
+    display: 轻捷
+    kind: ATTRIBUTE
+    attribute: attack_speed
+    min: 0.05
+    max: 0.18
+    unit: 攻速
+    weight: 12
+
+  crit_chance:
+    display: 破绽
+    kind: CRIT_CHANCE
+    min: 0.06
+    max: 0.22
+    unit: 暴击率
+    percent: true
+    weight: 16
+
+  crit_damage:
+    display: 致命
+    kind: CRIT_DAMAGE
+    min: 0.25
+    max: 0.9
+    unit: 暴击伤害
+    percent: true
+    weight: 14
+
+  lifesteal:
+    display: 饮血
+    kind: LIFESTEAL
+    min: 0.04
+    max: 0.14
+    unit: 生命偷取
+    percent: true
+    weight: 12
+
+  fire:
+    display: 燃烬
+    kind: FIRE
+    min: 2
+    max: 5
+    unit: 秒点燃时长
+    weight: 10
+
+  knockback:
+    display: 震荡
+    kind: ATTRIBUTE
+    attribute: attack_knockback
+    min: 0.4
+    max: 1.2
+    unit: 击退
+    weight: 8
+
+  reach:
+    display: 疾行
+    kind: ATTRIBUTE
+    attribute: movement_speed
+    min: 0.01
+    max: 0.03
+    unit: 移速
+    percent: true
+    weight: 8
+
+  # ---- 防御词条（只在锻造装备时抽取）----
+  armor_plate:
+    display: 厚甲
+    kind: ATTRIBUTE
+    attribute: armor
+    min: 1.5
+    max: 3.5
+    unit: 护甲
+    weight: 22
+
+  tough_plate:
+    display: 坚壁
+    kind: ATTRIBUTE
+    attribute: armor_toughness
+    min: 0.5
+    max: 1.5
+    unit: 韧性
+    weight: 14
+
+  vitality:
+    display: 气血
+    kind: ATTRIBUTE
+    attribute: max_health
+    min: 2
+    max: 5
+    unit: 生命上限
+    weight: 16
+
+  knockback_resist:
+    display: 磐石
+    kind: ATTRIBUTE
+    attribute: knockback_resistance
+    min: 0.05
+    max: 0.15
+    unit: 抗击退
+    percent: true
+    weight: 10
+
+  aegis:
+    display: 庇护
+    kind: DAMAGE_REDUCTION
+    min: 0.03
+    max: 0.07
+    unit: 受到伤害减免
+    percent: true
+    weight: 12
+
+# ------------------------------------------------------------
+# 淬火介质：决定词条池与评分加成
+# ------------------------------------------------------------
+quench:
+  water:
+    display: "水淬"
+    color: "#6bc8ff"
+    icon: WATER_BUCKET
+    score-bonus: 10
+    description: "最稳的选择，火焰与水汽一起退去。"
+    pool: [attack_damage, attack_speed]
+
+  oil:
+    display: "油淬"
+    color: "#ffd166"
+    icon: HONEY_BOTTLE
+    score-bonus: 12
+    description: "慢冷，刃口更硬，也更容易出彩。"
+    pool: [attack_damage, crit_chance]
+
+  blood:
+    display: "血淬"
+    color: "#ff4d6d"
+    icon: RED_DYE
+    score-bonus: 8
+    description: "剑会记住喂给它的东西。"
+    pool: [lifesteal, crit_damage]
+
+  ice:
+    display: "冰淬"
+    color: "#9fe8ff"
+    icon: BLUE_ICE
+    score-bonus: 9
+    description: "骤冷，剑身发出一声清响。"
+    pool: [attack_speed, reach, crit_chance]
+
+  soul:
+    display: "魂淬"
+    color: "#b06bff"
+    icon: SOUL_TORCH
+    score-bonus: 6
+    description: "低加成，但词条池最深。"
+    pool: [fire, knockback, crit_damage, lifesteal]
+
+# ---- 师徒系统（v2.0，w5-mentor）----
+# 拜师：/zhujian master 玩家名 发邀请，对方 /zhujian accept 收徒
+# 分成：只在徒弟锻造成功时结算；师父离线也入账（只要仍是绑定关系）
+# 加成：师父在线时，徒弟加热容差额外乘 (1 + apprentice-tolerance-bonus)
+mentor:
+  # 总开关
+  enabled: true
+  # 一个师父最多带几个徒弟（一人只能有一个师父）
+  max-disciples: 3
+  # 拜师邀请多少秒内有效（仅内存，重启失效）
+  invite-expire-seconds: 60
+  # 解除师徒关系后，徒弟多少小时内不能再拜师（0 = 无冷却）
+  unbind-cooldown-hours: 24
+  # 徒弟每锻成一把剑，师父分得徒弟本次剑币收益的比例（0.10 = 10%，向上取整至少 1 币）
+  coin-share-rate: 0.10
+  # 师父在线时，徒弟高温容差的额外加成（0.05 = +5%，叠加在专精容差之上，上限 50%）
+  apprentice-tolerance-bonus: 0.05
+  # ---- 出师（v2.18.0）----
+  # 徒弟 /zhujian master graduate 预约、graduate-confirm 确认（两步确认防误触）
+  graduation:
+    # 出师条件（全部从档案/强化履历推导，不扫背包；配 0 = 关闭该项）
+    min-forged: 100            # 累计锻造次数
+    min-reputation: 200        # 声望
+    min-strengthen: 20         # 历史最高强化等级（只涨不跌）
+    min-evolution-stage: 2     # 历史最高锻阶（蜕变成功登记）
+    # 预约到确认的间隔上限（秒），超时要重新预约
+    confirm-seconds: 30
+    # 徒弟出师奖励：coins = 剑币；charm = 符（id: talisman 护胚 / steady 稳胚 / charm-kindle 旺火，amount 数量）
+    apprentice-reward:
+      coins: 500
+      charm: { id: steady, amount: 2 }
+    # 师父奖励（徒弟在线发符，离线只入账剑币）；出师即分成终止，这是给师父的补偿
+    master-reward:
+      coins: 300
+      charm: { id: charm-kindle, amount: 1 }
+
+# ------------------------------------------------------------
+# 行会商会（拓展第三档 · 社交层）：玩家自建行会，共担金库、共享锻造加成
+#   存档 guild-data.yml；一人一会；退会 24h 冷却；会长退会 = 解散（金库平分退还）
+# ------------------------------------------------------------
+guild:
+
+  # ---- 行会仓库 / 行会委托（v2.23）----
+  warehouse:
+    rows: 3                  # 仓库行数（1~6），容量 = rows×9
+    member-withdraw: false   # 普通成员能否取出（会长永远全权）
+  quest:
+    enabled: true            # 行会协作委托总开关
+    type: alternate          # forge / strengthen / random / alternate（轮流）
+    cycle-hours: 24          # 周期；24 = 对齐本地 0 点刷新
+    forge-target: 10         # 集体锻剑目标（把）
+    strengthen-target: 15    # 集体强化目标（总等级）
+    reward-base: 100         # 每人基础剑币
+    reward-per-member: 0.1   # 人数系数：奖励 = base×(1+(人数-1)×系数)
+    poll-seconds: 300        # 进度轮询间隔（秒，下限 60）
+    report-daily-cap: 5      # 每成员每周期会长上报上限
+    report-max: 3            # 单次上报数量上限
+  # 总开关
+  enabled: true
+  # 一个行会最多几名成员（含会长）
+  max-members: 8
+  # 会名最长几字（玩家自起，全服唯一）
+  name-max-chars: 8
+  # 入会邀请多少秒内有效（仅内存，重启失效）
+  invite-expire-seconds: 60
+  # 退会 / 被踢后多少小时内不能再建会或入新会（0 = 无冷却）
+  leave-cooldown-hours: 24
+  # 锻造剑币加成，按成员数取最高档（乘在 CoinRules 锻造奖励上，不叠加只取高）
+  bonus:
+    tier1: { members: 3, rate: 0.05 }   # ≥3 人：每人锻造剑币 +5%
+    tier2: { members: 5, rate: 0.10 }   # ≥5 人：每人锻造剑币 +10%
+  # 行会周赛：每周（世界时间 7 个游戏日）自动汇总各会成员当周锻造积分（粗糙炸剑不算），
+  # 榜首行会全员广播，会长领下面的奖励；巡检低频（每小时查一次跨周）
+  week-first-prize: 500        # 冠军行会会长领的剑币
+  week-check-hours: 1          # 每隔多少小时巡检一次世界周
+  # 金库扩容（金库唯一消耗出口）：会长花金库扩成员上限
+  upgrade-cost: 2000
+  upgrade-size: 2              # 每次扩容 +2 人
+  upgrade-max: 3               # 最多扩 3 次
+
+# ------------------------------------------------------------
+# 环境修正（w7-env）：天气 + 时辰，开局时固化进 EnvContext，整局使用同一份
+#   heat      加热保温修正（正=降温更慢，负=降温更快），按 1 - heat 乘散热速度
+#   quench    淬火收益修正（倍率，0.10 = 淬火收益 +10%）
+#   fold      叠钢时长修正（秒，正=多给时间）
+#   grind     开刃绿区宽度修正（同量纲于开刃宽度，正=更宽）
+#   天气与时辰的修正会相加后一起生效
+# 时辰按世界时间（tick，0-23999）划分：
+#   黎明 23000~1000 ｜ 白天 1000~12000 ｜ 黄昏 12000~13000 ｜ 夜晚 13000~23000
+# ------------------------------------------------------------
+environment:
+  # 总开关：关闭后所有修正为 0，且不显示环境提示
+  enabled: true
+  # 开局是否在聊天栏与 ActionBar 提示当前天气、时辰与修正
+  announce-on-start: true
+
+  weather:
+    # 雷雨（世界正在打雷）：淬火收益 +10%，叠钢多 0.3 秒，开刃绿区 +0.3
+    storm:
+      label: "雷雨"
+      heat: 0.0
+      quench: 0.10
+      fold: 0.3
+      grind: 0.3
+    # 雨（世界在下雨）：加热降温快 5%，淬火收益 +3%
+    rain:
+      label: "雨"
+      heat: -0.05
+      quench: 0.03
+      fold: 0.0
+      grind: 0.0
+    # 晴朗：无修正
+    clear:
+      label: "晴朗"
+      heat: 0.0
+      quench: 0.0
+      fold: 0.0
+      grind: 0.0
+
+  time:
+    # 黎明：保温 +6%（炉子降温更慢，好趁热加热）
+    dawn:
+      label: "黎明"
+      heat: 0.06
+      quench: 0.0
+      fold: 0.0
+      grind: 0.0
+    # 白天：无修正
+    day:
+      label: "白天"
+      heat: 0.0
+      quench: 0.0
+      fold: 0.0
+      grind: 0.0
+    # 黄昏：无修正
+    dusk:
+      label: "黄昏"
+      heat: 0.0
+      quench: 0.0
+      fold: 0.0
+      grind: 0.0
+    # 夜晚：淬火收益 +6%，开刃绿区 +0.5（夜里手稳）
+    night:
+      label: "夜晚"
+      heat: 0.0
+      quench: 0.06
+      fold: 0.0
+      grind: 0.5
+
+# ------------------------------------------------------------
+# 商会（w2-shop）：用剑币购买原料与剑胚图纸，/zhujian shop 打开
+#   enabled      总开关
+#   batch-size   左键一次买几个原料（右键永远买 1 个），1~64
+#   materials    原版材料名(小写) → 各档单价（剑币）；没写的档次不卖
+#                档次键：common 普通料 / refined 精炼料 / celestial 天外料
+#   blueprints   剑胚 id → 图纸单价（剑币）；没写的剑胚不卖图纸
+# 价格每次打开商会时现读，/zhujian reload 后立即生效。
+# ------------------------------------------------------------
+shop:
+  enabled: true
+  batch-size: 8
+  # 特殊道具（逐个买，不按批发）
+  specials:
+    talisman: 1500          # 护胚符：强化失败本该碎剑胚时顶一次
+    steady: 2000            # 稳胚符：强化失败不掉级
+    charm-kindle: 2500      # 旺火符：本次强化成功率 +15 个百分点
+  materials:
+    # 铁锭
+    iron_ingot: {common: 20, refined: 60, celestial: 180}
+    # 金锭
+    gold_ingot: {common: 20, refined: 60, celestial: 180}
+    # 铜锭
+    copper_ingot: {common: 25, refined: 70, celestial: 200}
+    # 钻石
+    diamond: {common: 60, refined: 160, celestial: 420}
+    # 下界合金锭
+    netherite_ingot: {common: 150, refined: 400, celestial: 1000}
+  blueprints:
+    # 剑胚 id: 图纸单价（剑币）
+    iron: 120
+    gold: 150
+    copper: 240
+    diamond: 360
+    netherite: 560
+    starfall: 800
+
+# ------------------------------------------------------------
+# 黑市（轻量留存拓展）：/zhujian blackmarket（别名 heishi）
+#   每个服务器「现实日」（服务器本地时区，不用主世界 dayTime——MC 昼夜只有 20 分钟
+#   真实时间，用 dayTime 会一天换几十批）从下面 pool 里按权重随机抽 size 件上架，
+#   价格在 discount-min ~ discount-max 之间随机打折；种子 = 日期 + 主世界名，
+#   同一天全服看到同一批货、同一批价。每人每件每天限购 daily-limit 次，
+#   已购次数存 daily-data.yml。只卖消耗型（符 / 锻造原料 / 图纸），
+#   武器装备材质会被自动剔除。购买走 economy 经济口径（外部经济优先，退回剑币）。
+#   pool 条目格式（同 events.schedule 的行内 map 风格）：
+#     { type: charm,     id: talisman,  price: 1500 }              # 符：talisman/steady/charm-kindle
+#     { type: material,  id: iron_ingot, grade: refined, price: 60, weight: 3 }   # 锻造原料（grade 可选，默认 common）
+#     { type: blueprint, id: starfall,  price: 800 }               # 剑胚图纸（id = 剑胚 id）
+#     weight 可选，默认 1；price = 原价（剑币），实际售价再乘当日折扣
+# ------------------------------------------------------------
+blackmarket:
+  enabled: true
+  size: 4                    # 每天上架几件
+  discount-min: 0.55         # 折扣下限（0.55 = 最低打到 55% 价）
+  discount-max: 0.8          # 折扣上限
+  daily-limit: 2             # 每人每件每天限购次数
+  pool:
+    - { type: charm, id: talisman, price: 1500, weight: 3 }
+    - { type: charm, id: steady, price: 2000, weight: 3 }
+    - { type: charm, id: charm-kindle, price: 2500, weight: 2 }
+    - { type: material, id: iron_ingot, grade: common, price: 20, weight: 4 }
+    - { type: material, id: iron_ingot, grade: refined, price: 60, weight: 3 }
+    - { type: material, id: gold_ingot, grade: refined, price: 60, weight: 3 }
+    - { type: material, id: copper_ingot, grade: common, price: 25, weight: 4 }
+    - { type: material, id: diamond, grade: refined, price: 160, weight: 2 }
+    - { type: material, id: netherite_ingot, grade: common, price: 150, weight: 1 }
+    - { type: blueprint, id: iron, price: 120, weight: 2 }
+    - { type: blueprint, id: gold, price: 150, weight: 2 }
+    - { type: blueprint, id: diamond, price: 360, weight: 1 }
+    - { type: blueprint, id: starfall, price: 800, weight: 1 }
+
+# ------------------------------------------------------------
+# 每日签到（轻量留存拓展）：/zhujian signin（别名 qiandao）
+#   每天首次签到领 rewards 里的一档，7 天一轮递增，第 7 项是大奖。
+#   断签不清零：只记「本轮内已签天数」，隔天没签不前进也不清零，下次接着领下一档；
+#   领完最后一档后回到第 1 档开新一轮。日期按服务器本地时区的现实日计（同黑市）。
+#   奖励字段（同 season-pass 的 reward 格式）：coins 剑币 / charm 符 id /
+#   charm-amount 符数量 / material 材料或剑胚 id / material-amount 数量，均可选。
+#   进度存 daily-data.yml（与黑市共用）。
+# ------------------------------------------------------------
+daily:
+  enabled: true
+  rewards:
+    - { coins: 200 }                                        # 第 1 天
+    - { coins: 300 }
+    - { coins: 400, charm: talisman, charm-amount: 1 }      # 第 3 天：护胚符
+    - { coins: 600 }
+    - { coins: 800, material: iron_ingot, material-amount: 8 }
+    - { coins: 1200, charm: steady, charm-amount: 1 }       # 第 6 天：稳胚符
+    - { coins: 2500, charm: charm-kindle, charm-amount: 2 } # 第 7 天：大奖（旺火符 ×2）
+
+# ------------------------------------------------------------
+# 图纸（v2.3）：商会卖的《图纸 · XX》终于有用了
+#   开工时背包里有对应剑胚的图纸 → 加热容差加成；开启 required 后没图纸不能造
+# ------------------------------------------------------------
+blueprint:
+  enabled: true
+  required: false          # true = 必须先买图纸才能锻造该剑胚
+  consume: true            # 每打一把消耗 1 张
+  tolerance-bonus: 0.15    # 持图纸锻造时加热容差 +15%
+
+# ------------------------------------------------------------
+# 极限锻造 RISK（w2-shop · D3）：/zhujian forge risk 预设下一把剑
+#   enabled                开关
+#   hammer-interval-ticks  锻打指针走一格的间隔（tick），越小越快，原版默认约 3
+#   zone-shrink            命中区半径缩窄格数
+#   score-bonus-percent    成功分数加成百分比（35 = 总分 ×1.35）
+#   explode-chance         每个阶段结束时炸剑的概率（0~0.95）
+# 炸剑：材料全失，计入 riskLost，连锻断链；成品打 RISK_MADE 标记并计入 riskMade。
+# ------------------------------------------------------------
+risk:
+  enabled: true
+  hammer-interval-ticks: 2
+  zone-shrink: 1
+  score-bonus-percent: 35
+  explode-chance: 0.06
+
+# ------------------------------------------------------------
+# 世界事件（w2-shop · D4）：定时随机或管理员手动开启，期间在玩家附近空投稀有材料并全服公告
+#   enabled                  总开关
+#   interval-minutes         随机开启的检查间隔（分钟，无事件时计时）
+#   duration-seconds         单场持续时长（秒）
+#   spawn-interval-seconds   空投间隔（秒）
+#   spawn-radius             空投落点距玩家的半径（格）
+#   drops-per-player         每轮每位在线玩家空投几份
+#   max-active-drops         场上空投物上限，防止刷爆实体
+#   types.<id>.drops         掉落表：item 材料，grade 档次，weight 权重，min/max 数量
+# 手动：/zhujian event start <id>（管理员）；/zhujian event stop；/zhujian event 看状态
+# ------------------------------------------------------------
+events:
+  enabled: true
+  interval-minutes: 60
+  duration-seconds: 180
+  spawn-interval-seconds: 15
+  spawn-radius: 12
+  drops-per-player: 1
+  max-active-drops: 60
+  # 事件轮换表（拓展第二档骨架）：按权重随机挑一个开。整段删除 = 回到旧行为（types 里均匀随机）。
+  # type 可写 types 里的任意 id；starfall 是「星陨」的别名（= meteor）；dragon-tide 本版只做全服公告占位
+  # （契约税额乘数 contract.tax.event-multiplier 暂未接入 ContractManager 结算，见 contract.tax 注释）。
+  # 改这里要重启（或重载插件）才生效。
+  schedule:
+    - { type: starfall, weight: 6 }
+    - { type: dragon-tide, weight: 2 }
+  types:
+    meteor:
+      display: "陨星降临"
+      announce-start: "<#ffd166>天空裂开了一道火痕——陨星降临！<gray>快去附近找找落下的星材。"
+      announce-end: "<gray>陨星的火光散去了。"
+      drops:
+        starfall:
+          item: NETHER_STAR
+          grade: celestial
+          weight: 3
+          min: 1
+          max: 1
+        diamond:
+          item: DIAMOND
+          grade: refined
+          weight: 5
+          min: 1
+          max: 2
+        iron:
+          item: IRON_INGOT
+          grade: common
+          weight: 7
+          min: 2
+          max: 4
+    veins:
+      display: "矿脉涌现"
+      announce-start: "<#7ef2c8>大地涌出了成片的矿脉！<gray>附近的矿石正在等你。"
+      announce-end: "<gray>矿脉重新沉入地下。"
+      drops:
+        copper:
+          item: COPPER_INGOT
+          grade: common
+          weight: 6
+          min: 2
+          max: 5
+        gold:
+          item: GOLD_INGOT
+          grade: refined
+          weight: 3
+          min: 1
+          max: 3
+        netherite:
+          item: NETHERITE_INGOT
+          grade: celestial
+          weight: 1
+          min: 1
+          max: 1
+    dragon-tide:
+      display: "龙潮再临"
+      # 占位事件：只有公告、没有 drops（空投逻辑会自动跳过）。
+      # 下一版接入契约税额乘数（contract.tax.event-multiplier）后才影响龙税结算。
+      announce-start: "<#b06bff>深海的潮声变成了龙吟——龙潮再临！<gray>在契的匠人留意今晚的贡品。"
+      announce-end: "<gray>龙潮退去，海面恢复了平静。"
+# ---- 剑灵（v2.0 · w8）----
+# 成品养灵：击中敌人与花剑币喂养都会增加灵性，跨档解锁特效并刻入灵契词条。
+spirit:
+  enabled: true
+  pvp: false                      # 是否统计 PVP 命中养灵（默认关：互砍可以无限刷灵性）                  # 是否开启剑灵系统
+  max: 1000                      # 灵性上限
+  gain-per-hit: 1                # 每次击中敌人增加的灵性
+  feed-coin-cost: 10             # 喂养一次消耗的剑币
+  feed-spirit: 30                # 喂养一次增加的灵性
+  max-extra-affixes: 2           # 灵契词条最多额外几条
+  name-max-length: 8             # 剑名最长字符数
+  # 灵性档位阈值（从低到高，第一个必须为 0）
+  tiers: [0, 50, 150, 400, 900]
+  # 各档名称，与 tiers 一一对应
+  tier-names: [初醒, 通灵, 凝魄, 化灵, 神器]
+  # ---- 剑灵显形（拓展第三档）----
+  # 灵性达标且已命名的剑在主手玩家肩侧显形为一枚 ItemDisplay 浮游体（绕身环绕）。
+  display:
+    enabled: true
+    min-tier: 3                    # 灵性达到第几档才显形（0 起）
+    growth-per-tier: 1.15          # v2.23：显形体随灵性档位长大，每档 ×1.15（1.0 = 关闭成长）
+    require-named: true            # 未命名的「无名之剑」不显形——鼓励养成
+    orbit-radius: 0.8              # 环绕半径（格），肩侧 0.8
+    scale: 0.35                    # 浮游体的迷你展示缩放
+    bonus:
+      enabled: true                # 显形期间给主手剑加暴击（撤除时差量扣回）
+      crit-chance: 0.02            # 暴击率加成（+2%）
+# ---- 剑冢（v2.0 · w8）----
+# 埋剑入冢，全服可见；其他玩家可付费挑战复刻，成功得剑币与声望，失败扣声望且挑战费不退。
+# ---- 剑冢（v1.6 / 残影挑战 v2.7）----
+tomb:
+  enabled: true                   # 是否开放剑冢
+  max-per-player: 5               # 每人最多同时埋几把
+  broadcast: true                 # 埋剑时全服广播
+  owner-can-retrieve: true        # 埋下的剑主人能否取回（false = 埋了就不能拿回）
+  retrieve-fee: 0                 # 取回收取的剑币（0 = 免费）
+  challenge-fee: 30               # 每次挑战复刻的剑币（不退）
+  challenge-win-coins: 120        # 复刻成功奖励剑币
+  challenge-win-reputation: 20    # 复刻成功奖励声望
+  challenge-lose-reputation: 5    # 复刻失败扣除声望
+  # ---- 残影挑战（v2.7）：把剑冢记录变成一场实战 ----
+  # 召唤原剑主人的残影，按原剑的强化等级与品质缩放血量与攻击。
+  # /zhujian tomb challenge <编号> 现在走这条路；旧的「配方复刻掷骰」保留为 recipeChallenge() 但不再挂命令。
+  challenge:
+    enabled: true
+    cooldown-hours: 24            # 同一玩家对同一条记录每天一次（0 = 不限）
+    cooldown-on-loss: true        # 打输也进冷却
+    consume: false                # true = 挑战完销毁记录
+    broadcast: true               # 打赢全服播报
+    spawn-radius: 3               # 残影生成半径
+    leave-radius: 40              # 玩家跑出这个距离算离开
+    away-seconds: 60              # 离开/死亡多少秒后回收残影
+    level-per-level: 0.08         # 每级强化：血量 +8%
+    attack-scale: 0.55            # 原剑攻击折算到残影身上的系数
+    sword-base-attack: 6.0        # 折算基准攻击
+    max-health: 300               # 血量上限
+    max-attack: 40                # 攻击上限
+    reward:
+      rate-base: 0.40             # 返还材料比例基准
+      rate-per-level: 0.02        # 每级强化多返 2%
+      rate-max: 0.60              # 返还比例上限
+      bonus-chance: 0.15          # 额外掉落概率（宝石 / 护胚符）
+      charm-weight: 0.5           # 额外掉落里护胚符的权重
+    # 材料档位 → 生物类型；1 铁 / 2 铜 / 3 钻石 / 4 下界合金 / 5 星陨
+    mobs:
+      1: ZOMBIE
+      2: HUSK
+      3: WITHER_SKELETON
+      4: PIGLIN_BRUTE
+      5: WARDEN
+  # 成功率 = base-chance × 复刻率 + 专精加成；成功率夹在 [0.05, 0.95]
+  base-chance: 0.6               # 复刻率为 1 时的基础成功率
+  mastery-bonus-per-level: 0.005 # 每级专精的小幅加成
+  mastery-bonus-cap: 0.10        # 专精加成上限（小幅，不喧宾夺主）
+  # ---- 配方比对：挑战者主手的剑与埋剑配方逐项对照 ----
+  recipe:
+    weight-material: 0.30        # 剑胚 id 权重（不同直接 0 分）
+    weight-grade: 0.15           # 材料等级权重
+    weight-affix: 0.35           # 词条集合权重（忽略顺序，F1 相似度）
+    weight-layers: 0.20          # 钢纹层数权重
+    grade-step-penalty: 0.5      # 材料等级相差一档扣的分（0~1）
+    layer-step-penalty: 0.1      # 钢纹层数每差一层扣的分（0~1）
+  # ---- 残页折扣（剑冢秘境扩展）：挑战复刻付费时自动使用 ----
+  page-discount-per: 0.10        # 每张残页抵 10% 挑战费
+  page-discount-max: 5           # 一次挑战至多用几张残页（0 = 不用残页）
+
+# ---- 残影守卫词缀（v2.23）----
+# 剑冢挑战与剑冢秘境的残影守卫随机携带词缀，战斗有差异；PDC 随实体走，死亡自然失效。
+tomb-guard-affix:
+  enabled: true                 # 总开关：false 时不掷签也不打标记
+  pool: [attack_damage, lifesteal, fire, damage_reduce, crit, speed]  # 词缀池（未知 id 自动剔除）
+  max-per-guard: 2              # 每只至多几条
+  counts: [0.35, 0.40, 0.25]    # 挂 i 条的权重分布（35% 不带 / 40% 一条 / 25% 两条）
+  attack-damage: { multiplier: 1.25 }   # 凶戾：残影对玩家伤害 ×1.25
+  lifesteal: { fraction: 0.30 }         # 饮血：残影按伤害比例回血
+  fire: { seconds: 4 }                  # 灼魂：命中点燃 4 秒
+  damage-reduce: { percent: 0.25 }      # 磐石：残影受伤减免 25%
+  crit: { chance: 0.20, multiplier: 1.5 }   # 暴烈：概率 ×1.5 暴击
+  speed: { level: 1, duration-ticks: 72000 }  # 疾影：移速加快
+
+# ---- 剑冢秘境（tombrun）：残影挑战之上的分层副本 ----
+# /zhujian tombrun（别名 mijing）：付门票进入「秘境试炼」，在身边连续刷 waves 定义的
+# 若干波残影守卫（守卫档案复用剑冢残影：随机一条被埋剑决定生物/等级/品质，mult 乘血量与攻击），
+# 全部波次清算即通关，发 reward 剑币 + 残页；超时 / 死亡 / 退服 / 跑太远 / 放弃判负，门票不退。
+tombrun:
+  enabled: true                  # 是否开放秘境试炼
+  ticket-coins: 300              # 门票（剑币，0 = 免费）
+  waves:                         # 波次表：count = 每波守卫只数，mult = 血量/攻击倍率
+    - count: 2
+      mult: 0.8
+    - count: 3
+      mult: 1.0
+    - count: 4
+      mult: 1.3
+  reward:
+    coins: 800                   # 通关奖励剑币
+    pages: 2                     # 通关奖励残页（fm_torn_page，可在剑冢挑战时抵挑战费）
+  timeout-seconds: 180           # 试炼总时限（秒），到点强制判负
+  spawn-radius: 3                # 守卫生成半径
+  leave-radius: 40               # 玩家离起跑点超过这个距离算跑远
+  away-seconds: 10               # 跑远/守卫失踪多少秒后判负
+  level-per-level: 0.08          # 每级强化：守卫血量与攻击 +8%
+  attack-scale: 0.55             # 原剑攻击折算到守卫身上的系数
+  max-health: 400                # 守卫血量上限（mult 放大后的兜底）
+  max-attack: 40                 # 守卫攻击上限
+
+# ---- 名人堂盔甲架陈列（w7-env E1）----
+# 在指定位置生成 Top N 盔甲架，显示玩家名、最佳分与称号。
+# 位置由 /zhujian halloffame set（需 forgemaster.admin）写入 location。
+# 关服与重载时会清理残留盔甲架。
+hall-of-fame:
+  enabled: true                  # 是否开启名人堂陈列
+  size: 10                       # 展示前几名（最多 10）
+  refresh-seconds: 300           # 刷新间隔（秒），刷新时按最新排行重生成盔甲架
+  location:                      # 陈列位置，未设置时功能不生效
+    world: ""                    # 世界名，由 /zhujian halloffame set 写入
+    x: 0.0
+    y: 64.0
+    z: 0.0
+  strengthen:                    # v2.5：「最高锻造等级」条目
+    enabled: true                # 是否登记该条目
+    min-level: 1                 # 低于该等级不登记（防 +1 占位）
+    broadcast: true              # 刷新全服纪录时播报
+    show-row: true               # 陈列里是否多摆一排「强化之巅」
+# ---- 名人殿堂（拓展第一档）----
+# /zhujian hall set（管理员）把脚下设为殿堂原点，写入 hall.yml 的 shrine 段；
+# 前三名用 ItemDisplay 平躺摆在原点 / 左 1.5 / 右 1.5，头顶 TextDisplay 名牌。
+# 数据源：按历史最高分的前三名；没有任何锻造记录时回退为强化榜前三。
+hall:
+  enabled: true                  # 是否开启殿堂展示
+  refresh-seconds: 30            # 重刷间隔（秒）：只在殿堂区块已加载时清旧补新
+# ---- PlaceholderAPI 桥（拓展第一档）----
+# 装了 PlaceholderAPI 且 enabled=true 时，反射挂载 %forgemaster_*% 占位符：
+#   coins / reputation / title / top_quality / top_score / strengthen / forge_count / forbidden
+# 没装 PAPI 时整段静默跳过，不影响其它功能。
+placeholder:
+  enabled: true                  # 占位符桥开关
+# ============================================================
+#  成就系统（v2.0 · B3）
+#  每条成就达成后只发一次奖励（靠 StatsStore 去重）。
+#  type 可选：forged 锻造总数 / flawless 完美次数(≥99分) / best-streak 连锻峰值
+#           coins 剑币余额 / reputation 声望 / level 专精等级 / commissions 委托完成数
+#           duel-wins 决斗胜场 / spirits 剑灵数 / tombs 剑冢埋剑数 / codex 图鉴种类
+#           patterns 剑谱数 / quality 某品质次数（param 填 ROUGH/COMMON/FINE/EPIC/LEGENDARY/MYTHIC）
+#           mentor 有师徒关系(need 填 1) / achievements 已达成成就数
+#  need：阈值；coins：奖励剑币；rep：奖励声望；points：成就点；broadcast：全服播报
+# ============================================================
+achievements:
+  enabled: true                  # 是否开启成就判定与 /zhujian achievements
+  list:
+    first-forge:
+      name: 初次淬火
+      desc: 完成第一把锻造
+      icon: IRON_SWORD
+      type: forged
+      need: 1
+      coins: 20
+      rep: 5
+      points: 5
+    forge-50:
+      name: 百炼成钢
+      desc: 累计锻造 50 把
+      icon: ANVIL
+      type: forged
+      need: 50
+      coins: 200
+      rep: 30
+      points: 20
+    forge-300:
+      name: 千锤百炼
+      desc: 累计锻造 300 把
+      icon: NETHERITE_SWORD
+      type: forged
+      need: 300
+      coins: 800
+      rep: 120
+      points: 60
+      broadcast: true
+    first-flawless:
+      name: 一尘不染
+      desc: 首次锻出完美成品（评分 ≥ 99）
+      icon: NETHER_STAR
+      type: flawless
+      need: 1
+      coins: 150
+      rep: 40
+      points: 25
+      broadcast: true
+    streak-5:
+      name: 行云流水
+      desc: 连锻峰值达到 5 连
+      icon: CLOCK
+      type: best-streak
+      need: 5
+      coins: 120
+      rep: 20
+      points: 15
+    streak-10:
+      name: 不舍昼夜
+      desc: 连锻峰值达到 10 连
+      icon: GOLDEN_HOE
+      type: best-streak
+      need: 10
+      coins: 400
+      rep: 60
+      points: 40
+    coins-1000:
+      name: 小有积蓄
+      desc: 剑币余额达到 1000
+      icon: GOLD_NUGGET
+      type: coins
+      need: 1000
+      coins: 100
+      rep: 10
+      points: 10
+    coins-10000:
+      name: 富甲一方
+      desc: 剑币余额达到 10000
+      icon: GOLD_BLOCK
+      type: coins
+      need: 10000
+      coins: 1000
+      rep: 80
+      points: 50
+    rep-300:
+      name: 声名鹊起
+      desc: 声望达到 300（宗师）
+      icon: ENCHANTED_BOOK
+      type: reputation
+      need: 300
+      coins: 300
+      rep: 0
+      points: 30
+    level-10:
+      name: 专精初成
+      desc: 锻造专精达到 Lv.10
+      icon: EXPERIENCE_BOTTLE
+      type: level
+      need: 10
+      coins: 200
+      rep: 20
+      points: 20
+    level-30:
+      name: 炉火纯青
+      desc: 锻造专精达到 Lv.30
+      icon: ENCHANTING_TABLE
+      type: level
+      need: 30
+      coins: 800
+      rep: 100
+      points: 60
+      broadcast: true
+    commission-10:
+      name: 信誉可靠
+      desc: 完成 10 次委托
+      icon: WRITABLE_BOOK
+      type: commissions
+      need: 10
+      coins: 300
+      rep: 40
+      points: 25
+    duel-5:
+      name: 初露锋芒
+      desc: 决斗取得 5 场胜利
+      icon: DIAMOND_SWORD
+      type: duel-wins
+      need: 5
+      coins: 200
+      rep: 30
+      points: 20
+    spirit-1:
+      name: 剑有灵犀
+      desc: 唤醒第一把剑灵
+      icon: SOUL_LANTERN
+      type: spirits
+      need: 1
+      coins: 150
+      rep: 20
+      points: 15
+    tomb-1:
+      name: 入土为安
+      desc: 在剑冢埋下一把剑
+      icon: SKELETON_SKULL
+      type: tombs
+      need: 1
+      coins: 100
+      rep: 15
+      points: 10
+    codex-20:
+      name: 博闻强识
+      desc: 图鉴收录 20 种剑胚×品质组合
+      icon: BOOK
+      type: codex
+      need: 20
+      coins: 250
+      rep: 30
+      points: 25
+    pattern-5:
+      name: 剑谱收藏家
+      desc: 登记 5 本剑谱
+      icon: WRITTEN_BOOK
+      type: patterns
+      need: 5
+      coins: 200
+      rep: 25
+      points: 20
+    legend-1:
+      name: 传世之作
+      desc: 锻出一把传说品质的剑
+      icon: NETHERITE_SWORD
+      type: quality
+      param: LEGENDARY
+      need: 1
+      coins: 400
+      rep: 60
+      points: 40
+      broadcast: true
+    mentor-1:
+      name: 薪火相传
+      desc: 建立师徒关系
+      icon: LECTERN
+      type: mentor
+      need: 1
+      coins: 150
+      rep: 20
+      points: 15
+    achv-10:
+      name: 成就达人
+      desc: 累计达成 10 项成就
+      icon: NETHER_STAR
+      type: achievements
+      need: 10
+      coins: 500
+      rep: 50
+      points: 0
+
+# ============================================================
+#  匠衔段位（v2.0 · B4）
+#  赛季制：段位按依据值划档，只在赛季内升不降；跨季时回落 season-fall 档。
+#  tiers 按 min 升序，min 为依据值的下限。
+# ============================================================
+craft-rank:
+  enabled: true                  # 是否开启匠衔段位
+  basis: reputation              # 划档依据：reputation（声望） / level（专精等级）
+  season-fall: 1                 # 赛季切换时回落几档（0 = 不回落）
+  broadcast: true                # 跨档时是否全服广播
+  tiers:
+    - name: 学徒
+      min: 0
+    - name: 匠人
+      min: 100
+    - name: 宗师
+      min: 300
+    - name: 大匠
+      min: 800
+    - name: 铸剑圣手
+      min: 2000
+
+# ---- 拍卖行（A3）----
+auction:
+  # 是否开启拍卖行
+  enabled: true
+  # 抽成比例：卖家到手 = 成交价 - 成交价 × 抽成（向下取整），抽成部分销毁
+  tax-rate: 0.05
+  # 单件拍品最高价（剑币）
+  max-price: 1000000
+  # 每次加价至少多少剑币
+  min-increment: 10
+  # 挂单默认时长（小时）与最长时长
+  default-hours: 24
+  max-hours: 72
+  # 每人同时挂单上限
+  max-per-player: 5
+  # 挂单手续费（剑币，0 = 免费）
+  listing-fee: 0
+
+# ---- 锻造订单（玩家对玩家委托市场）----
+# /zhujian order（别名 dingdan）：主手拿锻造品做样品发单，悬赏剑币现扣托管；
+# 别人接单做出达标的剑交付，剑走拍卖行邮箱给发单人，悬赏（扣手续费）给接单人。
+order:
+  enabled: true
+  # 同一发单人同时最多的活跃订单数（挂出中 + 已接单）
+  max-active-per-player: 3
+  # 订单多少小时没交付就过期（悬赏退发单人，剑若已收退接单人邮箱）
+  expire-hours: 72
+  # 交付成功给接单人的声望小奖励（与系统委托同款口径）
+  rep-reward: 10
+  # 手续费比例：接单人到手 = 悬赏 - floor(悬赏 × fee-rate)。
+  # 手续费直接销毁（不进任何账户）——这是剑币的回收口，与拍卖行 tax-rate 同语义。
+  fee-rate: 0.05
+  # 单张订单悬赏上限复用上面的 auction.max-price，不在此重复设键。
+
+# ---- 经济：拍卖抽成 ----
+# 成交价扣掉 floor(成交价 × tax-rate) 后给卖家，抽成部分销毁。
+# 商店单价不在这里，看上面 shop.materials（按材料 + 档次定价）。
+
+# ---- 收藏图鉴（拓展第一档）----
+# /zhujian collection|shoucang|tujian 打开。六类收藏：品质 / 剑型 / 评分里程碑 / 圣物 / 词条种类 / 剑灵命名。
+# 品质与评分从 data.yml 的既有统计（by-quality / best-score）推导；圣物直接读龙税契约 run.relics；
+# 词条种类与剑灵命名在「锻造结算 / 重铸出词条 / 剑灵命名」三处登记，进度存 codex-data.yml。
+codex:
+  enabled: true
+  # 每完成一个分类的奖励剑币（rewards 里按分类覆盖）
+  reward-per-category: 500
+  rewards:
+    quality: 600
+    form: 400
+    score: 800
+    relic: 1000
+    affix: 800
+    spirit: 300
+  # 全图鉴收集的额外奖励剑币
+  all-reward: 2000
+  # 全收集称号（GUI 与广播文案用）
+  all-title: "图鉴宗师"
+
+# ============================================================
+#  名剑谱（拓展第二档）
+#  /zhujian spectrum|mingjian|pu 打开。给顶级神兵绑锻造任务线：
+#  条件全部由既有统计与档案推导（StatsStore 统计 / 图鉴 codex / 本模块登记的
+#  剑冢胜场与最高锻阶），不扫描背包。奖励一次性领取，已领记录在 spectrum-data.yml。
+#
+#  条件 DSL（Java 只认下面 5 种 type，写别的永远不满足）：
+#    material         持有（曾锻出）指定材料的剑 —— 读 data.yml 图鉴 codex（材料:品质）
+#    strengthen-level 历史最高强化等级 —— 读 data.yml best-strengthen
+#    evolution-stage  历史最高锻阶（蜕变阶）—— 蜕变成功结算处登记，存 spectrum-data.yml
+#    quality          曾锻出指定品质及以上 —— 读 data.yml by-quality
+#    stat             通用统计键 min 阈值 —— 读 StatsStore 公开档案（forged / commissions /
+#                     duel-wins / tombs / spirits / flawless / reputation / level 等），
+#                     另有 tomb-wins = 剑冢残影胜场（由胜利结算登记）
+# ============================================================
+spectrum:
+  enabled: true
+  # 已解锁特型（weight 0 的剑型）在后续锻造时被抽中的概率
+  special-form-chance: 0.30
+  entries:
+    yuehen:
+      display: "星陨·月痕"
+      icon: NETHERITE_SWORD
+      lore:
+        - "<gray>以星陨之钢，铸一轮弯月。"
+        - "<dark_gray>星陨为骨，蜕变为魂。"
+      conditions:
+        - { type: material, id: starfall }
+        - { type: strengthen-level, min: 40 }
+        - { type: evolution-stage, min: 3 }
+        - { type: quality, id: EPIC }
+      rewards:
+        form: yuehen            # 专属剑型（weight 0，只能从这里解锁）
+        title: "铸月者"
+        coins: 20000
+    qianchui:
+      display: "百炼·千锤"
+      icon: ANVIL
+      lore:
+        - "<gray>五百炉火，锤锤见真章。"
+      conditions:
+        - { type: stat, key: forged, min: 500 }
+      rewards:
+        form: qianchuiwen       # 专属剑型（weight 0，只能从这里解锁）
+        coins: 8000
+    shouzhongren:
+      display: "葬剑·守冢人"
+      icon: SKELETON_SKULL
+      lore:
+        - "<gray>斩下十道残影，剑冢认你为守冢人。"
+      conditions:
+        - { type: stat, key: tomb-wins, min: 10 }
+      rewards:
+        tomb-fee-discount: 0.5  # 剑冢挑战费 5 折
+        coins: 12000
+
+# ------------------------------------------------------------
+# 称号扩展（v2.18.0）：config 驱动解锁 + 手动佩戴，/zhujian title 打开面板
+#   优先级：手动佩戴 > 声望称号（StatsStore.titleOf）；聊天前缀经 %forgemaster_title% 渲染
+#   condition.type 与名剑谱同口径，只认 5 种：
+#     material          —— 曾锻出过某材料的剑（id = 材料 id，读图鉴 codex）
+#     strengthen-level  —— 历史最高强化等级（min）
+#     evolution-stage   —— 历史最高锻阶（min）
+#     quality           —— 曾锻出过某品质（id = 品质名，如 MYTHIC）
+#     stat              —— StatsStore 统计键（key = forged/tombs/spirits/reputation/... ，min = 目标）
+#   解锁状态从档案实时推导（统计只涨不跌），不需要单独落盘；只有「佩戴哪个」存玩家 PDC
+#   注：内置 5 条示例全部用现有统计键落地——行会贡献不在 StatsStore 里，不发明新统计
+# ------------------------------------------------------------
+titles:
+  - id: first-mythic
+    display: "首把神话"
+    color: "#ff3d6e"
+    icon: NETHERITE_SWORD
+    condition: { type: quality, id: MYTHIC, min: 1 }
+  - id: plus-ninety-nine
+    display: "+99 达成"
+    color: "#ffd166"
+    icon: ANVIL
+    condition: { type: strengthen-level, min: 99 }
+  - id: thousand-hammers
+    display: "千锤百炼"
+    color: "#b06bff"
+    icon: IRON_BLOCK
+    condition: { type: stat, key: forged, min: 1000 }
+  - id: tomb-keeper
+    display: "剑冢守墓人"
+    color: "#8d8d8d"
+    icon: SKELETON_SKULL
+    condition: { type: stat, key: tombs, min: 50 }
+  - id: risk-taker
+    display: "险中求胜"
+    color: "#4ee36b"
+    icon: TNT
+    condition: { type: stat, key: risk-made, min: 100 }
+
+# ---- 战力评分（v2.23 切片 5 · D）----
+# power = 基础(品质×材质) × 强化 × 蜕变 × 词条 × 宝石 × 剑灵
+# 所有系数都在这里，改完 /zhujian reload 立刻生效；/zhujian power 可看手持剑的拆解。
+# 默认值只是「能跑起来」的保守初值 —— 路线图 §六 要求等切片 1-3 跑两周、
+# 看清「什么配置的剑真的有人抢」之后再按真实成交校准，别拍脑袋。
+power-score:
+  # 关掉后：/zhujian power 仍可用，但拍卖/订单不再显示推荐价
+  enabled: true
+  base-multiplier: 100.0          # 基础分倍率：品质 power()（粗糙0.5…神话5.0）× 材质加成 × 本值
+  material-per-tier: 0.12         # 材质每高一档，基础分 +12%（档 1 = 无加成）
+  strengthen-per-level: 0.055     # 每强化 +1 级，系数 +5.5%
+  strengthen-cap: 8.0             # 强化系数上限（防 +99 一把压死全服）
+  evolve-per-stage: 1.35          # 每蜕变一阶，系数乘 1.35（复利，蜕变不可逆所以给得比强化高）
+  affix-fallback: 0.06            # 未知词条 id（服主自定义）的默认贡献
+  affix-weights:                  # 按词条 id 定权重；没列到的走 affix-fallback
+    attack: 0.10
+    speed: 0.07
+    armor: 0.09
+    toughness: 0.08
+    crit: 0.12
+    lifesteal: 0.11
+    fire: 0.06
+    armor_plate: 0.10
+    tough_plate: 0.09
+  gem-per-point: 0.004            # 每点宝石数值的系数贡献
+  gem-grade-weight: 0.15          # 宝石品质每高一级，该颗宝石贡献再 +15%
+  enchant-per-level: 0.03         # 附魔孔每级附魔的系数贡献
+  spirit-weight: 0.30             # 灵性饱满时最多 +30%
+  # 推荐价：战力 × 单价（取整到 10 的倍数，低于下限按下限）
+  suggest-price: true
+  price-per-power: 2.5
+  price-min: 100
+  # 评级分界：加档只要在这里新增一段，不用改代码
+  grades:
+    fanpin:   { min: 0,     label: "凡品" }
+    liangpin: { min: 600,   label: "良品" }
+    shangpin: { min: 1400,  label: "上品" }
+    juepin:   { min: 3000,  label: "绝品" }
+    shenpin:  { min: 6000,  label: "神品" }

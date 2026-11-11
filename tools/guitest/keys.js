@@ -1,0 +1,16 @@
+const mineflayer = require('mineflayer')
+const wait = ms => new Promise(r => setTimeout(r, ms))
+;(async () => {
+  const bot = mineflayer.createBot({host:'127.0.0.1',port:25577,username:'TestBot',auth:'offline',version:'1.21.11'})
+  bot.on('error', e => console.log('ERR ' + e.message))
+  await new Promise((r,j)=>{bot.once('spawn',r); setTimeout(()=>j(new Error('timeout')),40000)})
+  await wait(2500)
+  bot.chat('/clear TestBot'); await wait(1000)
+  bot.chat('/item replace entity TestBot weapon.mainhand with iron_sword'); await wait(1500)
+  const it = bot.heldItem
+  console.log('KEYS=' + Object.keys(it || {}).join(','))
+  const raw = JSON.stringify(it)
+  console.log('LEN=' + raw.length)
+  console.log(raw.slice(0, 1200))
+  bot.quit(); setTimeout(()=>process.exit(0),400)
+})().catch(e=>{console.log('FATAL '+e.message); process.exit(1)})

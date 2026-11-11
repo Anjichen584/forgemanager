@@ -1,0 +1,31 @@
+name: ForgingMaster
+version: '${project.version}'
+main: com.forgemaster.ForgingMasterPlugin
+api-version: '1.21'
+# 软依赖：PlaceholderAPI = 占位符桥（反射挂载，没装也不影响）；Vault / CMI = 外部经济后端
+softdepend: [PlaceholderAPI, Vault, CMI]
+authors: [ YG ]
+description: 铸剑大师 v${project.version} —— 七工序锻造、剑币经济、成长、装备宝石、师徒、拍卖与赛季（1.21.11）
+
+commands:
+  zhujian:
+    description: 铸剑大师主命令；使用 /zhujian help 查看全部子命令
+    usage: |-
+      /zhujian help
+      /zhujian <stats|profile|rank|board|duel|manual|contest|shop|auction|master|spirit|tomb|achievements>
+      /zhujian <reload|give|season end|contest start|event|halloffame|backup|restore|selftest>
+    aliases: [ forge, zj, dazhu, zhujianmaster, forgemaster, fm ]
+
+permissions:
+  forgemaster.use:
+    description: 允许使用锻造台及普通玩家功能（委托、比试、商会、拍卖、师徒、成就、排行等）
+    default: true
+  forgemaster.admin:
+    description: 管理权限（重载、发放、他人档案、赛季结算、强开大赛、世界事件、名人堂、备份回档、自检）
+    default: op
+  forgemaster.*:
+    description: 包含全部铸剑大师权限
+    default: op
+    children:
+      forgemaster.use: true
+      forgemaster.admin: true

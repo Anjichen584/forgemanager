@@ -1,0 +1,17 @@
+affix-scaling.tiers.	AffixScaling.java
+anvil-forge.caps.	StrengthenService.java
+anvil-forge.display.pose-version	ConfigMigrations.java
+codex.rewards.	CodexService.java
+config-version	ConfigMigrations.java
+difficulty.	ForgeTuning.java
+dissolve.quality-coeff.	DissolveService.java
+events.types.	EventManager.java
+evolution.stages.	ConfigMigrations.java
+gems.enchant-sockets.tiers.	GemService.java
+gems.merge.chance-	GemService.java
+gems.sockets.tiers.	GemService.java
+power-score.grades.	PowerScore.java
+reforge.cost.quality.	Reforge.java
+shop.blueprints.	ConfigMigrations.java,SelfTestSuite.java
+strengthen.caps.	StrengthenService.java
+tomb.challenge.mobs.	TombChallenge.java

@@ -1,0 +1,43 @@
+# ============================================================
+#  剧情任务链（w8 D5）：章节数据驱动
+#  每章的进度 = 玩家在本章开始之后新增的统计量（不改动委托与锻造代码）
+#    type: commissions  完成委托数
+#    type: forged       锻造成品数
+#  text: 章节完成时推送给玩家的剧情文本（MiniMessage）
+# ============================================================
+
+# 剧情总开关
+enabled: true
+# 后台检查间隔（秒），用于章节进度判定与完成推送
+check-interval-seconds: 10
+
+chapters:
+  - id: ch1
+    title: "第一章 · 落炉"
+    type: forged
+    goal: 1
+    text: "<gray>老铁匠把一块粗胚放到你面前：「先学会让火听话。」</gray>"
+
+  - id: ch2
+    title: "第二章 · 初识委托"
+    type: commissions
+    goal: 2
+    text: "<gray>城里的人开始注意到你的剑。铁匠铺老板递来一封信：「有位城防队长在等你。」</gray>"
+
+  - id: ch3
+    title: "第三章 · 锤声与风雨"
+    type: forged
+    goal: 3
+    text: "<gray>你接连锻出三把剑，火星溅满了围裙。老铁匠点头：「风雨也好，雷声也罢，手要稳。」</gray>"
+
+  - id: ch4
+    title: "第四章 · 拍卖行的邀约"
+    type: commissions
+    goal: 4
+    text: "<gray>拍卖行管事亲自登门：「你的名字已经传到王都，下一把剑，我们要挂上台面。」</gray>"
+
+  - id: ch5
+    title: "第五章 · 铸魂"
+    type: forged
+    goal: 5
+    text: "<gray>古老的铁砧发出低鸣。你终于明白，每一把剑都会记住锻它的人。</gray>"

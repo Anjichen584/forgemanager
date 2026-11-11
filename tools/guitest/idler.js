@@ -1,0 +1,5 @@
+const mineflayer = require('mineflayer')
+const b = mineflayer.createBot({host:'127.0.0.1',port:25577,username:'TestBot',auth:'offline',version:'1.21.11'})
+b.on('spawn', ()=>console.log('JOINED'))
+b.on('error', e=>console.log('ERR '+e.message))
+setTimeout(()=>{b.quit();process.exit(0)}, 90000)
