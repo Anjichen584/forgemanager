@@ -77,12 +77,30 @@ public final class BountyManager {
             claimed.addAll(yml.getStringList("claimed"));
             // 跨天残留的旧键直接丢掉（key 自带日期前缀，留着只会长胖）
             claimed.removeIf(k -> !k.startsWith(day + ":"));
+            // v2.23.4：读回当日列表。解析失败就当没存过（current() 会按日期种子重掷，
+            // 结果是同一份，所以坏行不会让玩家拿到不同的悬赏）。
+            current = new ArrayList<>();
+            for (String row : yml.getStringList("list")) {
+                String[] p = row.split(",");
+                if (p.length != 4) {
+                    continue;
+                }
+                try {
+                    current.add(new Bounty(
+                            Integer.parseInt(p[0].trim()),
+                            Integer.parseInt(p[1].trim()),
+                            Integer.parseInt(p[2].trim()),
+                            Long.parseLong(p[3].trim())));
+                } catch (NumberFormatException ignored) {
+                    // 单行坏了只丢这一行
+                }
+            }
         } catch (RuntimeException ex) {
             plugin.getLogger().warning("悬赏存档读取失败，按空处理：" + ex.getMessage());
         }
     }
 
-    /** 同步落盘：日期 + 已领名单。只在「换日」与「领赏」两个低频点调用 */
+    /** 同步落盘：日期 + 已领名单 + **当日悬赏列表本身**。只在「换日」与「领赏」两个低频点调用 */
     private void save() {
         try {
             if (!plugin.getDataFolder().exists()) {
@@ -91,6 +109,15 @@ public final class BountyManager {
             var yml = new org.bukkit.configuration.file.YamlConfiguration();
             yml.set("day", day);
             yml.set("claimed", new java.util.ArrayList<>(claimed));
+            // v2.23.4：列表也要落盘。只存 day 不存列表的话，重启后 current 是空的，
+            // 而日期又对得上，就会一直空到第二天（见 current() 的注释）。
+            // 每条存成 "quality,level,stage,reward" —— 不引入新的序列化机制，
+            // 与 claimed 用的字符串列表保持同一种风格。
+            java.util.List<String> rows = new java.util.ArrayList<>();
+            for (Bounty b : current) {
+                rows.add(b.minQuality() + "," + b.minLevel() + "," + b.minStage() + "," + b.reward());
+            }
+            yml.set("list", rows);
             yml.save(file);
         } catch (java.io.IOException ex) {
             plugin.getLogger().warning("悬赏存档保存失败：" + ex.getMessage());
@@ -107,11 +134,18 @@ public final class BountyManager {
             return List.of();
         }
         long today = worldDay();
-        if (today != day) {
+        // v2.23.4 修 P1：**别忘了 current 是懒生成的**。
+        // 原来这里的条件只有 `today != day`，于是出现一个很直接的线上事故：
+        //   · 早上服务器滚过一次悬赏，day = 今天，save() 只把 day 和 claimed 落盘；
+        //   · 重启后 load() 读回 day = 今天，但 current 是空的（列表从来没被持久化）；
+        //   · today == day → 不重掷 → 玩家看到「今日悬赏：无」，一直空到第二天零点。
+        // 所以「日期对但列表是空的」也必须重掷。重掷是确定性的（种子 = 日期），
+        // 同一天重新掷出来的一定是同一份，不会让玩家刷悬赏内容。
+        if (today != day || current.isEmpty()) {
             day = today;
             claimed.clear();
             current = roll(today);
-            save(); // 换日也算状态变更：把新日期与清空后的名单落盘
+            save(); // 换日 / 补列表都算状态变更：把新日期与清空后的名单落盘
         }
         return current;
     }

@@ -329,14 +329,20 @@ public final class SelfTestRegression231 {
 
         suite.addExternal(g, "伤害预算：单次伤害上限夹在暴击之后", () -> {
             // 关键顺序：先暴击再封顶。反过来写的话暴击能把数字顶穿，上限等于没管。
+            //
+            // 注意这里的上限取 40 而不是 60：raw = playerBase(1) + attr(22) = 23，
+            // 暴击倍率被 critLimits 夹在 base 1.5 + maxDamage 1.10 = 2.6，
+            // 于是 critHit 最大只能是 23 × 2.6 = 59.8 —— **结构上永远到不了 60**。
+            // 原来写 60 的期望值是错的，测的根本不是封顶路径（59.8 原样通过）。
+            // 取 40 才能真的把 59.8 夹下来，这条断言才测到它该测的东西。
             var budget = new com.forgemaster.combat.DamageBudget.Limits(
-                    22.0, 60.0, 0.20, 2.0, 0.10);
+                    22.0, 40.0, 0.20, 2.0, 0.10);
             var critLimits = new com.forgemaster.combat.Crit.Limits(0.50, 1.10, 1.5);
             var r = com.forgemaster.combat.DamageBudget.simulateHit(
                     73.0, 1.0, 1.0, 5.0, 1.0, 20.0, critLimits, budget);
             require(Math.abs(r.attribute() - 22.0) < 1e-9, "属性应先被夹到 22，实际 " + r.attribute());
-            require(r.critHit() > r.finalHit() - 1e-9, "暴击后应当超过上限（否则测的就不是封顶路径）");
-            require(Math.abs(r.finalHit() - 60.0) < 1e-9, "最终伤害应被夹到 60，实际 " + r.finalHit());
+            require(r.critHit() > 40.0, "暴击后应当超过上限（否则测的不是封顶路径），实际 " + r.critHit());
+            require(Math.abs(r.finalHit() - 40.0) < 1e-9, "最终伤害应被夹到 40，实际 " + r.finalHit());
             require(r.capped(), "应当标记 capped=true");
         });
 
@@ -859,8 +865,15 @@ public final class SelfTestRegression231 {
             var dirty = com.forgemaster.enchant.EnchantEffects.parse(reg,
                     "no_such:5|splinter:999|::|splinter:-2|garbage|splinter:2");
             require(dirty.size() == 1, "脏数据里只有合法的 splinter 该留下来，实际 " + dirty.size());
-            require(dirty.get(0).level() == 2,
-                    "同 id 多次出现应取最高等级且夹进范围，实际 " + dirty.get(0).level());
+            // splinter:999 先被夹到 maxLevel（5），再和 splinter:2 取最高 → 5。
+            // 这里断言的是「夹进范围」与「取最高」两件事都做了：
+            // 如果没夹，999 会留下来（超上限的附魔 = 数值爆炸）；如果没取最高，会是 2。
+            require(dirty.get(0).level() == 5,
+                    "999 应被夹到 maxLevel=5 并压过 splinter:2，实际 " + dirty.get(0).level());
+            // 单独验证「只有 splinter:2」时不会被别的脏数据带跑
+            var onlyTwo = com.forgemaster.enchant.EnchantEffects.parse(reg, "garbage|splinter:2|::");
+            require(onlyTwo.size() == 1 && onlyTwo.get(0).level() == 2,
+                    "合法的那条应原样保留为 2");
             require(com.forgemaster.enchant.EnchantEffects.encode(java.util.List.of()) == null,
                     "空列表必须编码成 null（调用方据此 remove 键）");
         });
@@ -901,6 +914,39 @@ public final class SelfTestRegression231 {
             require(!com.forgemaster.enchant.EnchantItem.isBook(new ItemStack(Material.ENCHANTED_BOOK)),
                     "原版附魔书不能被当成本插件的书");
             require(book.getType() == Material.ENCHANTED_BOOK, "书必须是 ENCHANTED_BOOK");
+        });
+
+        suite.addExternal(e, "老物品首次强化必须真的涨属性（v2.23.4 修 P1）", () -> {
+            // 真机复现出来的 bug：2.4 之前铸出来的武器没有 BASE_ATK 快照。
+            // baseOf 拿 modifier ÷ 新倍率求 base，applyInternal 再 × 新倍率写回 ——
+            // 一除一乘正好抵消，玩家锤了一锤，面板数字一动不动（材料剑币照扣）。
+            var sword = makeForged("selftest", com.forgemaster.quality.Quality.COMMON);
+            require(sword != null, "造不出锻造品");
+            var meta = sword.getItemMeta();
+            require(meta != null, "取不到 ItemMeta");
+            // 模拟老物品：摘掉基础属性快照
+            meta.getPersistentDataContainer().remove(com.forgemaster.util.Keys.BASE_ATK);
+            sword.setItemMeta(meta);
+
+            double before = attackOf(sword);
+            require(before > 0, "锻造品应带攻击属性，实际 " + before);
+            require(plugin.strengthen().setLevel(sword, 1), "setLevel(1) 应当成功");
+            double after = attackOf(sword);
+            require(after > before,
+                    "老物品首次强化属性没涨：" + before + " → " + after
+                            + "（baseOf 的除以倍率 + 乘回倍率把增益抵消了）");
+            // 涨的幅度必须和配置的每级加成对得上，不能靠「碰巧涨了」
+            double expect = before * (1.0 + plugin.strengthen().bonusRatio(1));
+            require(Math.abs(after - expect) < 0.05,
+                    "涨的幅度不对：期望 " + expect + "，实际 " + after);
+            // 而且快照必须被补上，否则第二次强化还会丢
+            var after2 = sword.getItemMeta();
+            require(after2 != null && after2.getPersistentDataContainer()
+                            .has(com.forgemaster.util.Keys.BASE_ATK, org.bukkit.persistence.PersistentDataType.DOUBLE),
+                    "强化后必须补写 BASE_ATK 快照，否则下次强化继续丢增益");
+            // 第二次强化也要涨（证明快照生效，而不是只修了第一次）
+            plugin.strengthen().setLevel(sword, 2);
+            require(attackOf(sword) > after, "第二次强化又没涨：" + after + " → " + attackOf(sword));
         });
 
         suite.addExternal(e, "部位匹配：武器机制上不了护甲", () -> {

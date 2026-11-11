@@ -4109,18 +4109,41 @@ public final class SelfTestSuite {
         });
 
         add(g, "基础属性快照优先于当前配置", () -> {
-            ItemStack sword = sampleSword();
-            require(sword != null, "造不出铁剑");
-            double before = baseAttackOf(sword);
-            var meta = sword.getItemMeta();
-            require(meta != null, "取不到 ItemMeta");
-            // 篡改快照，模拟「当年用的是另一套配置」
-            meta.getPersistentDataContainer().set(Keys.BASE_ATK, PersistentDataType.DOUBLE, before * 2);
-            sword.setItemMeta(meta);
-            plugin.strengthen().setLevel(sword, 1);
-            double after = baseAttackOf(sword);
-            require(Math.abs(after - before * 2 * 1.02) < 0.05,
-                    "没有按快照放大，实际 " + after);
+            // v2.23.4 重写这条断言：它原来期望「快照写多少就放大到多少」，
+            // 但 clampBase 有一个**故意的**天花板 —— fallback × strengthen.base-tolerance
+            // （默认 1.0，即严格等于配置值），用来把历史膨胀的老剑收敛回来。
+            // 所以「快照无上限生效」和「反膨胀」这两个设计本来就冲突，老断言必然是红的。
+            // 真正该测的是两件事，分别对应 clampBase 的两种语义：
+            //   ① 快照低于天花板 → 照快照走（快照优先）；
+            //   ② 快照高于天花板 → 压回天花板（反膨胀）。
+            double mult = 1.0 + plugin.strengthen().bonusRatio(1);
+
+            // ① 快照 = 一半 → 应当按一半放大
+            ItemStack low = sampleSword();
+            require(low != null, "造不出铁剑");
+            double baseLow = baseAttackOf(low);
+            require(baseLow > 0, "铁剑没有基础攻击");
+            var lowMeta = low.getItemMeta();
+            require(lowMeta != null, "取不到 ItemMeta");
+            lowMeta.getPersistentDataContainer().set(Keys.BASE_ATK, PersistentDataType.DOUBLE, baseLow * 0.5);
+            low.setItemMeta(lowMeta);
+            plugin.strengthen().setLevel(low, 1);
+            double afterLow = baseAttackOf(low);
+            require(Math.abs(afterLow - baseLow * 0.5 * mult) < 0.05,
+                    "低于天花板的快照应当照用：期望 " + (baseLow * 0.5 * mult) + "，实际 " + afterLow);
+
+            // ② 快照 = 两倍 → 必须被压回配置算出的天花板，不能顺着膨胀
+            ItemStack high = sampleSword();
+            require(high != null, "造不出铁剑");
+            double baseHigh = baseAttackOf(high);
+            var highMeta = high.getItemMeta();
+            require(highMeta != null, "取不到 ItemMeta");
+            highMeta.getPersistentDataContainer().set(Keys.BASE_ATK, PersistentDataType.DOUBLE, baseHigh * 2);
+            high.setItemMeta(highMeta);
+            plugin.strengthen().setLevel(high, 1);
+            double afterHigh = baseAttackOf(high);
+            require(afterHigh <= baseHigh * mult + 0.05,
+                    "虚高快照必须被收敛回天花板 " + (baseHigh * mult) + "，实际 " + afterHigh);
         });
 
         add(g, "材料配置丢失时拒绝强化（不白扣剑币）", () -> {

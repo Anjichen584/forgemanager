@@ -167,7 +167,7 @@ public final class ItemFactory {
             // 装备：armor.tiers 是「整套总量」，按部位拆下来就是这件东西的<b>绝对值</b>，
             // 语义上本来就该顶掉原版条目（铁胸 COMMON = 6.0×0.8 = 4.8 点护甲）。
             // 所以这里不搬原版基数，靠 fm_armor_<部位> 单独撑起护甲值。
-            double bonusArmor = round(mat.bonusArmor() * q.power());
+            double bonusArmor = roundStat(mat.bonusArmor() * q.power());
             if (bonusArmor != 0) {
                 meta.addAttributeModifier(Attribute.ARMOR, new AttributeModifier(
                         new NamespacedKey(plugin, com.forgemaster.util.Attrs.armorKey(mat.slot())),
@@ -175,7 +175,7 @@ public final class ItemFactory {
                         AttributeModifier.Operation.ADD_NUMBER,
                         group));
             }
-            double tough = round(mat.armorToughness() * q.power());
+            double tough = roundStat(mat.armorToughness() * q.power());
             if (tough != 0) {
                 meta.addAttributeModifier(Attribute.ARMOR_TOUGHNESS, new AttributeModifier(
                         new NamespacedKey(plugin, com.forgemaster.util.Attrs.toughKey(mat.slot())),
@@ -190,7 +190,7 @@ public final class ItemFactory {
             // 剑芯 +1.12 会变成总伤（比木剑还低），攻速从 1.67 飙到 4.07。
             com.forgemaster.util.Attrs.keepVanilla(item, meta,
                     Attribute.ATTACK_DAMAGE, Attribute.ATTACK_SPEED);
-            double attack = round(mat.bonusAttack() * q.power());
+            double attack = roundStat(mat.bonusAttack() * q.power());
             if (attack != 0) {
                 meta.addAttributeModifier(Attribute.ATTACK_DAMAGE, new AttributeModifier(
                         new NamespacedKey(plugin, "fm_atk"),
@@ -198,7 +198,7 @@ public final class ItemFactory {
                         AttributeModifier.Operation.ADD_NUMBER,
                         group));
             }
-            double speed = round(mat.bonusSpeed() * q.power());
+            double speed = roundStat(mat.bonusSpeed() * q.power());
             if (speed != 0) {
                 meta.addAttributeModifier(Attribute.ATTACK_SPEED, new AttributeModifier(
                         new NamespacedKey(plugin, "fm_speed"),
@@ -300,11 +300,11 @@ public final class ItemFactory {
         pdc.set(Keys.STRENGTHEN_CAP, PersistentDataType.INTEGER, strengthenCap);
         // 基础属性快照：强化只按这份放大，服主之后改 materials.* 不会追溯已铸成的剑
         if (armor) {
-            pdc.set(Keys.BASE_ARMOR, PersistentDataType.DOUBLE, round(mat.bonusArmor() * q.power()));
-            pdc.set(Keys.BASE_TOUGH, PersistentDataType.DOUBLE, round(mat.armorToughness() * q.power()));
+            pdc.set(Keys.BASE_ARMOR, PersistentDataType.DOUBLE, roundStat(mat.bonusArmor() * q.power()));
+            pdc.set(Keys.BASE_TOUGH, PersistentDataType.DOUBLE, roundStat(mat.armorToughness() * q.power()));
         } else {
-            pdc.set(Keys.BASE_ATK, PersistentDataType.DOUBLE, round(mat.bonusAttack() * q.power()));
-            pdc.set(Keys.BASE_SPEED, PersistentDataType.DOUBLE, round(mat.bonusSpeed() * q.power()));
+            pdc.set(Keys.BASE_ATK, PersistentDataType.DOUBLE, roundStat(mat.bonusAttack() * q.power()));
+            pdc.set(Keys.BASE_SPEED, PersistentDataType.DOUBLE, roundStat(mat.bonusSpeed() * q.power()));
         }
 
         if (q.ordinal() >= Quality.LEGENDARY.ordinal()) {
@@ -736,5 +736,18 @@ public final class ItemFactory {
 
     private static double round(double v) {
         return Math.round(v * 100.0) / 100.0;
+    }
+
+    /**
+     * 基础属性**数值**的精度（v2.23.4）：4 位小数。
+     *
+     * <p>必须与 {@code StrengthenService#roundStat} 一致。创建时写 2 位、强化时按 4 位重算，
+     * 会让第一次 {@code apply()} 把 1.71 校正成 1.708 —— 玩家看到的是「我什么都没做，属性变了」，
+     * 自检看到的则是「反复 apply 不幂等」。两边同精度，反复 apply 才真正一动不动。</p>
+     *
+     * <p>显示仍然走 {@link #round(double)}（2 位）：面板不需要给玩家看 1.1267。</p>
+     */
+    private static double roundStat(double v) {
+        return Math.round(v * 10000.0) / 10000.0;
     }
 }

@@ -601,7 +601,7 @@ public final class ForgingMasterPlugin extends JavaPlugin {
             "legacy-repair.on-join", "legacy-repair.on-join-delay-ticks", "legacy-repair.notify-player",
             // v2.23.2：原创附魔台（只校验骨架键；defs.* 缺了会回落到代码里的默认定义）
             "enchant.cost.base-coin", "enchant.cost.coin-per-level", "enchant.cost.ore-per-level",
-            "enchant.max-per-item", "enchant.guard.enabled", "enchant.caps.max-damage-bonus",
+            "enchant.max-per-item", "enchant.guard.enabled", "enchant.caps.max-splash-ratio",
             // v2.20 剑体成长曲线：砧上剑身大小读这几个键，缺了走默认值不影响运行
             // （v2.22.1：手上悬浮剑 / 护甲体型放大已移除，offset-* 与 player-scale 键下线）
             "strengthen.big-sword.enabled",

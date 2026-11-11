@@ -1421,8 +1421,83 @@ public final class StrengthenService {
         if (cap <= 0) {
             return false;
         }
-        writeLevel(item, Math.max(0, Math.min(cap, level)), cap);
+        int target = Math.max(0, Math.min(cap, level));
+        // v2.23.4 修 P1：**必须在改等级之前**把老物品的基础属性快照锁下来。
+        // 顺序反了就出事：writeLevel 先写新等级 → applyInternal 用新倍率
+        // 把 modifier 除回去求 base（base = modifier / mult_new），再乘 mult_new 写回，
+        // 一除一乘正好抵消 → 这次强化在面板上完全看不见，玩家以为吞材料吞剑币。
+        // 用旧等级对应的倍率来还原，才能得到真正的基础值（老物品旧等级 0 → 倍率 1 → 原值）。
+        seedSnapshot(item, levelOf(item));
+        writeLevel(item, target, cap);
         apply(item);
+        return true;
+    }
+
+    /**
+     * 老物品（2.4 之前铸出来的，没有 {@code BASE_ATK} / {@code BASE_ARMOR} 快照）补写快照。
+     *
+     * <p>取值口径：<b>当前 modifier ÷ 当前等级对应的倍率</b>。
+     * 调用方必须在「等级还没改」或「等级不会改」时调用，否则拿到的 base 是错的 ——
+     * 这正是 {@link #setLevel} 把它放在 {@code writeLevel} 之前的原因。</p>
+     *
+     * <p>已经有快照的物品直接跳过：服主可能手工校正过，绝不能覆盖。</p>
+     *
+     * @param level 这件物品**当前**的锻造等级（不是目标等级）
+     */
+    private void seedSnapshot(ItemStack item, int level) {
+        if (item == null || level < 0) {
+            return;
+        }
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null) {
+            return;
+        }
+        ForgeMaterial mat = materialOf(item);
+        Quality q = qualityOf(item);
+        if (mat == null || q == null) {
+            return;
+        }
+        PersistentDataContainer pdc = meta.getPersistentDataContainer();
+        double evoMult = 1.0;
+        com.forgemaster.evolve.EvolutionService evo = plugin.evolutions();
+        if (evo != null) {
+            int stage = evo.stageOf(item);
+            if (stage > 0) {
+                evoMult = evo.registry().cumulativeMult(stage);
+            }
+        }
+        double mult = (1.0 + bonusRatio(level)) * evoMult;
+        boolean changed = false;
+        if (mat.armor()) {
+            String keyArmor = com.forgemaster.util.Attrs.armorKey(mat.slot());
+            String keyTough = com.forgemaster.util.Attrs.toughKey(mat.slot());
+            changed |= seedOne(meta, Keys.BASE_ARMOR, Attribute.ARMOR, keyArmor, mult);
+            changed |= seedOne(meta, Keys.BASE_TOUGH, Attribute.ARMOR_TOUGHNESS, keyTough, mult);
+        } else {
+            changed |= seedOne(meta, Keys.BASE_ATK, Attribute.ATTACK_DAMAGE, KEY_ATK, mult);
+            changed |= seedOne(meta, Keys.BASE_SPEED, Attribute.ATTACK_SPEED, KEY_SPEED, mult);
+        }
+        if (changed) {
+            item.setItemMeta(meta);
+        }
+    }
+
+    /** 补写一个快照键；已有/推导不出时返回 false（表示没动过 meta） */
+    private boolean seedOne(ItemMeta meta, NamespacedKey snapshotKey,
+                            Attribute attribute, String modifierKey, double mult) {
+        PersistentDataContainer pdc = meta.getPersistentDataContainer();
+        if (pdc.has(snapshotKey, PersistentDataType.DOUBLE)) {
+            return false;
+        }
+        Double onItem = modifierAmount(meta, attribute, modifierKey);
+        if (onItem == null || onItem <= 0) {
+            return false;
+        }
+        double base = onItem / Math.max(1.0e-6, Math.abs(mult));
+        if (base <= 0) {
+            return false;
+        }
+        pdc.set(snapshotKey, PersistentDataType.DOUBLE, roundStat(base));
         return true;
     }
 
@@ -1920,6 +1995,10 @@ public final class StrengthenService {
      * 词条与宝石挂的同类属性原样保留。</p>
      */
     public void apply(ItemStack item) {
+        // v2.23.4 修 P1：进重算之前先把「缺快照的老物品」补上基础属性快照。
+        // 不补的话 baseOf 会拿当前 modifier 除以当前倍率、applyInternal 再乘回去，
+        // 除法再乘法 = 乘 1，老物品第一次强化属性一点不涨（服主的原话是「强化白做了」）。
+        seedSnapshot(item, levelOf(item));
         applyInternal(item, true);
     }
 
@@ -1987,19 +2066,19 @@ public final class StrengthenService {
                     mat.bonusArmor() * q.power(), mult);
             double baseTough = baseOf(meta, Keys.BASE_TOUGH, Attribute.ARMOR_TOUGHNESS, keyTough,
                     mat.armorToughness() * q.power(), mult);
-            replace(meta, Attribute.ARMOR, keyArmor, round(baseArmor * mult), group);
-            replace(meta, Attribute.ARMOR_TOUGHNESS, keyTough, round(baseTough * mult), group);
-            pdc.set(Keys.BASE_ARMOR, PersistentDataType.DOUBLE, round(baseArmor));
-            pdc.set(Keys.BASE_TOUGH, PersistentDataType.DOUBLE, round(baseTough));
+            replace(meta, Attribute.ARMOR, keyArmor, roundStat(baseArmor * mult), group);
+            replace(meta, Attribute.ARMOR_TOUGHNESS, keyTough, roundStat(baseTough * mult), group);
+            pdc.set(Keys.BASE_ARMOR, PersistentDataType.DOUBLE, roundStat(baseArmor));
+            pdc.set(Keys.BASE_TOUGH, PersistentDataType.DOUBLE, roundStat(baseTough));
         } else {
             double baseAtk = baseOf(meta, Keys.BASE_ATK, Attribute.ATTACK_DAMAGE, KEY_ATK,
                     mat.bonusAttack() * q.power(), mult);
             double baseSpeed = baseOf(meta, Keys.BASE_SPEED, Attribute.ATTACK_SPEED, KEY_SPEED,
                     mat.bonusSpeed() * q.power(), mult);
             replace(meta, Attribute.ATTACK_DAMAGE, KEY_ATK, budgetAttack(baseAtk * mult), group);
-            replace(meta, Attribute.ATTACK_SPEED, KEY_SPEED, round(baseSpeed * mult), group);
-            pdc.set(Keys.BASE_ATK, PersistentDataType.DOUBLE, round(baseAtk));
-            pdc.set(Keys.BASE_SPEED, PersistentDataType.DOUBLE, round(baseSpeed));
+            replace(meta, Attribute.ATTACK_SPEED, KEY_SPEED, roundStat(baseSpeed * mult), group);
+            pdc.set(Keys.BASE_ATK, PersistentDataType.DOUBLE, roundStat(baseAtk));
+            pdc.set(Keys.BASE_SPEED, PersistentDataType.DOUBLE, roundStat(baseSpeed));
         }
         com.forgemaster.util.Attrs.apply(item, meta);
         if (rewriteLore) {
@@ -2146,8 +2225,8 @@ public final class StrengthenService {
      */
     private double budgetAttack(double value) {
         // 走 DamageBudget 的统一口径，不在强化侧另写一份 22.0
-        return round(com.forgemaster.combat.DamageBudget.clampAttack(
-                round(value), com.forgemaster.combat.DamageBudget.Limits.fromConfig(plugin.getConfig())));
+        return roundStat(com.forgemaster.combat.DamageBudget.clampAttack(
+                roundStat(value), com.forgemaster.combat.DamageBudget.Limits.fromConfig(plugin.getConfig())));
     }
 
     /** 精确替换某个基础属性 modifier，词条加的同类属性不受影响 */
@@ -2374,5 +2453,20 @@ public final class StrengthenService {
 
     private static double round(double v) {
         return Math.round(v * 100.0) / 100.0;
+    }
+
+    /**
+     * 属性**累加**用的精度（v2.23.4 修 P1）：4 位小数，不是 2 位。
+     *
+     * <h2>为什么必须比显示精度高</h2>
+     * 默认 {@code bonus-per-level} 是 0.006（每级 +0.6%）。对一把基础攻击 1.12 的剑，
+     * 一级只加 0.0067 —— <b>在 2 位小数下直接被舍掉</b>，于是玩家锤完发现数字一动不动，
+     * 而材料与剑币照扣。这不是「数值太小」，是**精度不够**。
+     *
+     * <p>Panel 显示仍然取 2 位（玩家不需要看 1.1267），但 PDC 快照与 modifier 必须留足精度，
+     * 否则每级都在舍入、连锤十级还是原地踏步。</p>
+     */
+    private static double roundStat(double v) {
+        return Math.round(v * 10000.0) / 10000.0;
     }
 }
