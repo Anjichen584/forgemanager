@@ -69,3 +69,8 @@ selftest-stage2.txt
 selftest-stage*.txt
 RESULT-selftest-*.txt
 .agents/_current
+
+# 压测/探针产物（只留脚本，结论写进 docs/dev/build.md）
+tools/guitest/netprobe-report.json
+tools/guitest/join-probe-*.json
+tools/guitest/concurrent4-report.json

@@ -13,7 +13,6 @@
 const fs = require('fs')
 const path = require('path')
 const net = require('net')
-const mineflayer = require('mineflayer')
 const { wait } = require('./common')
 
 const HOST = '127.0.0.1'
@@ -29,9 +28,12 @@ const LOG = path.join(SERVER, 'logs', 'latest.log')
 //   JOIN_ONLY=1        只连不测：上线后空转 20 秒就出报告，专门量「连接成功率与耗时」
 // 为什么要能改：4 是**回归门**，必须每次都过；5 是**探针**，只用来回答「上限在哪」，
 // 不能反过来让探针的不稳把回归门搞红。
-const BOT_COUNT = Math.max(1, Math.min(8, parseInt(process.env.BOT_COUNT || '4', 10) || 4))
+const BOT_COUNT = Math.max(1, Math.min(48, parseInt(process.env.BOT_COUNT || '4', 10) || 4))
 const JOIN_ONLY = process.env.JOIN_ONLY === '1'
-const BOTS = Array.from({ length: BOT_COUNT }, (_, i) => 'Conc' + String.fromCharCode(65 + i))
+// 名字不能再用 String.fromCharCode(65+i)：超过 26 个会变成 `Conc[`、`Conc\`、`Conc]`，
+// 而 Minecraft 用户名只允许 [a-zA-Z0-9_]，这些名字服务端直接拒（还报不出好懂的错）。
+// 改成 Conc01..Conc48，固定三位、可排序、一眼能看出是第几个。
+const BOTS = Array.from({ length: BOT_COUNT }, (_, i) => 'Conc' + String(i + 1).padStart(2, '0'))
 
 // ---------------------------------------------------------------- RCON
 function rconClient () {
@@ -126,37 +128,6 @@ async function setCoins (name, amount) {
 // 看起来像并发面有缺陷。现在单独计数，并做退避重连。
 const throttle = { events: 0, retries: 0, details: [] }
 
-function looksThrottled (msg) {
-  const s = String(msg || '').toLowerCase()
-  return s.includes('429') || s.includes('too many') || s.includes('throttl')
-      || s.includes('connection reset') || s.includes('timed out')
-}
-
-function join (name) {
-  const bot = mineflayer.createBot({ host: HOST, port: PORT, username: name, auth: 'offline', version: VERSION })
-  bot.chatLog = []
-  bot.on('message', m => {
-    const s = m.toString()
-    if (s.trim()) bot.chatLog.push(s.replace(/\u00a7./g, ''))
-    if (bot.chatLog.length > 400) bot.chatLog.splice(0, bot.chatLog.length - 400)
-  })
-  bot.on('error', e => {
-    if (looksThrottled(e.message)) {
-      throttle.events++
-      throttle.details.push(`${name}: ${e.message}`)
-    }
-    console.log(`  [${name}] error ${e.message}`)
-  })
-  bot.on('kicked', r => {
-    const s = JSON.stringify(r)
-    if (looksThrottled(s)) {
-      throttle.events++
-      throttle.details.push(`${name}: kicked ${s.slice(0, 160)}`)
-    }
-    console.log(`  [${name}] kicked ${s.slice(0, 200)}`)
-  })
-  return bot
-}
 
 const sp = (name, bot, ms = 20000) => new Promise((resolve, reject) => {
   let done = false
@@ -171,34 +142,52 @@ const sp = (name, bot, ms = 20000) => new Promise((resolve, reject) => {
 })
 
 /**
- * 带退避的上线。429/throttle 之后固定 sleep 是错的做法：
- * 节流窗口通常是**服务端按时间段放行**，固定等待容易反复撞同一堵墙；
- * 指数退避 + 抖动能把并发重连拆开，成功率显著更高。
+ * 带退避的上线（v2.25.7 起交给 connpool 统一处理）。
+ *
+ * 之前是自己写一份退避，问题在于它**分不清失败原因**：
+ * `server_full`（max-players 满了）被当成限流去重试 4 轮，白等还把真原因埋掉。
+ * 现在用 connpool 的分类：
+ *   硬性拒绝（server_full/白名单/封禁）→ 立刻报错，不重试
+ *   同 IP 节流 / 429 → 换代理（若配了 proxies.txt）+ 指数退避
+ *   网络抖动 → 同出口退避重试
  */
-async function joinWithRetry (name, attempts = 4) {
-  let waitMs = 1500
-  for (let i = 0; i < attempts; i++) {
-    const bot = join(name)
-    try {
-      await sp(name, bot, i === 0 ? 40000 : 25000)
-      return bot
-    } catch (e) {
-      try { bot.quit() } catch (_) {}
-      // server_full / 白名单 / 封禁 这类是**硬性拒绝**，重试只会一直撞同一堵墙，必须立刻报清楚。
-      // 区分开很重要：把硬限当成 429 去重试，会白等 4 轮然后把真原因埋掉。
-      if (/server_full|whitelist|banned|not allowed/i.test(e.message)) {
-        throw new Error(`${name} 被服务端硬性拒绝（${e.message}）——`
-            + ` 这通常是 max-players 满了或不在白名单，不是 429，调 BOT_COUNT 或改 server.properties`)
-      }
-      if (looksThrottled(e.message)) { throttle.events++ }
-      if (i === attempts - 1) throw e
-      throttle.retries++
-      const jitter = Math.floor(Math.random() * 800)
-      console.log(`  [${name}] 第 ${i + 1} 次上线失败（${e.message}），${waitMs + jitter}ms 后重试`)
-      await wait(waitMs + jitter)
-      waitMs = Math.min(waitMs * 2, 12000)
-    }
+const { ConnPool, explain, classify } = require('./connpool')
+
+const pool = new ConnPool({
+  host: HOST,
+  port: PORT,
+  version: VERSION,
+  // 离线服（online-mode=false）不产生 Mojang 429；这里跟着服务端口径走
+  onlineMode: process.env.FM_ONLINE === '1',
+  joinsPerSec: parseFloat(process.env.JOIN_RATE || '4'),
+  burst: parseInt(process.env.JOIN_BURST || '6', 10),
+  maxAttempts: parseInt(process.env.JOIN_ATTEMPTS || '5', 10)
+})
+
+async function joinWithRetry (name) {
+  const bot = await pool.acquire(name)
+  if (!bot) {
+    throw new Error(`${name} 上线失败：${pool.proxies.length
+      ? '已尝试全部出口'
+      : '没有配置代理，无法换出口（放到 tools/guitest/proxies.txt 或设 PROXIES 环境变量）'}`)
   }
+  bot.chatLog = []
+  bot.on('message', m => {
+    const s = m.toString()
+    if (s.trim()) bot.chatLog.push(s.replace(/\u00a7./g, ''))
+    if (bot.chatLog.length > 400) bot.chatLog.splice(0, bot.chatLog.length - 400)
+  })
+  // spawn 之后的连接错误也要能被看见（原代码只在 join() 里挂，pool 托管的 bot 得补回来）
+  bot.on('error', e => {
+    if (classify(e.message) !== 'unknown') throttle.details.push(`${name}: ${e.message}`)
+    console.log(`  [${name}] error ${e.message}`)
+  })
+  bot.on('kicked', r => {
+    const s = JSON.stringify(r)
+    console.log(`  [${name}] kicked ${s.slice(0, 200)}`)
+    if (classify(s) !== 'unknown') throttle.events++
+  })
+  return bot
 }
 
 // ⚠ 别用 bot.chat 连发同一 tick：mineflayer 每条 chat 是一次 chat_command 包，
@@ -458,10 +447,17 @@ phases.guild = async (bots) => {
 phases.anvil = async (bots) => {
   const area = '铁砧并发'
   await rc('gamerule keepInventory true')
-  // 出生点是建筑区，砧常常放进墙里（bot 会 suffocated in a wall，读回来也不是 anvil）。
-  // 干脆在固定高空造一块 13×13 平台，四个人站上去，砧位必然是空气。
-  const BX = 100, BY = 150, BZ = 100
-  await rc(`minecraft:fill ${BX - 6} ${BY - 1} ${BZ - 6} ${BX + 14} ${BY - 1} ${BZ + 8} minecraft:stone`)
+    // 出生点是建筑区，砧常常放进墙里（bot 会 suffocated in a wall，读回来也不是 anvil）。
+    // 干脆在固定高空造一块平台，bot 站上去，砧位必然是空气。
+    //
+    // v2.25.7：平台尺寸原来是**写死的 4 人份**（fill 到 BX+14）。并发提到 8 之后，
+    // 第 6~8 个 bot 站在 BX+15 以外 = 悬空、直接掉下去，块跟着卸载，blockAt 读回 null，
+    // 于是报「砧位没放成」。那不是插件的锅，是测试装置把自己的地盘算小了。
+    // 现在按实际人数算：每人横占 3 格，右侧再留 6 格余量，脚下兜两层防摔。
+    const BX = 100, BY = 150, BZ = 100
+    const spanRight = BX + (bots.length - 1) * 3 + 6
+    await rc(`minecraft:fill ${BX - 6} ${BY - 1} ${BZ - 6} ${spanRight} ${BY - 1} ${BZ + 8} minecraft:stone`)
+    await rc(`minecraft:fill ${BX - 6} ${BY - 4} ${BZ - 6} ${spanRight} ${BY - 1} ${BZ + 8} minecraft:stone`)
   await wait(400)
   for (let i = 0; i < bots.length; i++) {
     await rc(`minecraft:tp ${bots[i].username} ${BX + i * 3} ${BY} ${BZ}`)

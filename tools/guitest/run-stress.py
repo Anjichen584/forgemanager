@@ -4,7 +4,7 @@
 做四件事：
   1. 测试服没在跑就起它（paper.jar，日志到 testserver/_stress-server.log），等 "Done ("
   2. 部署 target/ 下最新的 ForgingMaster-*.jar（--no-deploy 可跳过）
-  3. 跑 tools/guitest/concurrent4.js（默认 5 bot：ConcA..ConcE；BOT_COUNT 可改，--phases 可只跑指定阶段）
+  3. 跑 tools/guitest/concurrent4.js（默认 32 bot：Conc01..Conc32；BOT_COUNT 可改，--phases 可只跑指定阶段）
   4. 汇总存档到 testserver/_stress-<时间戳>.json，stdout 打印 PASS/WARN/FAIL；自起的服跑完关掉
 
 用法：
@@ -180,10 +180,12 @@ def main():
     env = dict(os.environ)
     env["NODE_PATH"] = os.path.join(HERE, "node_modules")
     env["FM_SERVER"] = SERVER
-    # 并发数：默认 5（v2.25.7 实测 5/6/8 都能稳定上线，0 次握手节流）。
-    # 为什么不是越多越好：并发面靠「多人同时抢同一份资源」来暴露竞态，
-    # 5 个已经能覆盖全部断言面（56→63 条），再往上只增加起服时间，不增加覆盖率。
-    env["BOT_COUNT"] = os.environ.get("BOT_COUNT", "5")
+    # 并发数：默认 32（v2.25.7 实测结论）。
+    # 为什么是 32：连接层不是瓶颈 —— 实测 5/6/8/12/24/32 全部 0 次握手节流，
+    # burst 24 全成功，32 个上线 58s 且 20 秒后 32/32 存活。唯一硬墙是 max-players
+    # （测试服已设 48）。断言数随人数线性长：5→63、12→112、24→196、32→252。
+    # 上限定在 32 是因为一轮压测时长：32 个约 17 分钟，再加就挤占自检和拓展的时间。
+    env["BOT_COUNT"] = os.environ.get("BOT_COUNT", "32")
     cmd = ["node", "concurrent4.js"] + args.phases
     print("[stress] 跑：" + " ".join(cmd))
     try:

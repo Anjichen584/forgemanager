@@ -38,9 +38,12 @@
 4. **管理命令进 `ADMIN_ONLY`，并且 handler 内部自判 `forgemaster.admin`**。只靠 Tab 隐藏不算。
 5. **锻造系手续费永远是剑币**（`stats().takeCoins`）：强化 / 进化 / 铭刻 / 词条剥离。不是漏改 Wallet。
 6. **自检项数只许增不许减**（当前 522）。删钉子等于删安全网。
-7. **并发压测默认 5 个 bot**（`BOT_COUNT` 可改，实测 5/6/8 都稳、0 次节流）。
-   **离线模式不会产生 Mojang 的 429**，真 429 只出现在在线模式；脚本已做指数退避 + 抖动重连，
-   节流记成 WARN 不算 FAIL。`server_full` 是 `max-players` 满了（硬限），不是 429，别重试。
+7. **并发压测默认 32 个 bot**（`BOT_COUNT` 可改；测试服 `max-players=48`）。
+   实测结论：**连接层不是瓶颈** —— 5/6/8/12/24/32 全部 0 次握手节流，32 个上线 58s、存活 32/32。
+   唯一硬墙是 `max-players`；`server_full` 是它满了，**不是 429，别重试**（重试只会埋掉真原因）。
+   断言数随人数线性涨：5→63、12→112、24→196、32→252。
+   跑完**必须核对报告里的 `botCount`** 等于你设的数，否则可能被 clamp 静默截断（踩过一次）。
+   429 只出现在在线模式；`connpool.js` 已按原因分流（硬拒/节流/429/网络），配了 `proxies.txt` 才轮换出口。
 8. **README 有体量预算：450 行 / 48 KB，`check` 会拦**。每轮的叙事**不要**往 README 里加小节 ——
    README 曾涨到 4460 行 / 282 KB，agent 整读炸上下文只读一半就动手，这是最隐蔽的「读取不到」。
    判据只有一句：**「这次改动，三个月后还有人需要主动读吗？」**
@@ -56,7 +59,7 @@
 # 自检（测试服，约 30 秒）
 cd D:\IDEA\mc-plugins\ForgingMaster\testserver
 & 'C:\Users\heiya\AppData\Local\Programs\Python\Python312\python.exe' _run_selftest_full.py
-# 压测（12 阶段 5 并发，约 5 分钟；BOT_COUNT 可改）
+# 压测（12 阶段 32 并发，约 17 分钟；BOT_COUNT 可改）
 cd D:\IDEA\mc-plugins\ForgingMaster-Lore
 & 'C:\Users\heiya\AppData\Local\Programs\Python\Python312\python.exe' tools\guitest\run-stress.py
 ```
