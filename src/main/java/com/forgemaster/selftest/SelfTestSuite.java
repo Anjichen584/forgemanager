@@ -3503,6 +3503,23 @@ public final class SelfTestSuite {
             require(adminText.contains("上面那一段你也有"), "管理员段没说明玩家指令同样可用");
         });
 
+        add(g, "stats rep（v2.25.4）：管理员段写明了发/扣声望，且有扣不够不动的手感", () -> {
+            List<String> adminHelp = com.forgemaster.command.ForgingCommand.helpLines("zhujian", true);
+            String adminText = String.join("\n", adminHelp);
+            require(adminText.contains("stats rep give|take"),
+                    "管理员 help 里没有 stats rep give|take（声望又变成没有手动入口了）");
+
+            // 语义钉子：spendReputation 不足必须拒付且一分不扣（这条命令是靠它兜底的）
+            UUID fake = UUID.nameUUIDFromBytes("selftest-stats-rep".getBytes());
+            plugin.stats().addReputation(fake, 100);
+            int before = plugin.stats().get(fake).reputation;
+            require(!plugin.stats().spendReputation(fake, before + 1), "声望不足却扣成功了");
+            require(plugin.stats().get(fake).reputation == before,
+                    "扣失败却动了余额：" + before + " → " + plugin.stats().get(fake).reputation);
+            require(plugin.stats().spendReputation(fake, before), "余额刚好等于扣款额却扣不动");
+            require(plugin.stats().get(fake).reputation == 0, "扣光后余额不是 0");
+        });
+
         add(g, "强化上限按品质逐级提高：粗糙 < … < 神话，且神话封顶 99", () -> {
             var st = plugin.strengthen();
             require(st != null, "强化服务没初始化");

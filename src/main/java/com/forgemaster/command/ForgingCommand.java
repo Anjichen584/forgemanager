@@ -444,6 +444,11 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
     }
 
     private void stats(CommandSender sender, String[] args) {
+        // /zhujian stats rep give|take <玩家> <数量>（v2.25.4）：声望的手动入口
+        if (args.length >= 2 && isAny(args[1].toLowerCase(Locale.ROOT), "rep", "shengwang", "声望")) {
+            statsReputation(sender, args);
+            return;
+        }
         OfflinePlayer target;
         if (args.length >= 2) {
             if (!sender.hasPermission("forgemaster.admin")) {
@@ -3266,6 +3271,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             addHelp(out, u + "gem give <玩家|all> <类型|random> [L1~L5] [数量]", "发宝石");
             out.add("<dark_gray>      gem list 列出所有宝石 id / 中文名 / 效果");
             addHelp(out, u + "money give|take <玩家> <数量>", "发 / 扣剑币（coin give|take 同义）");
+        addHelp(out, u + "stats rep give|take <玩家> <数量>", "发 / 扣声望（扣不够整条不动；声望不是货币，不跟 coin-sinks 走）");
             addHelp(out, u + "reload", "重载配置");
             addHelp(out, u + "selftest", "运行时自检：全量具名检查项逐条跑一遍（当前 514 项）");
 
@@ -3355,6 +3361,75 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
                 return;
             }
             Msg.prefix(sender, "<green>已扣 <white>" + target.getName() + " " + amount + "</white> 剑币。");
+        }
+    }
+
+    // ============================================================ 声望发放（v2.25.4 服主工具）
+
+    /**
+     * {@code /zhujian stats rep give|take <玩家> <数量>}：发 / 扣声望（服主）。
+     *
+     * <p>声望以前只有玩法内部产出（锻造、委托、大赛、比试、剑冢、成就、剑谱、订单），
+     * 没有任何手动入口。想补一次掉档的声望、或想造一个「刚好够兑换一次」的号，
+     * 只能去改 {@code data.yml} —— 而 {@link com.forgemaster.stats.StatsStore} 是
+     * 内存缓存 + 全量重写，改了下次 save 就被盖回去，还得重启。这条命令走同一份
+     * {@code Stats.reputation} 字段：发走 {@code addReputation}，扣走
+     * {@code spendReputation}（不足拒付，不会把余额扣成 0）。</p>
+     *
+     * <p>不走 Wallet：声望不是货币，跟 {@code economy.coin-sinks} 无关。</p>
+     */
+    private void statsReputation(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("forgemaster.admin")) {
+            Msg.prefix(sender, "<red>只有管理员能改声望。</red>");
+            return;
+        }
+        if (args.length < 5) {
+            Msg.prefix(sender, "<gray>用法：<white>/zhujian stats rep give|take <玩家> <数量></white>"
+                    + " <dark_gray>（give 发、take 扣；扣不够就整条不动）</dark_gray>");
+            return;
+        }
+        String op = args[2].toLowerCase(Locale.ROOT);
+        boolean give = isAny(op, "give", "fa", "gei", "jia", "+");
+        boolean take = isAny(op, "take", "kou", "jian", "-");
+        if (!give && !take) {
+            Msg.prefix(sender, "<red>第二个参数要么 give（发）要么 take（扣）。</red>");
+            return;
+        }
+        int amount;
+        try {
+            amount = Integer.parseInt(args[4].replace(",", "").replace("+", ""));
+        } catch (NumberFormatException ex) {
+            Msg.prefix(sender, "<red>数量要写数字：" + args[4] + "</red>");
+            return;
+        }
+        if (amount <= 0) {
+            Msg.prefix(sender, "<red>数量要大于 0。</red>");
+            return;
+        }
+        OfflinePlayer target = Bukkit.getOfflinePlayer(args[3]);
+        if (target.getName() == null && !target.hasPlayedBefore()) {
+            Msg.prefix(sender, "<red>没有这个玩家：" + args[3] + "</red>");
+            return;
+        }
+        UUID id = target.getUniqueId();
+        String name = target.getName() == null ? args[3] : target.getName();
+        int before = plugin.stats().get(id).reputation;
+        if (give) {
+            boolean up = plugin.stats().addReputation(id, amount);
+            int after = plugin.stats().get(id).reputation;
+            Msg.prefix(sender, "<green>已给 <white>" + name + "</white> 声望 <white>+" + amount
+                    + "</white> <dark_gray>（" + before + " → " + after + " · "
+                    + StatsStore.titleOf(after) + (up ? " · 称号升档" : "") + "）</dark_gray>");
+        } else {
+            if (!plugin.stats().spendReputation(id, amount)) {
+                Msg.prefix(sender, "<red>" + name + " 声望不够：要扣 <white>" + amount
+                        + "</white>，只有 <white>" + before + "</white>（一条都没扣）。</red>");
+                return;
+            }
+            int after = plugin.stats().get(id).reputation;
+            Msg.prefix(sender, "<green>已扣 <white>" + name + "</white> 声望 <white>-" + amount
+                    + "</white> <dark_gray>（" + before + " → " + after + " · "
+                    + StatsStore.titleOf(after) + "）</dark_gray>");
         }
     }
 
@@ -3723,7 +3798,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             case "metrics", "jingji" -> tabMetrics(args);
             case "config", "peizhi" -> tabConfig(args);
             case "fixattrs", "xiufu" -> tabFixAttrs(args);
-            case "stats" -> tabPlayerArg(sender, args);
+            case "stats" -> tabStats(sender, args);
             case "profile", "dangan" -> tabPlayerArg(sender, args);
             case "top" -> tabTop(args); // v2.25 修 P2："legacy" 是 top 的第 2 段参数，误放顶层分派只会补出未知子命令
             // ---- 无参子命令（再往下一层没有候选）----
@@ -4269,6 +4344,42 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             return List.of();
         }
         return filter(players(), args[1]);
+    }
+
+    /**
+     * {@code /zhujian stats} 的补全（v2.25.4）：第二段是「玩家名 + rep」并列，
+     * 选了 rep 之后才是 give|take → 玩家名 → 数量。
+     *
+     * <p>玩家自己的 {@code /zhujian stats} 不带参数，所以第二段空着一律给玩家名列表
+     * （老行为），另加一个 {@code rep} 让服主能摸到新命令。</p>
+     */
+    private List<String> tabStats(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("forgemaster.admin")) {
+            return List.of();
+        }
+        boolean rep = args.length >= 2 && isAny(args[1].toLowerCase(Locale.ROOT), "rep", "shengwang", "声望");
+        if (args.length == 2) {
+            List<String> out = new ArrayList<>(filter(players(), args[1]));
+            for (String c : filter(List.of("rep", "shengwang"), args[1])) {
+                if (!out.contains(c)) {
+                    out.add(c);
+                }
+            }
+            return out;
+        }
+        if (!rep) {
+            return List.of();
+        }
+        if (args.length == 3) {
+            return filter(List.of("give", "take", "fa", "kou"), args[2]);
+        }
+        if (args.length == 4) {
+            return filter(players(), args[3]);
+        }
+        if (args.length == 5) {
+            return filter(AMOUNTS, args[4]);
+        }
+        return List.of();
     }
 
     private List<String> tabTop(String[] args) {

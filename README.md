@@ -1,10 +1,10 @@
-# 铸剑大师 · ForgingMaster v2.25.3
+# 铸剑大师 · ForgingMaster v2.25.4
 
 Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「烧红 → 敲打 → 叠钢 → 开刃 → 抛光 → 嵌银丝 → 淬火」的手感搬进 MC，
 锻完之后还有委托、比试、耐久、剑币经济、师徒、成就、段位、剑灵、剑冢、世界事件、剧情、名人堂、商会、拍卖行、排行与赛季。
 
 - 目标 Java：**21+**
-- 构建产物：`target/ForgingMaster-2.25.3.jar`
+- 构建产物：`target/ForgingMaster-2.25.4.jar`
 - 无第三方依赖，纯 Paper API + MiniMessage
 - `config-version`：**20**
 
@@ -29,6 +29,7 @@ Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「�
 
 | 版本 | 一句话 | 详情 |
 | --- | --- | --- |
+| **2.25.4** | **压测面 7→12 阶段 + 4 并发 PASS 53**：新增兑换/词条剥离/剑冢取回/竞价/只读风暴五个并发面；加管理员命令 stats rep give\|take（声望首个手动入口）；顺手把「哪些扣费跟 coin-sinks 走、哪些永远走剑币」摸清写成表（自检 515/515） | [十四·补十三](#十四补十三v2254压测面扩到-12-阶段账本口径分类) |
 | **2.25.3** | **/zhujian help 收口**：原来漏了 11 条命令（contract / shangjin / money / spirit / tomb / tombrun / redeem / forge / event / ench / evolve）；改成「玩家段 + 管理员段」两段式，清单抽成纯函数由自检逐条核对 | [十四·补十二](#十四补十二v2253zhujian-help-收口玩家段--管理员段自检逐条核对) |
 | **2.25.2** | **4 并发实测 + 查错轮4**：21 条全修 —— 6 个异步冲刷任务被异常打死、两本账漏改的商会/订单、退服不清的二次确认，自检 513/513；新增 4 bot 并发压测器 31 PASS | [十四·补十一](#十四补十一v22524-并发实测查错轮4) |
 | **2.25.1** | **查错轮3（组合面）**：16 条全修 —— 保险双账本、重抽净丢词条、比试刷分、无主 holder、ContractStore 丢脏窗口、迁移死代码 | [十四·补十](#十四补十v2251查错轮3组合面16-条全修) |
@@ -1316,6 +1317,7 @@ Lv.10 起额外词条概率每 5 级 +10%（最多 +60%）。
 | `/zhujian metrics [trend\|csv\|sample\|gui]` | 经济看板：不带参实时报表 · `trend [天数]` · `csv [天数]` · `sample` 立刻采样 · `gui` 三页面板（服主，v2.20.0，别名 `jingji`） |
 | `/zhujian givefull <玩家> <剑胚\|armor-剑胚-部位> [品质]` | 懒人指令：一次发出满配锻造品（满强化 · 满蜕变 · 满词条 · 满宝石，v2.21.0，别名 `maxitem`/`manpei`） |
 | `/zhujian money coin give\|take <玩家> <数量>` | 内置剑币账本的发放 / 扣除（与 `money give\|take` 走同一 `Wallet` 收口） |
+| `/zhujian stats rep give\|take <玩家> <数量>` | 发 / 扣声望（v2.25.4）：`take` 不够**整条不动**；声望不是货币，不跟 `economy.coin-sinks` 走 |
 
 ### PlaceholderAPI 占位符（拓展第一档）
 
@@ -1745,6 +1747,76 @@ vanilla-guard:
 ### 六、自检
 
 以上每项都带自检用例（外部模块经 `SelfTestSuite.addExternal` 挂接），`/zhujian selftest` 全量回归。
+
+---
+
+## 十四·补十三、v2.25.4：压测面扩到 12 阶段、账本口径分类
+
+上一版是 7 个并发面（签到 / 秘境 / 黑市 / 拍卖 / 行会 / 铁砧 / 掉线），只覆盖了「玩家之间抢钱」那一类。
+这一版把**没有并发面但有账本或物品写回**的模块也接进来，一共 12 个阶段；顺便给声望加了第一个手动入口。
+
+### 一、新增的五个并发面（每个只打守恒律，不猜文案）
+
+| 阶段 | 怎么并发 | 断言（守恒律） | 首次结果 |
+| --- | --- | --- | --- |
+| `redeem` 兑换 | 只给 **500** 声望、0 剑币，同 tick 连发 3 次 `redeem coin 500` | 声望只够一次 → 成功必须 1 次，剑币必须**正好 +5000**（1:10） | ✓ 四人全 500→0 / +5000 |
+| `strip` 词条剥离 | 同 tick 连发 3 次 `strengthen strip 1` | 剥下来的**词条符张数 == 「剥离成功」次数**（不复制、不白扣） | ✓ 3 次 → 3 张 |
+| `tombTake` 剑冢取回 | 埋一把后同 tick 连发 3 次 `tomb take <编号>`，再让另一个 bot 抢同一编号 | 背包只许多 1 把剑；`tombs.yml` 里该编号必须已删；别人取不到 | ✓ 剑=1 / 记录已删 / 他人被拒 |
+| `bid` 竞价 | A 起拍 100，B/C/D 同 tick 依次出 150 / 160 / 170 | `auction.yml` 的 `listings.<ID>.price` 必须停在 **170**；被超的两手**全额退回**；只有赢家扣 170 | ✓ 停在 170 / 前两手已退 / 赢家 -170 |
+| `burst` 只读风暴 | 4 人同 tick 各发 **10 条**只读命令（help/stats/codex/rank/env/story/power/collection/relicset/spectrum） | 人不能被踢、不许出现「未知子命令 / 内部错误」、日志零异常栈 | ✓ 40 条全部有响应 |
+
+> 只读风暴这一条是给「10 并发怕 429」留的安全阀：**用命令数量压，不用人数压**。
+> 4 个 bot × 10 条已经能打出 40 条同 tick 命令，而连接握手仍然只有 4 次。
+
+### 二、`/zhujian stats rep give|take <玩家> <数量>`（声望的第一个手动入口）
+
+声望以前只有玩法内部产出（锻造 / 委托 / 大赛 / 比试 / 剑冢 / 成就 / 剑谱 / 订单），
+想补一次掉档的声望、或造一个「刚好够兑换一次」的号，只能去改 `data.yml` —— 而 `StatsStore`
+是内存缓存 + 全量重写，改了下次 `save()` 就被盖回去，还得重启。
+
+- `give` 走 `addReputation`，`take` 走 `spendReputation`（**不足拒付，不会扣成 0**），同一份 `Stats.reputation` 字段
+- 落在 `stats` 下面而不是新开顶层命令：声望的读数本来就在 `/zhujian stats`（`声望 N`），读写同一个门
+- 补全：第二段「玩家名 + `rep`」并列（老行为不变），选 `rep` 之后才是 `give|take` → 玩家名 → 数量
+- **不走 Wallet**：声望不是货币，与 `economy.coin-sinks` 无关
+
+### 三、账本口径分类（这轮真正的审计产出）
+
+压测前把全仓 `takeCoins` / `wallet().take` 的调用点逐个点名，写成 [A/B/C 三类表](#哪些扣费跟-coin-sinks-走哪些永远走剑币v2254-摸底)。
+结论：**「收口到 Wallet」不等于「所有扣费都跟开关走」** —— 锻造族（强化本体 / 蜕变 / 词条剥离·移植·合成）
+恒走剑币，是设计，不是漏改。
+
+> 这轮我先把它当 bug 改了：`Imprint` 三处 `stats().takeCoins` → `wallet().take`，还写了「v2.25.4 收口」注释。
+> 再往下翻到 `StrengthenService:1260` 的 P1 注释才看明白「剑币 ≠ 服务器金币」是**故意**的 ——
+> 那样改等于给 `coin-sinks: server` 的服凭空换一套收费标准。已 `git checkout` 回退，教训写进上文。
+> 三处回退后自检与压测全绿，证明原行为是对的。
+
+### 四、一键跑手 `tools/guitest/run-stress.py`（计划任务就是调它）
+
+```
+python tools/guitest/run-stress.py                 # 全 12 阶段
+python tools/guitest/run-stress.py --phases bid    # 单跑某阶段
+python tools/guitest/run-stress.py --keep          # 跑完不关服
+```
+
+它自己负责：起服（等 `Done (`）→ 部署 `target/` 最新 jar → 跑 `concurrent4.js` → 汇总存档
+`testserver/_stress-<时间戳>.json` → 关服。FAIL>0 时退出码 1，方便计划任务判红。
+固定 4 并发是刻意的（10 个 bot 同时握手会撞连接限流），并发面靠阶段数堆，不靠人数堆。
+
+### 五、真机结果
+
+```
+=== 汇总：PASS 53 / WARN 1 / FAIL 0 ===     ← 12 阶段，含 5 个新面
+自检完成：共 515 项，通过 515，失败 0        ← 上一版 514
+```
+
+唯一的 WARN 是**压测脚本自己的**问题：`auction.yml` 里单号键被 YamlConfiguration 写成带引号的
+`'529663':`，我的解析器没剥引号就比，于是「读不到单号」。修完复跑 `--phases bid`：**PASS 5 / WARN 0 / FAIL 0**。
+顺手把 runner 的 stdout 强制成 UTF-8（Windows 管道下中文原本是乱码）。
+
+### 六、钉子
+
+`stats rep（v2.25.4）：管理员段写明了发/扣声望，且有扣不够不动的手感` —— 一次查两件事：
+help 里还有没有这条命令；`spendReputation` 在余额不足时**必须拒付且一分不动**（这条命令全靠它兜底）。
 
 ---
 
@@ -3302,6 +3374,24 @@ economy:
 ├ 宝石 / 黑市 / 签到 / 重铸 扣: 剑币（economy.coin-sinks=plugin，与商会 / 拍卖同一本账）
 └ 锻造费扣: 服务器经济（README 写明的唯一例外）
 ```
+
+#### 哪些扣费跟 `coin-sinks` 走，哪些永远走剑币（v2.25.4 摸底）
+
+「收口到 Wallet」这句话容易被读成「所有扣费都跟开关走」，其实不是。这轮压测前把全仓
+`takeCoins` / `wallet().take` 的调用点逐个点了一遍，实际是三类，别混：
+
+| 类 | 走哪本账 | 调用点 |
+| --- | --- | --- |
+| **A. 跟 `coin-sinks` 走**（`Wallet`） | `plugin` → 剑币；`server` → Vault | 商会 `ShopManager`、黑市、签到、重铸、拍卖（冻结/退款）、订单托管 `OrderService`、行会基金 `GuildService`、声望兑换 `redeem`、秘境门票、剑灵喂养、强化**保险费** |
+| **B. 永远剑币**（`stats().takeCoins`） | 恒为 `StatsStore.coins` | **强化本体**（`StrengthenService:1301`）、**蜕变**（`EvolutionService:182`）、**词条剥离 / 移植 / 合成**（`Imprint:174/265/425`）—— 这三处是锻造族，代码里写明「剑币 ≠ 服务器金币」 |
+| **C. 永远服务器经济** | 恒为 `EconomyBridge` | **锻造费**（`README` 写明的唯一例外） |
+
+判定标准不是「谁写的晚」，而是**这笔钱玩家是怎么赚的**：强化/蜕变/词条的费用是「锻一把赚回来的剑币」，
+所以恒走剑币；商店/拍卖/行会那种「玩家之间流通的钱」才跟服务器经济走，否则服主的 Vault 会被架空的。
+
+> 踩过的坑（v2.25.4）：一开始把 `Imprint` 的三处当成「漏收口」，改成 `wallet().take` 还写了注释。
+> 再看 `StrengthenService:1260` 的 P1 注释才发现强化本体**是故意**走剑币的 —— 改了等于给
+> `coin-sinks: server` 的服凭空换一套收费标准。已回退。**先看别处为什么这么写，再判是不是 bug。**
 
 ### 三、主线程写盘：两处「每锻一把就整档重写」
 

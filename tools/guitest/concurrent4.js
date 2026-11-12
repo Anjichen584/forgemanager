@@ -462,6 +462,206 @@ phases.anvil = async (bots) => {
   }
 }
 
+// ---------------------------------------------------------------- 声望（v2.25.4 新命令）
+// ground truth 优先用 /zhujian stats 的「声望 N」—— 与 data.yml 同一份 Stats.reputation
+async function reputation (name) {
+  const out = await rc('zhujian stats ' + name)
+  const m = out.match(/声望\s*(\d+)/)
+  return m ? Number(m[1]) : null
+}
+
+/** 把声望调到指定值（take 走 spendReputation：不够则不动，所以先读再加） */
+async function setReputation (name, amount) {
+  const now = await reputation(name)
+  if (now === null) return null
+  if (now > amount) await rc(`zhujian stats rep take ${name} ${now - amount}`)
+  else if (now < amount) await rc(`zhujian stats rep give ${name} ${amount - now}`)
+  const after = await reputation(name)
+  return after
+}
+
+// ---------------------------------------------------------------- YAML 片段读取
+/** 从 plist 风格的 yml 里抠出某个一级键下面某个 id 的块（够用即可，不引依赖） */
+function yamlBlock (file, rootKey, id) {
+  let txt
+  try { txt = fs.readFileSync(path.join(SERVER, 'plugins', 'ForgingMaster', file), 'utf8') } catch (e) { return null }
+  const lines = txt.split(/\r?\n/)
+  const norm = s => String(s).replace(/^['"]|['"]$/g, '')
+  let inRoot = false
+  let block = null
+  for (const line of lines) {
+    if (/^\S/.test(line)) { inRoot = norm(line.trim().replace(/:$/, '')) === rootKey; continue }
+    if (!inRoot) continue
+    // 单号这类键 Bukkit 的 YamlConfiguration 会写成 '529663':（带引号），必须剥掉再比
+    const m = line.match(/^ {2}(\S+):\s*$/)
+    if (m) { block = norm(m[1]) === norm(id) ? [] : null; continue }
+    if (block) block.push(line)
+  }
+  if (!block) return null
+  const out = {}
+  for (const line of block) {
+    const kv = line.match(/^ {4}(\S+):\s*(.*)$/)
+    if (kv) out[kv[1]] = kv[2].trim()
+  }
+  return out
+}
+
+// ⑥.5 声望兑换：只给 500 声望，同 tick 抢 3 次 500 → 只许成交 1 次，钱只许多 5000
+phases.redeem = async (bots) => {
+  const area = '兑换并发'
+  for (const bot of bots) {
+    const rep0 = await setReputation(bot.username, 500)
+    await setCoins(bot.username, 0)
+    if (rep0 === null) { warn(area, bot.username, '读不到声望（新命令没生效？）'); continue }
+    take(bot)
+    burst(bot, ['/zhujian redeem coin 500', '/zhujian redeem coin 500', '/zhujian redeem coin 500'])
+    await wait(2000)
+    const text = take(bot).join(' | ')
+    const c = await coins(bot.username)
+    const rep1 = await reputation(bot.username)
+    const okHits = (text.match(/兑换成功/g) || []).length
+    if (rep1 === null || c === null) { warn(area, bot.username, '读数失败'); continue }
+    if (rep1 < 0) fail(area, bot.username + ' 声望为负', String(rep1))
+    else if (okHits > 1) fail(area, bot.username + ' 重复兑换', `成功 ${okHits} 次（声望只够一次）→ ${text.slice(0, 240)}`)
+    else if (c !== 5000) fail(area, bot.username + ' 发钱不守恒', `剑币 ${c}，应为 5000（声望 ${rep1}，回执 ${okHits} 次）`)
+    else pass(area, bot.username + ' 兑换守恒', `声望 500→${rep1}，剑币 +${c}（1:10 只算一次）`)
+  }
+}
+
+// ⑥.6 词条剥离：同 tick 连剥 3 次第 1 条 → 剥下来的符必须与「剥离成功」次数相等（不复制）
+phases.strip = async (bots) => {
+  const area = '词条剥离'
+  for (const bot of bots) {
+    await rc('minecraft:clear ' + bot.username)
+    await rc(`zhujian give ${bot.username} iron LEGENDARY 95`)
+    await wait(1200)
+    await setCoins(bot.username, 100000)
+    const sword = bot.inventory.items().find(i => i.name === 'iron_sword')
+    if (!sword) { warn(area, bot.username, '没拿到剑'); continue }
+    await bot.equip(sword, 'hand')
+    await wait(400)
+    take(bot)
+    burst(bot, ['/zhujian strengthen strip 1', '/zhujian strengthen strip 1', '/zhujian strengthen strip 1'])
+    await wait(2200)
+    const text = take(bot).join(' | ')
+    const okHits = (text.match(/剥离成功/g) || []).length
+    const papers = bot.inventory.items().filter(i => i.name === 'paper').length
+    const c = await coins(bot.username)
+    if (c === null) { warn(area, bot.username, '读不到剑币'); continue }
+    if (c < 0) fail(area, bot.username + ' 余额为负', String(c))
+    else if (papers !== okHits) fail(area, bot.username + ' 符数不符', `词条符 ${papers} 张 ≠ 成功 ${okHits} 次（复制或白扣）`)
+    else if (okHits === 0) warn(area, bot.username + ' 没剥成', text.slice(0, 220))
+    else pass(area, bot.username + ' 剥离守恒', `成功 ${okHits} 次 → 符 ${papers} 张，余 ${c}`)
+  }
+}
+
+// ⑥.7 剑冢取回：埋一把，同 tick 抢 3 次 → 只许取回 1 把，记录删掉，别人取不到
+phases.tombTake = async (bots) => {
+  const area = '剑冢取回'
+  const [a, b] = bots
+  await rc('minecraft:clear ' + a.username)
+  await rc(`zhujian give ${a.username} iron EPIC 80`)
+  await wait(1200)
+  const sword = a.inventory.items().find(i => i.name === 'iron_sword')
+  if (!sword) { warn(area, '埋剑前置', '没拿到剑'); return }
+  await a.equip(sword, 'hand')
+  await wait(300)
+  take(a)
+  a.chat('/zhujian tomb bury')
+  await wait(1500)
+  const buryMsg = take(a).join(' | ')
+  const m = buryMsg.match(/编号\s*([0-9A-Fa-f]{4})/)
+  if (!m) { warn(area, '埋剑', '抓不到编号：' + buryMsg.slice(0, 220)); return }
+  const id = m[1].toUpperCase()
+  pass(area, '埋剑', '编号 ' + id)
+  take(a)
+  burst(a, [`/zhujian tomb take ${id}`, `/zhujian tomb take ${id}`, `/zhujian tomb take ${id}`])
+  await wait(2200)
+  const got = take(a).join(' | ')
+  const swords = a.inventory.items().filter(i => i.name === 'iron_sword').length
+  const rec = yamlBlock('tombs.yml', 'tombs', id)
+  if (swords > 1) fail(area, a.username + ' 剑复制', `背包 ${swords} 把（抢 3 次取回）`)
+  else if (swords === 0) warn(area, a.username + ' 没取回', got.slice(0, 220))
+  else pass(area, a.username + ' 只取回一把', '剑=1，不复制')
+  if (rec) fail(area, '剑冢记录已删', `tombs.yml 里 ${id} 还在`)
+  else pass(area, '剑冢记录已删', id + ' 已从 tombs.yml 移除')
+  take(b)
+  b.chat(`/zhujian tomb take ${id}`)
+  await wait(1000)
+  const other = take(b).join(' | ')
+  if (/没有编号|不是你埋的|无法取回/.test(other)) pass(area, b.username + ' 取不到别人的', '')
+  else warn(area, b.username + ' 取别人的', other.slice(0, 200))
+}
+
+// ⑥.8 竞价并发：A 挂单，B/C/D 同 tick 依次加价 → 最高价唯一、被超的钱全退、只扣最后一人
+phases.bid = async (bots) => {
+  const area = '竞价并发'
+  const [a, b, c, d] = bots
+  for (const bot of bots) await setCoins(bot.username, 5000)
+  await rc('minecraft:clear ' + a.username)
+  await rc(`zhujian give ${a.username} iron COMMON 60`)
+  await wait(1200)
+  const sword = a.inventory.items().find(i => i.name === 'iron_sword')
+  if (!sword) { warn(area, '挂单前置', '没拿到剑'); return }
+  await a.equip(sword, 'hand')
+  await wait(300)
+  take(a)
+  a.chat('/zhujian auction sell 100 400 1')
+  await wait(1500)
+  const sellMsg = take(a).join(' | ')
+  const idm = sellMsg.match(/#\s*([0-9A-Fa-f]{4,8})/) || sellMsg.match(/编号[：: ]*([0-9A-Fa-f]{4,8})/)
+  if (!idm) { warn(area, '挂单', '抓不到单号：' + sellMsg.slice(0, 220)); return }
+  const id = idm[1].toUpperCase()
+  pass(area, '挂单', '单号 #' + id + ' 起拍 100')
+  const before = {}
+  for (const bot of [b, c, d]) before[bot.username] = await coins(bot.username)
+  for (const bot of [b, c, d]) take(bot)
+  // 同 tick 三档加价：150 → 160 → 170（每次都是「当前价 +10」合法）
+  burst(b, [`/zhujian auction bid ${id} 150`])
+  burst(c, [`/zhujian auction bid ${id} 160`])
+  burst(d, [`/zhujian auction bid ${id} 170`])
+  await wait(2600)
+  const after = {}
+  for (const bot of [b, c, d]) after[bot.username] = await coins(bot.username)
+  const rec = yamlBlock('auction.yml', 'listings', id)
+  const price = rec && rec.price ? Number(String(rec.price).replace(/[^\d]/g, '')) : null
+  const bidder = rec ? (rec['bidder-name'] || '').replace(/['"]/g, '') : null
+  const charges = [b, c, d].map(bot => ({ n: bot.username, d: before[bot.username] - after[bot.username] }))
+  const losers = charges.filter(x => x.n !== bidder && x.d !== 0)
+  if (price === null) { warn(area, 'auction.yml 读数', '读不到单号 ' + id); return }
+  if (price !== 170) fail(area, '最高价', `auction.yml price=${price}，应为 170`)
+  else pass(area, '最高价', `#${id} 停在 170（出价人 ${bidder}）`)
+  if (losers.length) fail(area, '被超价没退钱', losers.map(x => `${x.n} 少 ${x.d}`).join(', '))
+  else pass(area, '被超价全退', '前两手 150/160 已退回')
+  const winner = charges.find(x => x.n === bidder)
+  if (winner && winner.d !== 170) fail(area, '赢家扣款', `${winner.n} 少了 ${winner.d}，应为 170`)
+  else if (winner) pass(area, '赢家扣款', `${winner.n} -170（冻结在单上）`)
+  else warn(area, '赢家', '没认出赢家：' + bidder)
+  for (const bot of [b, c, d]) {
+    if (after[bot.username] < 0) fail(area, bot.username + ' 余额为负', String(after[bot.username]))
+  }
+}
+
+// ⑥.9 只读风暴：4 人同 tick 各发 10 条只读命令，服务端不许吐异常、人不许被踢
+phases.burst = async (bots) => {
+  const area = '只读风暴'
+  const cmds = ['/zhujian help', '/zhujian stats', '/zhujian codex', '/zhujian rank',
+    '/zhujian env', '/zhujian story', '/zhujian power', '/zhujian collection',
+    '/zhujian relicset', '/zhujian spectrum']
+  for (const bot of bots) {
+    take(bot)
+    burst(bot, cmds)
+  }
+  await wait(4000)
+  for (const bot of bots) {
+    const text = take(bot).join(' | ')
+    if (!bot.entity) fail(area, bot.username + ' 被踢', text.slice(0, 200))
+    else if (/未知子命令|内部错误|An internal error|Unknown command/.test(text)) {
+      fail(area, bot.username + ' 命令异常', text.match(/[^|]*(未知子命令|内部错误|An internal error|Unknown command)[^|]*/)[0].slice(0, 200))
+    } else pass(area, bot.username + ' ' + cmds.length + ' 条只读命令', '全部有响应')
+  }
+}
+
 // ⑦ 中途掉线：开着黑市界面直接断线，别人不受影响、日志不许炸
 phases.dropout = async (bots) => {
   const area = '掉线残留'
