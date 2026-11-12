@@ -55,14 +55,10 @@ desktop.ini
 .agents/_lock.json
 .agents/*/scratch/
 
-# 例外必须放在最后。两个坑都踩过：
-# 1) `*.zcode` 会连 `.zcode` 这个**目录名**一起匹配掉；
-# 2) git 的规则是「父目录被排除时，里面的文件无法再被重新包含」，
-#    所以要先把目录本身 `!.zcode/` 救回来，再排内容，再救单个文件。
-!.zcode/
-.zcode/*
-!.zcode/README.md
-!.workbuddy/README.md
+# 例外必须放在最后。踩过的坑：`*.zcode` 会连 `.zcode` 这个**目录名**一起匹配掉。
+# v2.25.9：这里**不再**放 `!.zcode/README.md` / `!.workbuddy/README.md` 的例外。
+# 那两个 README 自己写着「本目录只在本地、不入库」，却被跟踪并推上去了 —— 自相矛盾。
+# 单个 agent 的身份卡和交接结论都在 `.agents/<名>/agent.md` 与 `docs/handoff/`，那边才入库。
 
 # ---- 一次性测试输出 ----
 selftest-stage2.txt
