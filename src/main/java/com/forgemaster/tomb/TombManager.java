@@ -241,8 +241,22 @@ public final class TombManager {
      * 与主线程 stop / 回档快照互斥。
      */
     public synchronized void save() {
+        saveChecked();
+    }
+
+    /**
+     * 同步落盘，并**把成败返回给调用方**（v2.25.8）。
+     *
+     * <p>原来只有 {@link #save()}（void），写失败时内部 warning 一声就完事 ——
+     * 「钱货时序」类路径拿不到结果：取剑、发奖这些动作会以为已经存好了，
+     * 于是一边把东西交给玩家，一边磁盘上还留着原件，重启即复制。
+     * 需要「存不进去就别交东西」的路径一律用这个方法。</p>
+     *
+     * @return true = 已写盘且脏标记已清；false = 写失败（脏标记保持，交给下一轮冲刷重试）
+     */
+    public synchronized boolean saveChecked() {
         if (!plugin.getDataFolder().exists() && !plugin.getDataFolder().mkdirs()) {
-            return;
+            return false;
         }
         YamlConfiguration yml = new YamlConfiguration();
         try {
@@ -267,14 +281,16 @@ public final class TombManager {
                 yml.set(base + "item", Base64.getEncoder().encodeToString(t.snapshot.serializeAsBytes()));
             }
         } catch (java.util.ConcurrentModificationException ex) {
-            return; // 保持脏，下一轮重写
+            return false; // 保持脏，下一轮重写
         }
         try {
-                com.forgemaster.util.YamlIo.save(file, yml);
+            com.forgemaster.util.YamlIo.save(file, yml);
             // 写盘与全部变更共用 this 锁：期间不可能插进新变更，这里清脏是安全的
             dirty = false;
+            return true;
         } catch (IOException ex) {
             plugin.getLogger().warning("保存 tombs.yml 失败: " + ex.getMessage());
+            return false;
         }
     }
 
@@ -568,7 +584,22 @@ public final class TombManager {
         // 原来只标脏，剑已经进了玩家背包而 tombs.yml 里还躺着这把剑 ——
         // 5 秒窗口内崩服/被杀进程 = 剑既在冢里又在包里（复制）；多人同时取更容易撞上。
         // 取剑是低频动作，一次整文件写可以接受，换掉这个复制窗口。
-        save();
+        //
+        // v2.25.8（本轮）：save() 是 void，写失败只在内部 warning 一声，调用方根本不知道 ——
+        // 于是磁盘满 / 文件被占用时，剑照样发出去，而 tombs.yml 里那把剑还在 = 下次重启又有一把（复制）。
+        // 现在用 saveChecked() 拿到成败：写失败就把内存里的条目放回去、退费、不交剑。
+        if (!saveChecked()) {
+            tombs.put(t.id, t);
+            markDirty();
+            if (fee > 0) {
+                plugin.wallet().give(player, fee, CoinReason.REFUND);
+            }
+            plugin.getLogger().severe("取回剑冢「" + t.id + "」时 tombs.yml 写入失败，已取消取回并退费："
+                    + player.getName() + " / " + fee + " 剑币");
+            Msg.prefix(player, "<red>存档写入失败，剑没有取回"
+                    + (fee > 0 ? "（已退还 " + fee + " 剑币）" : "") + "，请稍后再试。</red>");
+            return;
+        }
         giveItem(player, t.snapshot.clone());
         player.playSound(player.getLocation(), Sound.ITEM_ARMOR_EQUIP_CHAIN, 1.0f, 1.0f);
         Msg.prefix(player, "<gray>已从剑冢取回「<#ffd166>" + t.swordName + "</#ffd166>」。</gray>");

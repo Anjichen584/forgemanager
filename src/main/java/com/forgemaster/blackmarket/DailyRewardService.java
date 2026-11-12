@@ -129,24 +129,21 @@ public final class DailyRewardService {
         // 发奖中途抛异常（背包同步、Charm.create、外部经济回调）或此刻崩服，
         // 就是「奖已到手、签到没记上」，下次进来还能再领一次（重复发币）。
         // 记账放在前面，发奖若抛异常就回滚记录：宁可让玩家重来一次，也不重复发。
+        //
+        // v2.25.8（本轮）：光把记账提前还不够。原来的 catch 只回滚 setSignin，
+        // 可是**剑币已经进钱包了**（wallet.give 在材料之前），于是变成
+        // 「币到手 + 签到回滚」= 可以再领一次，比原来更容易刷。
+        // 真正会抛异常的是两侧的**构造**动作：materialItem()（配置里的材料 id 写错）
+        // 和 Charm.create()（符 id 写错 / 注册表缺件）。所以把构造全部提到发东西之前 ——
+        // 构造阶段抛异常时玩家一分钱一件货都没拿到，回滚是干净的；
+        // 过了这一关，后面只剩 give / addItem，都是「发到背包或掉地上」，不再抛。
         int prevDay = dayOf(uuid);
         String prevLast = lastSign(uuid);
-        store.setSignin(uuid, day, today);
-        store.save();
-        var wallet = plugin.wallet();
-        List<String> got = new ArrayList<>();
+        ItemStack preparedMaterial = null;
+        List<ItemStack> preparedCharms = new ArrayList<>();
         try {
-            if (r.coins() > 0 && wallet.give(p, r.coins(), CoinReason.SIGNIN)) {
-                got.add("剑币 <#ffd166>+" + wallet.format(r.coins()) + "</#ffd166>");
-            }
             if (r.materialId() != null) {
-                ItemStack item = materialItem(r.materialId(), r.materialAmount());
-                if (item != null) {
-                    for (ItemStack rest : p.getInventory().addItem(item).values()) {
-                        p.getWorld().dropItemNaturally(p.getLocation(), rest);
-                    }
-                    got.add("<#7ef2c8>" + r.materialAmount() + " × " + materialLabel(r.materialId()) + "</#7ef2c8>");
-                }
+                preparedMaterial = materialItem(r.materialId(), r.materialAmount());
             }
             if (r.charmId() != null) {
                 String norm = com.forgemaster.strengthen.Charm.normalize(r.charmId());
@@ -162,20 +159,38 @@ public final class DailyRewardService {
                     int n = Math.min(remain, preMax);
                     ItemStack one = charm.clone();
                     one.setAmount(n);
-                    for (ItemStack rest : p.getInventory().addItem(one).values()) {
-                        p.getWorld().dropItemNaturally(p.getLocation(), rest);
-                    }
+                    preparedCharms.add(one);
                     remain -= n;
                 }
-                got.add("<#b388ff>" + r.charmAmount() + " × "
-                        + com.forgemaster.strengthen.Charm.plainName(r.charmId()) + "</#b388ff>");
             }
         } catch (RuntimeException ex) {
-            store.setSignin(uuid, prevDay, prevLast);
-            store.save();
-            plugin.getLogger().warning("签到发奖失败，已回滚签到进度：" + ex);
-            Msg.prefix(p, "<red>签到发奖出错，进度已回滚，请再试一次（管理员看控制台）。</red>");
+            // 此时记账还没写、东西一件没发，回滚=什么都不用做
+            plugin.getLogger().warning("签到奖励配置有误，本次未发放（进度未变）：" + ex);
+            Msg.prefix(p, "<red>签到奖励配置有误，本次没有发放，进度也未记录（管理员看控制台）。</red>");
             return;
+        }
+
+        store.setSignin(uuid, day, today);
+        store.save();
+        var wallet = plugin.wallet();
+        List<String> got = new ArrayList<>();
+        if (r.coins() > 0 && wallet.give(p, r.coins(), CoinReason.SIGNIN)) {
+            got.add("剑币 <#ffd166>+" + wallet.format(r.coins()) + "</#ffd166>");
+        }
+        if (preparedMaterial != null) {
+            for (ItemStack rest : p.getInventory().addItem(preparedMaterial).values()) {
+                p.getWorld().dropItemNaturally(p.getLocation(), rest);
+            }
+            got.add("<#7ef2c8>" + r.materialAmount() + " × " + materialLabel(r.materialId()) + "</#7ef2c8>");
+        }
+        for (ItemStack one : preparedCharms) {
+            for (ItemStack rest : p.getInventory().addItem(one).values()) {
+                p.getWorld().dropItemNaturally(p.getLocation(), rest);
+            }
+        }
+        if (!preparedCharms.isEmpty()) {
+            got.add("<#b388ff>" + r.charmAmount() + " × "
+                    + com.forgemaster.strengthen.Charm.plainName(r.charmId()) + "</#b388ff>");
         }
 
         p.playSound(p.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 0.9f, 1.2f);

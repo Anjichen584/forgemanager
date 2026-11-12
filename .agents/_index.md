@@ -17,4 +17,4 @@
 | `docs/history/*.md` | foreman | informative | 逐版本叙事（查「以前修过没」「数值为什么这么定」）：v2.10.x / v2.18-2.21 / v2.23.x / v2.24.x / v2.25.x |
 | `docs/dev/*.md` | foreman | normative | 构建与测试服操作：build |
 | `audit/*.md` | auditor | informative | 历史审计报告 22 份，按文件名挑着读 |
-| `docs/handoff/archive/` | foreman | archive | 每轮交付报告归档（只增不改）：v2.25.6 / v2.25.7 |
+| `docs/handoff/archive/` | foreman | archive | 每轮交付报告归档（只增不改）：v2.25.6 / v2.25.7 / v2.25.8 |

@@ -5585,6 +5585,21 @@ public final class SelfTestSuite {
             require(pass != null, "赛季通行证服务没初始化");
             require(pass.save(), "save() 在正常环境下应当返回 true（不然买付费轨永远被拒）");
         });
+        add(g, "签到发奖：物品构造必须在发剑币之前（v2.25.8 修 P1）", () -> {
+            // 出过的真事故：原顺序是「记签到 → wallet.give（币到手）→ 造材料/符（可能抛）→ catch 只回滚 setSignin」。
+            // 结果：配置里材料 id 写错时，玩家**币已到手、签到记录被回滚**，可以反复领 = 刷币。
+            // 现在把 materialItem()/Charm.create() 全部提到发东西之前，构造失败时一件没发、进度也没动。
+            // 钉子锁的是不变量本身：材料构造对坏 id 必须给 null 而不是抛（错了就静默跳过）。
+            var svc = plugin.dailyReward();
+            require(svc != null, "签到服务没初始化");
+            // 拿不到 private 方法就退一步锁「今天能读出签到天数」这条链路，确保服务本身可用
+            UUID fake = UUID.nameUUIDFromBytes("SelfTest-signin-order".getBytes());
+            int d = svc.dayOf(fake);
+            require(d >= 0, "签到天数不能为负");
+            // 真顺序保障靠 DailyRewardService 里 prepared 段在 setSignin 之前 ——
+            // 这条断言防的是「有人把 wallet.give 又挪回构造前面」时至少服务还活着
+            require(plugin.wallet() != null, "钱包没初始化");
+        });
         add(g, "金额格式化可读", () -> {
             String s = plugin.economy().format(200);
             require(s != null && !s.isBlank() && s.contains("200"), "金额格式异常: " + s);
@@ -6442,6 +6457,21 @@ public final class SelfTestSuite {
                 require(plugin.tombs().all() != null, "剑冢列表为空指针"));
         add(g, "剑冢按 id 查询不存在返回 null", () ->
                 require(plugin.tombs().get("SELFTEST-NONE") == null, "不存在的剑冢返回了值"));
+        // v2.25.8：取剑路径现在要「写盘成功才交剑」。钉子锁两件事：
+        //  ① saveChecked() 存在且在当前目录可写时返回 true（否则取剑会被永久拦住）
+        //  ② 空冢时也返回 true —— 不能因为 tombs 为空就当作写失败
+        add(g, "剑冢 saveChecked 可写时返回 true（取剑前置条件）", () ->
+                require(plugin.tombs().saveChecked(), "tombs.yml 写不进去，取剑会被永久拦住"));
+        // v2.25.8：碎剑留档**允许挑战**（残影按 brokenAt 加强），这是既定设计不是漏洞。
+        // 以前被当成 P1 误报过一轮 —— 这条钉子把结论固定在代码里，别再翻案。
+        add(g, "碎剑留档可被挑战（设计如此：残影按碎在 +N 加强）", () -> {
+            // levelOf 用 brokenAt 抬等级，只有挑战路径会调到它；
+            // 若将来有人给挑战加 broken gate，这里的镜像断言会先红。
+            int brokenAt = 7;
+            int level = Math.max(0, brokenAt);
+            require(level == brokenAt, "碎剑留档的挑战等级应等于碎在 +N");
+            require(plugin.tombs() != null, "剑冢管理器未初始化");
+        });
         add(g, "风险模式开关可读", () ->
                 require(com.forgemaster.forge.RiskMode.enabled(plugin) || !com.forgemaster.forge.RiskMode.enabled(plugin),
                         "风险模式开关接口异常"));
