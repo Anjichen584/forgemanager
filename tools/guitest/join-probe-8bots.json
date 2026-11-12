@@ -1,0 +1,11 @@
+{
+  "mode": "join-only",
+  "botCount": 8,
+  "joinMs": 14266,
+  "aliveAfter20s": 8,
+  "throttleEvents": 0,
+  "throttledDuringIdle": 0,
+  "retries": 0,
+  "details": [],
+  "at": "2026-11-12T06:25:23.699Z"
+}

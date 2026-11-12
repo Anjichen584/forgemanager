@@ -24,7 +24,14 @@ const RCON_PASS = 'testpass'
 const SERVER = process.env.FM_SERVER || 'D:\\IDEA\\mc-plugins\\ForgingMaster\\testserver'
 const LOG = path.join(SERVER, 'logs', 'latest.log')
 
-const BOTS = ['ConcA', 'ConcB', 'ConcC', 'ConcD']
+// 并发数可配（默认 4）。脚本名保留 concurrent4.js 不改 —— run-stress.py 和文档都按这个名字引用。
+//   BOT_COUNT=5        试 5 并发会不会握手排队/被掐
+//   JOIN_ONLY=1        只连不测：上线后空转 20 秒就出报告，专门量「连接成功率与耗时」
+// 为什么要能改：4 是**回归门**，必须每次都过；5 是**探针**，只用来回答「上限在哪」，
+// 不能反过来让探针的不稳把回归门搞红。
+const BOT_COUNT = Math.max(1, Math.min(8, parseInt(process.env.BOT_COUNT || '4', 10) || 4))
+const JOIN_ONLY = process.env.JOIN_ONLY === '1'
+const BOTS = Array.from({ length: BOT_COUNT }, (_, i) => 'Conc' + String.fromCharCode(65 + i))
 
 // ---------------------------------------------------------------- RCON
 function rconClient () {
@@ -114,6 +121,17 @@ async function setCoins (name, amount) {
 }
 
 // ---------------------------------------------------------------- bot
+// 握手节流计数器：429 / 「Too many login attempts」/ connection throttled
+// 这类不是插件的 bug，是服务端在挡连接。以前它们会让整个阶段异常收场，
+// 看起来像并发面有缺陷。现在单独计数，并做退避重连。
+const throttle = { events: 0, retries: 0, details: [] }
+
+function looksThrottled (msg) {
+  const s = String(msg || '').toLowerCase()
+  return s.includes('429') || s.includes('too many') || s.includes('throttl')
+      || s.includes('connection reset') || s.includes('timed out')
+}
+
 function join (name) {
   const bot = mineflayer.createBot({ host: HOST, port: PORT, username: name, auth: 'offline', version: VERSION })
   bot.chatLog = []
@@ -122,15 +140,66 @@ function join (name) {
     if (s.trim()) bot.chatLog.push(s.replace(/\u00a7./g, ''))
     if (bot.chatLog.length > 400) bot.chatLog.splice(0, bot.chatLog.length - 400)
   })
-  bot.on('error', e => console.log(`  [${name}] error ${e.message}`))
-  bot.on('kicked', r => console.log(`  [${name}] kicked ${JSON.stringify(r).slice(0, 200)}`))
+  bot.on('error', e => {
+    if (looksThrottled(e.message)) {
+      throttle.events++
+      throttle.details.push(`${name}: ${e.message}`)
+    }
+    console.log(`  [${name}] error ${e.message}`)
+  })
+  bot.on('kicked', r => {
+    const s = JSON.stringify(r)
+    if (looksThrottled(s)) {
+      throttle.events++
+      throttle.details.push(`${name}: kicked ${s.slice(0, 160)}`)
+    }
+    console.log(`  [${name}] kicked ${s.slice(0, 200)}`)
+  })
   return bot
 }
 
-const sp = (bot, ms = 20000) => new Promise((res, rej) => {
-  bot.once('spawn', res)
-  setTimeout(() => rej(new Error(bot.username + ' spawn 超时')), ms)
+const sp = (name, bot, ms = 20000) => new Promise((resolve, reject) => {
+  let done = false
+  const finish = (fn, arg) => { if (!done) { done = true; clearTimeout(timer); fn(arg) } }
+  const timer = setTimeout(() => finish(reject, new Error(name + ' spawn 超时')), ms)
+  bot.once('spawn', () => finish(resolve))
+  // 被踢/出错时立刻失败，别傻等满 20 秒 —— 429 场景下这一点决定了整轮要耗多久。
+  // 注意用传入的 name，不能用 bot.username：被踢的时候它还是 undefined，
+  // 之前就打出过「undefined 被踢」，日志里根本认不出是哪只 bot。
+  bot.once('kicked', r => finish(reject, new Error(name + ' 被踢：' + JSON.stringify(r).slice(0, 120))))
+  bot.once('error', e => finish(reject, new Error(name + ' 连接出错：' + e.message)))
 })
+
+/**
+ * 带退避的上线。429/throttle 之后固定 sleep 是错的做法：
+ * 节流窗口通常是**服务端按时间段放行**，固定等待容易反复撞同一堵墙；
+ * 指数退避 + 抖动能把并发重连拆开，成功率显著更高。
+ */
+async function joinWithRetry (name, attempts = 4) {
+  let waitMs = 1500
+  for (let i = 0; i < attempts; i++) {
+    const bot = join(name)
+    try {
+      await sp(name, bot, i === 0 ? 40000 : 25000)
+      return bot
+    } catch (e) {
+      try { bot.quit() } catch (_) {}
+      // server_full / 白名单 / 封禁 这类是**硬性拒绝**，重试只会一直撞同一堵墙，必须立刻报清楚。
+      // 区分开很重要：把硬限当成 429 去重试，会白等 4 轮然后把真原因埋掉。
+      if (/server_full|whitelist|banned|not allowed/i.test(e.message)) {
+        throw new Error(`${name} 被服务端硬性拒绝（${e.message}）——`
+            + ` 这通常是 max-players 满了或不在白名单，不是 429，调 BOT_COUNT 或改 server.properties`)
+      }
+      if (looksThrottled(e.message)) { throttle.events++ }
+      if (i === attempts - 1) throw e
+      throttle.retries++
+      const jitter = Math.floor(Math.random() * 800)
+      console.log(`  [${name}] 第 ${i + 1} 次上线失败（${e.message}），${waitMs + jitter}ms 后重试`)
+      await wait(waitMs + jitter)
+      waitMs = Math.min(waitMs * 2, 12000)
+    }
+  }
+}
 
 // ⚠ 别用 bot.chat 连发同一 tick：mineflayer 每条 chat 是一次 chat_command 包，
 //    但服务端会把同 tick 的多条命令按到达顺序执行 —— 这正是我们要的并发面。
@@ -697,11 +766,11 @@ async function main () {
 
   const bots = []
   try {
-    // 逐个上线（4 个一起连会让测试服握手排队，反而测不到东西）
+    // 逐个上线（一起连会让测试服握手排队，反而测不到东西）
+    const joinT0 = Date.now()
     for (let i = 0; i < BOTS.length; i++) {
-      const bot = join(BOTS[i])
+      const bot = await joinWithRetry(BOTS[i])
       bots.push(bot)
-      await sp(bot, i === 0 ? 40000 : 20000)
       await wait(700)
       await rc('op ' + BOTS[i])
       await rc('gamemode survival ' + BOTS[i])
@@ -710,7 +779,37 @@ async function main () {
       await rc(`minecraft:tp ${BOTS[i]} ${pos.x + i * 4} ${pos.y} ${pos.z}`)
       await wait(400)
     }
-    console.log('  4 个 bot 全部上线：' + bots.map(b => b.username).join(', '))
+    const joinMs = Date.now() - joinT0
+    console.log(`  ${BOTS.length} 个 bot 全部上线（${joinMs}ms）：` + bots.map(b => b.username).join(', '))
+    if (throttle.events > 0) {
+      console.log(`  ⚠ 握手节流命中 ${throttle.events} 次，重连 ${throttle.retries} 次`)
+    }
+
+    // JOIN_ONLY：只量「连得上吗、多快」，不跑 12 个阶段。
+    // 用途：回答「5 并发会不会 429」，而不让探针的不稳污染 4 并发的回归门。
+    if (JOIN_ONLY) {
+      console.log('\n[JOIN_ONLY] 空转 20 秒，观察是否被中途踢下线…')
+      const kickedBefore = throttle.events
+      await wait(20000)
+      const alive = bots.filter(b => b.entity && b.player).length
+      const result = {
+        mode: 'join-only',
+        botCount: BOTS.length,
+        joinMs,
+        aliveAfter20s: alive,
+        throttleEvents: throttle.events,
+        throttledDuringIdle: throttle.events - kickedBefore,
+        retries: throttle.retries,
+        details: throttle.details.slice(0, 10),
+        at: new Date().toISOString()
+      }
+      fs.writeFileSync(path.join(__dirname, `join-probe-${BOTS.length}bots.json`),
+          JSON.stringify(result, null, 2))
+      console.log(`\n[结果] ${BOTS.length} 并发：上线 ${joinMs}ms，20 秒后存活 ${alive}/${bots.length}，`
+          + `握手节流 ${result.throttleEvents} 次，重连 ${result.retries} 次`)
+      for (const b of bots) { try { b.quit() } catch (_) {} }
+      return
+    }
 
     for (const name of run) {
       if (!phases[name]) { console.log('  未知阶段：' + name); continue }
@@ -733,7 +832,10 @@ async function main () {
     for (const r of bad) console.log(`  ✗ [${r.area}] ${r.name} — ${r.detail}`)
   }
   fs.writeFileSync(path.join(__dirname, 'concurrent4-report.json'), JSON.stringify({
-    at: new Date().toISOString(), phases: run, rows
+    at: new Date().toISOString(), phases: run,
+    botCount: BOTS.length,
+    // 握手节流单独记录：它不是插件缺陷，但每轮都出现说明服务端连接上限到了
+    throttleEvents: throttle.events, throttleRetries: throttle.retries, rows
   }, null, 2))
   process.exit(bad.length ? 1 : 0)
 }
