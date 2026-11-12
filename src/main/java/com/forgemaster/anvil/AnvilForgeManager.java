@@ -358,6 +358,14 @@ public final class AnvilForgeManager {
         if (session == null) {
             return null;
         }
+        // v2.25.7 修 P1（审计轮5）：`anvil-forge.enabled` 原来只在 place() 判，
+        // 已经摆在场上的砧位照样能单锤/批量。服主维护期设成 false 想停强化，
+        // 结果续费、碎剑、扣钱全都在继续；而且此时 capOf()/costOf() 已经切回
+        // 旧口径曲线，和玩家刚才看到的上限/费用当场对不上。
+        // 注意必须在「冷却静默」之前判：关停时要给一次提示，不能一声不响。
+        if (!enabled()) {
+            return "<red>铁砧强化现在处于关闭状态。</red>";
+        }
         if (!session.owner().equals(player.getUniqueId()) && ownerOnly()) {
             return "<red>这是 <white>" + session.ownerName() + "</white> 的砧位。";
         }
@@ -400,6 +408,12 @@ public final class AnvilForgeManager {
     public void strikeBatch(Player player, Block block) {
         AnvilForgeSession session = sessionAt(block);
         if (session == null) {
+            return;
+        }
+        // v2.25.7 修 P1：同 strike() —— 批量落锤也必须认 `anvil-forge.enabled`，
+        // 否则「关停强化」只关掉了进场，场上的砧位可以一路锤到底（批量还会连跳冷却）。
+        if (!enabled()) {
+            Msg.prefix(player, "<red>铁砧强化现在处于关闭状态，批量落锤已停。</red>");
             return;
         }
         if (!session.owner().equals(player.getUniqueId()) && ownerOnly()) {

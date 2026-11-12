@@ -37,7 +37,7 @@
 3. **加功能前先搜现有命令面**（`SUBCOMMANDS` + `helpLines()`）。差点加过 `/zhujian top rep`，而 `rank reputation` 早就有了。
 4. **管理命令进 `ADMIN_ONLY`，并且 handler 内部自判 `forgemaster.admin`**。只靠 Tab 隐藏不算。
 5. **锻造系手续费永远是剑币**（`stats().takeCoins`）：强化 / 进化 / 铭刻 / 词条剥离。不是漏改 Wallet。
-6. **自检项数只许增不许减**（当前 520）。删钉子等于删安全网。
+6. **自检项数只许增不许减**（当前 522）。删钉子等于删安全网。
 7. **并发压测固定 4 个 bot**，绝不上 10（429 / 握手排队）。
 8. **README 有体量预算：450 行 / 48 KB，`check` 会拦**。每轮的叙事**不要**往 README 里加小节 ——
    README 曾涨到 4460 行 / 282 KB，agent 整读炸上下文只读一半就动手，这是最隐蔽的「读取不到」。
@@ -79,7 +79,7 @@ cd D:\IDEA\mc-plugins\ForgingMaster-Lore
 | `docs/history/*.md` | foreman | informative | 逐版本叙事（查「以前修过没」「数值为什么这么定」）：v2.10.x / v2.18-2.21 / v2.23.x / v2.24.x / v2.25.x |
 | `docs/dev/*.md` | foreman | normative | 构建与测试服操作：build |
 | `audit/*.md` | auditor | informative | 历史审计报告 22 份，按文件名挑着读 |
-| `docs/handoff/archive/` | foreman | archive | 每轮交付报告归档（只增不改）：v2.25.6 |
+| `docs/handoff/archive/` | foreman | archive | 每轮交付报告归档（只增不改）：v2.25.6 / v2.25.7 |
 <!-- agents:index:end -->
 
 ## 六、为什么这么设计

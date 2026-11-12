@@ -111,8 +111,12 @@ public final class DailyStore {
                 + signin.size() + " 份签到进度");
     }
 
-    /** 整份重建落盘；market 里非当天的日期层一并剪掉 */
-    public void save() {
+    /**
+     * 整份重建落盘；market 里非当天的日期层一并剪掉。
+     *
+     * @return 是否写盘成功（v2.25.7 改：限购计数要「落盘成功才算数」，调用方必须能判断）
+     */
+    public boolean save() {
         // v2.25 修 P2（审计轮2-7）：剪层原来「非今天全剪」。23:59:59 进入 buy()
         // 记的是昨天的账，跨过零点后这次 save() 会把刚记的层整个剪掉 ——
         // 限购计数回零，可立即再买。改为保留今天+昨天两层（多层方案下
@@ -141,8 +145,10 @@ public final class DailyStore {
                 plugin.getDataFolder().mkdirs();
             }
             com.forgemaster.util.YamlIo.save(file, yml);
+            return true;
         } catch (IOException ex) {
             plugin.getLogger().warning("黑市/签到存档保存失败：" + ex.getMessage());
+            return false;
         }
     }
 
@@ -163,6 +169,62 @@ public final class DailyStore {
         market.computeIfAbsent(uuid, k -> new HashMap<>())
                 .computeIfAbsent(date, k -> new HashMap<>())
                 .merge(offerKey, 1, Integer::sum);
+    }
+
+    /**
+     * 「先占额度，写盘成功才算数」（v2.25.7 修 P1）。
+     *
+     * <p>原来的顺序是「发货 → recordPurchase → save()」。崩在发货和落盘之间，
+     * 计数就回到原值，重启后今日额度是满的 —— 配合折扣价等于「崩溃刷折扣货」。
+     * 玩家自己不能崩服务器，但崩服不总是玩家的错（OOM、插件冲突、管理员重启），
+     * 而这种窗口一晚上被撞上一次就是白送的货。</p>
+     *
+     * <p>现在：先在内存里加一，立刻落盘；落不下去就回滚这一个计数并返回 false，
+     * 调用方据此**不发货 + 退款**。额度宁可少卖一件，也不能落盘失败还发出去。</p>
+     *
+     * @param limit 今日上限；已经买满（≥limit）时直接返回 false，不写盘
+     * @return true = 额度已占有且已落盘，可以发货
+     */
+    public boolean tryReservePurchase(UUID uuid, String date, String offerKey, int limit) {
+        if (uuid == null || date == null || offerKey == null) {
+            return false;
+        }
+        if (purchaseCount(uuid, date, offerKey) >= limit) {
+            return false;
+        }
+        recordPurchase(uuid, date, offerKey);
+        if (!save()) {
+            releaseReservation(uuid, date, offerKey);
+            return false;
+        }
+        return true;
+    }
+
+    /** 撤回一次额度占用（发货失败 / 落盘失败时用）；减到 0 就把这条记录清掉，别留空壳 */
+    public void releaseReservation(UUID uuid, String date, String offerKey) {
+        Map<String, Map<String, Integer>> byDate = market.get(uuid);
+        if (byDate == null) {
+            return;
+        }
+        Map<String, Integer> counts = byDate.get(date);
+        if (counts == null) {
+            return;
+        }
+        Integer cur = counts.get(offerKey);
+        if (cur == null) {
+            return;
+        }
+        if (cur <= 1) {
+            counts.remove(offerKey);
+        } else {
+            counts.put(offerKey, cur - 1);
+        }
+        if (counts.isEmpty()) {
+            byDate.remove(date);
+        }
+        if (byDate.isEmpty()) {
+            market.remove(uuid);
+        }
     }
 
     // ------------------------------------------------------------ 每日签到

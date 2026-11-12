@@ -317,7 +317,11 @@ public final class SeasonPassService {
     }
 
     /** 整份重建落盘（StoryManager / SpectrumService 风格），登记积分或领取后都会调 */
-    public void save() {
+    /**
+     * 落盘。**返回成败**（v2.25.7 改）：以前是 void，调用方想「失败就回滚」也没法判断，
+     * 只能盲发。现在领奖、买付费轨这两条涉及钱货的路径会看返回值决定是否回滚/提示。
+     */
+    public boolean save() {
         // v2.25.2（4 并发查错）：原来第一行就 dirty = false，然后才组装+写盘。
         // 只要 yml.save 抛 IOException（盘满/文件被占），这一批变更就再也不会重试了 ——
         // 脏标记已经没了。改成写成功之后再清，且写盘窗口内有人 markDirty 就保持脏。
@@ -343,9 +347,11 @@ public final class SeasonPassService {
             if (seq == dirtySeq) {
                 dirty = false;
             }
+            return true;
         } catch (IOException ex) {
             dirty = true; // 写失败就得留脏，等下一次 flush 重试
             plugin.getLogger().warning("赛季通行证存档保存失败：" + ex.getMessage());
+            return false;
         }
     }
 
@@ -553,14 +559,29 @@ public final class SeasonPassService {
         }
         var wallet = plugin.wallet();
         long cost = premiumCost;
+        // v2.25.7 修 P1（审计轮5）：原来「先扣钱 → 记已购 → save()」，save 失败只打 warning，
+        // 钱已经扣了而「已购」只活在内存里；崩在 flush 之前就是「花了 5000 什么都没拿到」。
+        // 改成「先记已购并落盘 → 落不下去就不扣钱 → 再扣钱，扣失败把记录回滚」。
+        // 这样两种失败都不会让玩家吃亏：盘写不了 = 一分没扣；钱扣不了 = 已购回滚。
+        SeasonProgress prog = progress(uuid, seasonNumber());
+        boolean wasBought = prog.premiumBought;
+        prog.premiumBought = true;
+        if (!save()) {
+            prog.premiumBought = wasBought;
+            Msg.prefix(player, "<red>存档写入失败，本次没有扣你的剑币，请稍后再试。</red>");
+            plugin.getLogger().severe("赛季通行证付费轨：已购状态落盘失败，已回滚并阻止扣费（uuid="
+                    + uuid + "）");
+            return false;
+        }
         if (cost > 0 && !wallet.take(player, cost, com.forgemaster.econ.CoinReason.PASS_PREMIUM)) {
+            // 钱没扣到：把刚写下的「已购」撤回去，别让人白拿付费轨
+            prog.premiumBought = wasBought;
+            save();
             Msg.prefix(player, "<red>剑币不够。</red> 解锁付费轨要 <#ffd166>" + wallet.format(cost)
                     + "</#ffd166><gray>，你只有 </gray>" + wallet.format(wallet.coins(player)) + "<gray>。</gray>");
             player.playSound(player.getLocation(), org.bukkit.Sound.ENTITY_VILLAGER_NO, 0.8f, 1.0f);
             return false;
         }
-        progress(uuid, seasonNumber()).premiumBought = true;
-        save();
 
         player.playSound(player.getLocation(), org.bukkit.Sound.UI_TOAST_CHALLENGE_COMPLETE, 0.9f, 1.4f);
         Msg.prefix(player, "<gradient:#ffd166:#ff7a18><bold>赛季通行证</bold></gradient> <green>付费轨已解锁！"
@@ -619,9 +640,17 @@ public final class SeasonPassService {
             Msg.prefix(player, "<red>发奖时出了点问题，本次没有记你领取，请再点一次。</red>");
             return false;
         }
-        save();
-
-        player.playSound(player.getLocation(), org.bukkit.Sound.UI_TOAST_CHALLENGE_COMPLETE, 0.9f, 1.2f);
+        // v2.25.7 修 P1（审计轮5）：这里原来是裸 save()，写盘失败只留一条 warning。
+        // 奖励已经进背包，而「已领」只在内存里 + 脏标记等下一轮 flush —— 崩在这 30 秒内，
+        // 重启后这一级可以再领一次（重复发奖）。现在写盘失败会明确告知，并把「记录未落盘」
+        // 这件事写进日志便于对账；同时 dirty 已经置位，flush 会持续重试。
+        if (!save()) {
+            plugin.getLogger().severe("赛季通行证第 " + levelNo + " 级：奖励已发放，但已领记录落盘失败"
+                    + "（uuid=" + uuid + "）。脏标记已置位，后续 flush 会重试；若在重试成功前重启，"
+                    + "该玩家可重复领取这一级，请对账。");
+            Msg.prefix(player, "<yellow>奖励已发放，但存档暂时写不进去，已排队重试。"
+                    + "如果之后重启服务器出现异常请找管理员。</yellow>");
+        }
         Msg.prefix(player, "<gradient:#ffd166:#ff7a18><bold>赛季通行证</bold></gradient> <gray>第 <#ffd166>"
                 + levelNo + "</#ffd166> 级奖励已领取！</gray>"
                 + (got.isEmpty() ? "" : " <white>" + String.join("　", got)));
@@ -714,7 +743,13 @@ public final class SeasonPassService {
             Msg.prefix(player, "<red>发奖时出了点问题，本次没有记你领取，请再点一次。</red>");
             return false;
         }
-        save();
+        // v2.25.7 修 P1（审计轮5）：与免费轨同理 —— 奖励已进背包，记录没落盘就不能静默。
+        if (!save()) {
+            plugin.getLogger().severe("赛季通行证付费轨第 " + levelNo + " 级：奖励已发放，但已领记录落盘失败"
+                    + "（uuid=" + uuid + "）。脏标记已置位，后续 flush 会重试；若在重试成功前重启，"
+                    + "该玩家可重复领取这一级，请对账。");
+            Msg.prefix(player, "<yellow>奖励已发放，但存档暂时写不进去，已排队重试。</yellow>");
+        }
 
         player.playSound(player.getLocation(), org.bukkit.Sound.UI_TOAST_CHALLENGE_COMPLETE, 0.9f, 1.3f);
         Msg.prefix(player, "<gradient:#ffd166:#ff7a18><bold>赛季通行证</bold></gradient> <gray>付费轨第 <#ffd166>"

@@ -397,7 +397,13 @@ public final class CommissionManager {
         long coinGain = plugin.coinRules().commissionReward(c.rewardRep());
         // v2.23.1 修 P1：走 Wallet 而不是 stats()——coin-sinks=server 时与黑市/签到同一本账，
         // 否则玩家在这里赚的是剑币、在黑市花的却是服务器金币（两本账谁都花不出去）
-        plugin.wallet().give(player, coinGain, CoinReason.COMMISSION);
+        // v2.25.7：give 的返回值不再丢。发不出去（离线/经济插件异常）必须留下可对账的记录，
+// 否则玩家点了交货、委托没了、钱也没到，事后谁都查不出发生过什么。
+        if (!plugin.wallet().give(player, coinGain, CoinReason.COMMISSION)) {
+            plugin.getLogger().severe("委托结算中断：剑币未发放（玩家 "
+                    + player.getName() + "/" + player.getUniqueId() + "，金额 " + coinGain
+                    + "，委托 " + c.id() + "）。请核对后人工补发。");
+        }
         Msg.prefix(player, "<gray>委托剑币 +" + com.forgemaster.econ.CoinRules.fmt(coinGain));
 
         Material reward = Material.matchMaterial(c.rewardItemId());

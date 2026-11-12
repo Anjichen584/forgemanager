@@ -5540,6 +5540,51 @@ public final class SelfTestSuite {
             require(plugin.economy() != null, "经济桥接没有初始化");
             require(!plugin.economy().backend().label().isBlank(), "后端名称为空");
         });
+
+        add(g, "黑市限购必须先占额度再发货，且额度可撤回（v2.25.7 修 P1）", () -> {
+            // 出过的真事故：recordPurchase + save 写在**发货之后**，崩在这中间重启，
+            // 今日额度回到满值 —— 配折扣价就是「崩溃刷折扣货」。
+            // 现在改「先占额度 → 落盘成功 → 才发货」，落不下去调用方不发货并退款。
+            var store = plugin.dailyStore();
+            require(store != null, "黑市存档（DailyStore）没初始化");
+            UUID fake = UUID.nameUUIDFromBytes("SelfTest-bm-reserve".getBytes());
+            // 必须用真实「今天」：DailyStore.save() 会剪掉非今天/昨天的日期层，
+            // 用假日期会被剪掉，测出来是「计数没涨」（第一版就这么假红了一次）
+            String date = com.forgemaster.blackmarket.DailyStore.today();
+            String key = "selftest-offer";
+            int before = store.purchaseCount(fake, date, key);
+            require(before == 0, "测试起点脏了，已有 " + before + " 次记录");
+            // ① 占一次额度：应当成功，且立刻能读到 1
+            require(store.tryReservePurchase(fake, date, key, 3), "首次占额度失败");
+            require(store.purchaseCount(fake, date, key) == 1, "占额度后计数没涨");
+            // ② 撤回：回到 0，且不留空壳
+            store.releaseReservation(fake, date, key);
+            require(store.purchaseCount(fake, date, key) == 0, "撤回后计数没归零");
+            // ③ 买满之后必须拒绝（这条是限购的本体）
+            require(store.tryReservePurchase(fake, date, key, 1), "第 1 次应允许");
+            require(!store.tryReservePurchase(fake, date, key, 1), "买满 1 次后还能再占，限购没生效");
+            // ④ 多占几次再全部撤回，不能残留
+            for (int i = 0; i < 5; i++) {
+                store.tryReservePurchase(fake, date, key, 99);
+            }
+            require(store.purchaseCount(fake, date, key) == 6, "累计占额度算错");
+            for (int i = 0; i < 6; i++) {
+                store.releaseReservation(fake, date, key);
+            }
+            require(store.purchaseCount(fake, date, key) == 0, "全部撤回后仍有残留");
+            // ⑤ 撤回不存在的记录不能炸
+            store.releaseReservation(UUID.nameUUIDFromBytes("SelfTest-bm-none".getBytes()), date, key);
+            store.releaseReservation(null, date, key);
+        });
+
+        add(g, "通行证 save() 必须能报告成败（v2.25.7 修 P1）", () -> {
+            // 出过的真事故：save() 是 void，买付费轨「先扣 5000 再写已购」，
+            // 写盘失败只打 warning —— 钱扣了、「已购」只在内存里，崩在 flush 前就是白花钱。
+            // 现在 save() 返回 boolean，调用方据此回滚。这条钉住「返回值存在且真能落盘」。
+            var pass = plugin.seasonPass();
+            require(pass != null, "赛季通行证服务没初始化");
+            require(pass.save(), "save() 在正常环境下应当返回 true（不然买付费轨永远被拒）");
+        });
         add(g, "金额格式化可读", () -> {
             String s = plugin.economy().format(200);
             require(s != null && !s.isBlank() && s.contains("200"), "金额格式异常: " + s);

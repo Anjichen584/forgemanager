@@ -168,9 +168,22 @@ public final class BlackmarketService {
             return;
         }
 
+        // v2.25.7 修 P1（审计轮5）：限购计数原来写在**发货之后**（recordPurchase → save 在 178-182），
+// 崩在「货已进背包、计数没落盘」之间，重启后今日额度回到原值 ——
+// 配合折扣价就是「崩溃刷折扣货」。改成计数先落盘、落不下去就不发货（钱原路退回）。
+        if (!store.tryReservePurchase(id, date, offer.item().key(), limit)) {
+            wallet.give(p, offer.price(), CoinReason.REFUND);
+            Msg.prefix(p, "<red>今日购买记录没写进存档，本次没有出货，剑币已退回。请稍后再试。</red>");
+            plugin.getLogger().severe("黑市限购记录落盘失败，已阻止出货并退款（uuid=" + p.getUniqueId()
+                    + ", date=" + date + ", item=" + offer.item().key() + "）");
+            p.playSound(p.getLocation(), Sound.ENTITY_VILLAGER_NO, 0.8f, 1.0f);
+            return;
+        }
+
         ItemStack goods = buildItem(offer);
         if (goods == null) {
-            // 理论到不了（池解析时就剔掉了坏条目）；真到了把钱退回去
+            // 理论到不了（池解析时就剔掉了坏条目）；真到了把钱退回去，并把刚占的额度放回
+            store.releaseReservation(id, date, offer.item().key());
             wallet.give(p, offer.price(), CoinReason.REFUND);
             Msg.prefix(p, "<red>这件货出了问题，剑币已退回。</red>");
             return;
@@ -178,8 +191,6 @@ public final class BlackmarketService {
         for (ItemStack rest : p.getInventory().addItem(goods).values()) {
             p.getWorld().dropItemNaturally(p.getLocation(), rest);
         }
-        store.recordPurchase(id, date, offer.item().key());
-        store.save();
 
         p.playSound(p.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.7f, 1.2f);
         Msg.prefix(p, "<dark_gray>黑市</dark_gray> <green>购入</green> " + displayName(offer)

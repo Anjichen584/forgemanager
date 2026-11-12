@@ -320,7 +320,11 @@ public final class OrderService {
         long pay = payout(o.bounty());
         // v2.25.2（审计轮4）：发钱必须走 Wallet 收口。直连 stats().addCoins 在
         // economy.coin-sinks=server 时会分裂两本账（扣的是金币、发的是剑币＝凭空造币）。
-        plugin.wallet().give(p, pay, com.forgemaster.econ.CoinReason.BOUNTY);
+        // v2.25.7：give 的返回值不能再丢 —— 玩家满背包/离线导致发不出去时，
+        // 这笔钱既没进背包也没人知道。参照拍卖行的 warnLost，打一条能对账的 severe。
+        if (!plugin.wallet().give(p, pay, com.forgemaster.econ.CoinReason.BOUNTY)) {
+            warnLost(p.getUniqueId(), p.getName(), pay, "订单 #" + id + " 交付发赏");
+        }
         plugin.stats().markDirty();
         int rep = repReward();
         if (rep > 0) {
@@ -360,7 +364,10 @@ public final class OrderService {
         orders.remove(id);
         save();
         // v2.25.2（审计轮4）：退款与当初扣款必须同一本账，走 Wallet（同 take 的判定）
-        plugin.wallet().give(p, o.bounty(), com.forgemaster.econ.CoinReason.BOUNTY);
+        // v2.25.7：返回值不再丢，发不出去要能被对账
+        if (!plugin.wallet().give(p, o.bounty(), com.forgemaster.econ.CoinReason.BOUNTY)) {
+            warnLost(p.getUniqueId(), p.getName(), o.bounty(), "订单 #" + id + " 取消退款");
+        }
         plugin.stats().markDirty();
         return "<green>订单 #" + id + " 已取消，托管悬赏 <gold>" + o.bounty() + "</gold> 剑币全额退回。";
     }
@@ -496,6 +503,21 @@ public final class OrderService {
     }
 
     // ------------------------------------------------------------ 小工具
+
+    /**
+     * 钱没发出去的时候留一条能对账的记录（v2.25.7）。
+     *
+     * <p>{@code wallet().give} 返回 false 表示这笔钱没进玩家账户（离线、经济插件不可用、
+     * 数额非法等）。以前这个返回值被直接丢掉：玩家点了「取消」，单据删了、钱没到，
+     * 事后既没有日志也没有告警，只能靠玩家来投诉。照抄拍卖行的 {@code warnLost} 做法，
+     * 把「谁、多少钱、因为哪一单」写进日志，并落进邮箱提示，便于人工补发。</p>
+     */
+    private void warnLost(UUID uuid, String name, long amount, String what) {
+        plugin.getLogger().severe("订单结算中断（" + what + "）：剑币 " + amount
+                + " 未发放给 " + name + "/" + uuid + "。请核对后人工补发。");
+        notifyPlayer(uuid, "<red>有一笔 " + amount + " 剑币没发出去（" + what
+                + "），已记录，请联系管理员补发。</red>");
+    }
 
     private String newId() {
         while (true) {
