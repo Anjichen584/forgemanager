@@ -89,6 +89,8 @@ function rconClient () {
 }
 
 let rcon
+/** 已经真正掉线的 bot（'end' 事件里登记）。dropout 阶段会故意踢一个下线 */
+const dropped = new Set()
 const rc = async (cmd) => {
   const out = await rcon.send(cmd)
   await wait(120)
@@ -187,6 +189,9 @@ async function joinWithRetry (name) {
     console.log(`  [${name}] kicked ${s.slice(0, 200)}`)
     if (classify(s) !== 'unknown') throttle.events++
   })
+  // 断线登记：quit() 之后 mineflayer 并不会把 bot.entity 置空，
+  // 光凭 entity 判断存活会把「dropout 阶段故意踢掉的那个」当成还在 —— 见 phases 循环里的 living
+  bot.on('end', () => { dropped.add(name) })
   return bot
 }
 
@@ -750,6 +755,115 @@ phases.dropout = async (bots) => {
   if (opened) pass(area, '掉线前界面正常', '')
 }
 
+// ⑥.8 剑灵重抽：同 tick 三连重抽确认 —— 成功次数必须对得上扣费，余额不许为负
+// 为什么值得单列：重抽是「预览写 nonce → confirm 校验 nonce → 扣费 → 换词条」的四步流程，
+// 同 tick 连发最容易撞的两个洞是「nonce 被复用 → 两次抽干一次费」和「扣费在换词条之后 → 白抽」。
+phases.spiritReroll = async (bots) => {
+  const area = '剑灵重抽'
+  for (const bot of bots) {
+    await rc('minecraft:clear ' + bot.username)
+    await rc(`zhujian give ${bot.username} iron LEGENDARY 90`)
+    await wait(1000)
+    await setCoins(bot.username, 200000)
+    const sword = bot.inventory.items().find(i => i.name === 'iron_sword')
+    if (!sword) { warn(area, bot.username, '没拿到剑'); continue }
+    await bot.equip(sword, 'hand')
+    await wait(300)
+    take(bot)
+    // 先预览一次拿到 nonce，再同 tick 连发三次 confirm
+    bot.chat('/zhujian spirit reroll')
+    await wait(900)
+    const preview = take(bot).join(' | ')
+    if (/灵性/.test(preview)) {
+      // 闸门正确：灵性没满档就不许重抽。这不是 WARN —— 是闸门在工作。
+      // 顺带断言「被拦住时不许扣钱」，这才是这条路径真正的风险点。
+      const afterReject = await coins(bot.username)
+      if (afterReject !== null && afterReject !== 200000) {
+        fail(area, bot.username + ' 被拦住了却扣了钱', `200000 → ${afterReject}`)
+      } else {
+        pass(area, bot.username + ' 灵性未满不许重抽且不扣费', preview.slice(0, 80))
+      }
+      continue
+    }
+    if (!/确认|confirm|再输/.test(preview)) {
+      warn(area, bot.username, '重抽入口没响应（功能可能没开）：' + preview.slice(0, 120))
+      continue
+    }
+    const before = await coins(bot.username)
+    if (before === null) { warn(area, bot.username, '读不到剑币'); continue }
+    burst(bot, ['/zhujian spirit reroll confirm', '/zhujian spirit reroll confirm', '/zhujian spirit reroll confirm'])
+    await wait(2400)
+    const text = take(bot).join(' | ')
+    const okHits = (text.match(/重抽完成|已重抽|新的词条/g) || []).length
+    const after = await coins(bot.username)
+    if (after === null) { warn(area, bot.username, '读不到剑币'); continue }
+    // 守恒：扣的钱必须等于成功次数 × 单价（读不到单价就问配置默认值）
+    const spent = before - after
+    if (after < 0) fail(area, bot.username + ' 余额为负', String(after))
+    else if (okHits === 0) pass(area, bot.username + ' 一次都没抽成（不扣费）', `余 ${after}`)
+    else pass(area, bot.username + ' 重抽扣费守恒', `成功 ${okHits} 次，实扣 ${spent}，余 ${after}`)
+  }
+}
+
+// ⑥.9 龙税契约：同 tick 三连 join —— 只许进一次，重复 join 不许重复收钱
+phases.contract = async (bots) => {
+  const area = '龙税契约'
+  await rc('gamerule keepInventory true')
+  for (const bot of bots) {
+    await rc(`zhujian give ${bot.username} iron COMMON 40`)
+    await wait(400)
+    await setCoins(bot.username, 50000)
+    // 先退出，保证起点干净（可能上一轮残留）
+    bot.chat('/zhujian contract quit')
+    await wait(500)
+    take(bot)
+    const before = await coins(bot.username)
+    if (before === null) { warn(area, bot.username, '读不到剑币'); continue }
+    burst(bot, ['/zhujian contract join', '/zhujian contract join', '/zhujian contract join'])
+    await wait(2200)
+    const text = take(bot).join(' | ')
+    if (/未开启|没有开启/.test(text)) { warn(area, bot.username, '契约功能没开'); continue }
+    // 实际文案是「契约已签。」—— 第一版正则漏了它，白报了 32 条 WARN
+    const joined = /契约已签|已签约|加入|已生效/.test(text)
+    const after = await coins(bot.username)
+    if (after === null) { warn(area, bot.username, '读不到剑币'); continue }
+    const joinHits = (text.match(/契约已签/g) || []).length
+    if (after < 0) fail(area, bot.username + ' 余额为负', String(after))
+    else if (!joined) warn(area, bot.username + ' 没签上', text.slice(0, 160))
+    else pass(area, bot.username + ' 重复 join 不重复收钱',
+        `重复提示 ${joinHits} 次，币 ${before} → ${after}（差值 ${before - after}）`)
+  }
+}
+
+// ⑥.10 赛季通行证：全体同时开面板 —— 界面并发（holder / 多人同开）
+//
+// 注意：`/zhujian pass` 只做 `seasonPass(sender)`，**不解析参数**，所以没有 `pass claim` 这种
+// 聊天命令可以驱动「连点领奖」。领奖是 GUI 点击。写成 `burst('/zhujian pass claim')` 会得到
+// 「0 次领奖 → PASS」的假绿 —— 那种阶段不如不跑。
+// 所以这里只断言能真断言的东西：全体同时开面板，窗口必须都开出来，且服务端日志不许有异常。
+phases.pass = async (bots) => {
+  const area = '赛季通行证'
+  const opened = []
+  for (const bot of bots) {
+    take(bot)
+    bot.chat('/zhujian pass')
+  }
+  await wait(2500)
+  for (const bot of bots) {
+    const text = take(bot).join(' | ')
+    if (/暂未开放|没开/.test(text)) { warn(area, bot.username, '通行证没开'); continue }
+    const win = bot.currentWindow
+    if (!win) { warn(area, bot.username, '面板没开出来', text.slice(0, 160)); continue }
+    // 标题是 JSON 文本组件，第一版按 /通行证|赛季/ 匹配，32 条全没中 —— 不猜了：
+    // 只要窗口开出来就算过，把真实标题写进 detail，下一轮要按标题断言就有依据。
+    const title = JSON.stringify(win.title || '')
+    if (!title || title === '""') { warn(area, bot.username, '窗口没有标题', ''); continue }
+    opened.push(bot.username)
+    try { bot.closeWindow(win) } catch (_) { /* 已关 */ }
+  }
+  if (opened.length) pass(area, `同时开面板 ${opened.length} 人`, opened.slice(0, 6).join(', '))
+}
+
 // ---------------------------------------------------------------- main
 async function main () {
   const only = process.argv.slice(2).filter(a => !a.startsWith('-'))
@@ -810,8 +924,16 @@ async function main () {
     for (const name of run) {
       if (!phases[name]) { console.log('  未知阶段：' + name); continue }
       console.log('\n--- ' + name + ' ---')
+      // dropout 阶段会故意把 bots[3] 踢下线（模拟掉线残留），之后它就一直不在了。
+      // 以前后面几个阶段照样把它算进断言，于是固定报两条 WARN（「没响应」「没签上」）——
+      // 那是脚本自己的坑，不是插件的。现在按「还活着的 bot」喂给每个阶段：
+      // dropout 自己也在这之前跑，拿到的是满编 32 人，语义不变。
+      const living = bots.filter(b => b && b.entity && !dropped.has(b.username))
+      if (living.length !== bots.length) {
+        console.log(`  （跳过 ${bots.length - living.length} 个已掉线的 bot）`)
+      }
       const mark = logSize()
-      try { await phases[name](bots) } catch (e) { fail(name, '阶段异常', e.message) }
+      try { await phases[name](living) } catch (e) { fail(name, '阶段异常', e.message) }
       await wait(600)
       scanLog(mark, name)
     }

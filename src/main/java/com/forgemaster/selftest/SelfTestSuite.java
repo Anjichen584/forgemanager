@@ -5600,6 +5600,112 @@ public final class SelfTestSuite {
             // 这条断言防的是「有人把 wallet.give 又挪回构造前面」时至少服务还活着
             require(plugin.wallet() != null, "钱包没初始化");
         });
+        add(g, "行会金库扣款必须与基金同口径走 Wallet（v2.25.9 修 P1）", () -> {
+            // 出过的真事故：同一个文件两个钱口两种口径 ——
+            //   deposit（金库）直连 stats().takeCoins
+            //   donate（基金）走 wallet().take，注释还写着「禁止直连 stats().takeCoins」
+            // economy.coin-sinks=server 时：存金库绕过 Vault、捐基金走 Vault = 两本账。
+            java.io.File pkgRoot = findSourcePackageRoot();
+            if (pkgRoot == null) {
+                plugin.getLogger().info("[selftest] 找不到源码树，跳过行会账本守卫");
+                return;
+            }
+            java.io.File src = new java.io.File(pkgRoot, "guild/GuildService.java");
+            require(src.isFile(), "找不到 GuildService.java");
+            String code;
+            try {
+                code = new String(java.nio.file.Files.readAllBytes(src.toPath()),
+                        java.nio.charset.StandardCharsets.UTF_8);
+            } catch (java.io.IOException ex) {
+                throw new IllegalStateException("读不到 GuildService.java: " + ex.getMessage());
+            }
+            int bad = 0;
+            for (String line : code.split("\n")) {
+                String trimmed = line.trim();
+                if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) {
+                    continue;
+                }
+                if (trimmed.contains("stats().takeCoins")) {
+                    bad++;
+                }
+            }
+            require(bad == 0, "GuildService 又有 " + bad
+                    + " 处 stats().takeCoins —— 行会收钱必须跟基金一样走 wallet().take，混用=两本账");
+            require(code.contains("wallet().take"), "GuildService 的扣款没走 wallet().take");
+            require(code.contains("saveChecked()"), "行会落盘必须有成败返回值（否则金库存钱会被吞）");
+            // 逐方法核对：只要这个方法扣了玩家的钱，就必须判落盘成败 ——
+            // deposit（金库）和 fundDonate（基金）是同一类：扣了钱、余额只在内存，写失败=吞钱。
+            int takeMethods = 0;
+            for (String chunk : code.split("\\n    (?:private|public) ")) {
+                if (!chunk.contains("plugin.wallet().take(")) {
+                    continue;
+                }
+                takeMethods++;
+                require(chunk.contains("saveChecked()"),
+                        "有扣玩家钱的方法没判落盘成败（"
+                                + chunk.substring(0, Math.min(48, chunk.length())).replace('\n', ' ')
+                                + "…）—— 扣了钱没写盘就是吞钱");
+            }
+            require(takeMethods >= 2, "行会扣钱的方法数异常（" + takeMethods + "），"
+                    + "至少 deposit / fundDonate 两处；是不是有人把扣款搬走了？");
+            // 竞态 ≠ 没写：竞态那一轮盘上已经有这笔钱，返回 false 会让调用方倒扣金库 + 退款，
+            // 重启后金库凭空多一笔。saveChecked 只能在「真的没写」时返回 false。
+            for (String line : code.split("\n")) {
+                String trimmed = line.trim();
+                if (trimmed.startsWith("//") || trimmed.startsWith("*")) {
+                    continue;
+                }
+                require(!trimmed.startsWith("return !race"),
+                        "saveChecked() 不能把竞态当失败返回（return !race）—— "
+                                + "写下去了就是 true，只有没写才是 false");
+            }
+        });
+        add(g, "签到进度落盘必须判返回值（v2.25.9 修 P1）", () -> {
+            // DailyStore.save() 早就返回 boolean，签到路径一直没看 ——
+            // 写失败时「今天已签」只在内存，重启后能再签一次 = 重复发奖。
+            var store = plugin.dailyStore();
+            require(store != null, "黑市存档没初始化");
+            require(store.save(), "DailyStore.save() 在正常环境下应返回 true");
+            java.io.File pkgRoot = findSourcePackageRoot();
+            if (pkgRoot == null) {
+                plugin.getLogger().info("[selftest] 找不到源码树，跳过签到落盘守卫");
+                return;
+            }
+            java.io.File src = new java.io.File(pkgRoot, "blackmarket/DailyRewardService.java");
+            require(src.isFile(), "找不到 DailyRewardService.java");
+            String code;
+            try {
+                code = new String(java.nio.file.Files.readAllBytes(src.toPath()),
+                        java.nio.charset.StandardCharsets.UTF_8);
+            } catch (java.io.IOException ex) {
+                throw new IllegalStateException("读不到 DailyRewardService.java: " + ex.getMessage());
+            }
+            require(code.contains("if (!store.save())"),
+                    "签到进度落盘必须判返回值（否则存档失败还能重复签）");
+            require(code.contains("restoreSignin("),
+                    "存档失败时必须回滚内存里的签到进度（否则下次任何一次 save 都会把"
+                            + "「已签但没发奖」写进盘，玩家白丢一天）");
+        });
+        add(g, "签到回滚：restoreSignin 还原旧进度，原本没记录的删干净（v2.25.9）", () -> {
+            // 反例：setSignin(day=5) 之后 save 失败，只 return 不回滚 ——
+            // 内存里留着「今天已签第 5 天」，别人一签到触发 save，这条假的就落盘了。
+            var store = plugin.dailyStore();
+            require(store != null, "黑市存档没初始化");
+            UUID u = UUID.nameUUIDFromBytes("selftest-signin-rollback".getBytes());
+            try {
+                store.setSignin(u, 3, "2026-01-03");
+                store.restoreSignin(u, 1, "2026-01-01");
+                require(store.signinOf(u).day == 1 && "2026-01-01".equals(store.signinOf(u).last),
+                        "回滚后应回到 day=1 / last=2026-01-01，实际 day="
+                                + store.signinOf(u).day + " / last=" + store.signinOf(u).last);
+                // 原本没有记录的玩家（day=0/last=null）：回滚要整条删掉，别留一张白纸在盘上
+                store.restoreSignin(u, 0, null);
+                require(store.signinOf(u).day == 0 && store.signinOf(u).last == null,
+                        "无记录玩家回滚后应回到白纸状态");
+            } finally {
+                store.restoreSignin(u, 0, null); // 净效果为零，不碰真实数据
+            }
+        });
         add(g, "金额格式化可读", () -> {
             String s = plugin.economy().format(200);
             require(s != null && !s.isBlank() && s.contains("200"), "金额格式异常: " + s);

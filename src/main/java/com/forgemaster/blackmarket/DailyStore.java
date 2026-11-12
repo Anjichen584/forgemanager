@@ -245,6 +245,24 @@ public final class DailyStore {
         rec.last = date;
     }
 
+    /**
+     * 回滚签到进度（v2.25.9）：{@code save()} 失败时把内存态还原。
+     *
+     * <p>为什么必须回滚：签到是「先记账、再发奖」。记账写盘失败就地 return 时，
+     * 内存里已经是「今天已签」；只要之后任何一次 save 成功（别人签到 / 黑市买货），
+     * 这条假的「已签」就会落盘 —— 玩家这一天的奖励既没拿到，也领不了了。
+     * 传回签到之前的值即可；原本没有记录（day ≤ 0 且 last 为 null）时整条删掉。</p>
+     */
+    public void restoreSignin(UUID uuid, int day, String last) {
+        if (day <= 0 && last == null) {
+            signin.remove(uuid);
+            return;
+        }
+        SigninRecord rec = signin.computeIfAbsent(uuid, k -> new SigninRecord());
+        rec.day = Math.max(0, day);
+        rec.last = last;
+    }
+
     /** 黑市 GUI 点击路由要用到当天日期的便捷方法（本地时区现实日） */
     public static String today() {
         return LocalDate.now().toString();

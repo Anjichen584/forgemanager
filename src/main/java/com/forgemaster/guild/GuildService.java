@@ -811,13 +811,29 @@ public final class GuildService {
             Msg.prefix(p, "<red>数量要大于 0。</red>");
             return;
         }
-        if (!stats().takeCoins(p.getUniqueId(), amount, CoinReason.GUILD)) {
+        // v2.25.9：两处收口。
+        // ① 扣款口径：原来直连 stats().takeCoins，而同文件的 donate（基金）走 wallet().take
+        //    —— 同一个文件两种口径。economy.coin-sinks=server 时，存金库绕过 Vault、
+        //    捐基金走 Vault，等于两本账。这里跟 donate 对齐。
+        // ② 落盘成败：原来扣完币只改内存 g.treasury 再 save()（void，失败只 warning），
+        //    重启后金库归零 = 吞钱。现在先扣、写失败就退回，别让玩家白掏。
+        if (!plugin.wallet().take(p, amount, CoinReason.GUILD)) {
             Msg.prefix(p, "<red>你的剑币不够 " + amount + "。</red>");
             return;
         }
         g.treasury += amount;
         dirty = true;
-        save();
+        if (!saveChecked()) {
+            // 只有「真的没写下去」才回滚。saveChecked 在竞态（写成功但盘上可能不是最新）
+            // 时返回 true —— 那种情况盘上已经有这笔存款，回滚会让金库凭空多钱。
+            g.treasury -= amount;
+            dirty = true;
+            plugin.wallet().give(p, amount, CoinReason.REFUND);
+            plugin.getLogger().severe("行会金库存入时 guild-data.yml 写入失败，已退回："
+                    + p.getName() + " / " + amount + " 剑币");
+            Msg.prefix(p, "<red>存档写入失败，这次存入已取消并退回剑币，请稍后再试。</red>");
+            return;
+        }
         p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.8f, 1.6f);
         Msg.prefix(p, "<green>已存入 <white>" + amount + "</white> 剑币，金库现有 "
                 + CoinRules.fmt(g.treasury) + "。</green>");
@@ -895,8 +911,18 @@ public final class GuildService {
             Msg.prefix(p, "<red>你的剑币不够 " + amount + "。</red>");
             return;
         }
+        long before = g.fund;
         g.fund = fundAfterDonate(g.fund, amount);
-        save();
+        // v2.25.9：和 deposit 同一条规矩 —— 钱扣了、基金只在内存里，写盘失败就是吞钱。
+        if (!saveChecked()) {
+            g.fund = before;
+            dirty = true;
+            plugin.wallet().give(p, amount, CoinReason.REFUND);
+            plugin.getLogger().severe("行会基金存入时 guild-data.yml 写入失败，已退回："
+                    + p.getName() + " / " + amount + " 剑币");
+            Msg.prefix(p, "<red>存档写入失败，这次捐款已取消并退回剑币，请稍后再试。</red>");
+            return;
+        }
         p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.8f, 1.6f);
         Msg.prefix(p, "<green>已向基金捐入 <white>" + amount + "</white> 剑币，基金现有 "
                 + CoinRules.fmt(g.fund) + "。</green>");
@@ -1220,6 +1246,22 @@ public final class GuildService {
      * 按行会兜 CME，撞了竞态就保持脏标记等下一轮重存。</p>
      */
     public synchronized void save() {
+        saveChecked();
+    }
+
+    /**
+     * 同步落盘并把**成败返回给调用方**（v2.25.9）。
+     *
+     * <p>金库存钱这类动作是「玩家被扣币 → 金库余额只改内存 → 重启后金库归零」的典型：
+     * 扣钱是真的，存的东西没落盘 = 吞钱。原来 save() 是 void，写失败只 warning，
+     * 调用方根本不知道。要「存不进去就别扣钱」的路径一律用这个。</p>
+     *
+     * @return true = 已写盘；false = 根本没写（拷快照撞 CME / 建目录失败 / IOException）。
+     *         <b>竞态（race）不算失败</b> —— 那一轮确实写下去了，只是写的内容可能不是最新，
+     *         脏标记会留着等下一轮冲刷。这一点很关键：把 race 当失败会让调用方
+     *         「回滚钱、退款」，而盘上已经记了这笔钱 → 重启后金库凭空多出一笔。
+     */
+    public synchronized boolean saveChecked() {
         YamlConfiguration yml = new YamlConfiguration();
         yml.set("next-id", nextId);
         yml.set("last-week", lastWeek);
@@ -1232,7 +1274,7 @@ public final class GuildService {
         try {
             guildSnap = new ArrayList<>(guilds.values());
         } catch (java.util.ConcurrentModificationException ex) {
-            return;
+            return false;
         }
         for (Guild g : guildSnap) {
             try {
@@ -1260,7 +1302,7 @@ public final class GuildService {
         try {
             playerSnap = new LinkedHashMap<>(players);
         } catch (java.util.ConcurrentModificationException ex) {
-            return; // 同上：拷不成就不写，保持脏等下一轮
+            return false; // 同上：拷不成就不写，保持脏等下一轮
         }
         for (Map.Entry<UUID, Member> e : playerSnap.entrySet()) {
             try {
@@ -1278,17 +1320,22 @@ public final class GuildService {
         try {
             if (!plugin.getDataFolder().exists() && !plugin.getDataFolder().mkdirs()) {
                 plugin.getLogger().warning("无法创建插件数据目录");
-                return;
+                return false;
             }
-                com.forgemaster.util.YamlIo.save(file, yml);
-            // 写盘期间没有新改动进来才清脏；有竞态就保持脏等下一轮（照 StatsStore 语义）
+            com.forgemaster.util.YamlIo.save(file, yml);
+            // 写盘期间没有新改动进来才清脏；有竞态就保持脏等下一轮（照 StatsStore 语义）。
+            // 注意返回值：写下去了就是 true —— race 只影响「脏标记清不清」，
+            // 不代表这笔没存进去。返回 !race 会让金库存钱在竞态时被倒扣回去 + 退款，
+            // 而盘上已经记了这笔钱（重启后金库多钱）。
             if (!race) {
                 dirty = false;
                 warehouse.clearDirty();
                 quests.clearDirty();
             }
+            return true;
         } catch (IOException ex) {
             plugin.getLogger().warning("保存 guild-data.yml 失败: " + ex.getMessage());
+            return false;
         }
     }
 }

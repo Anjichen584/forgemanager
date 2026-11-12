@@ -251,6 +251,19 @@ def cmd_check(staged: bool, as_agent: str | None) -> int:
     if not cards:
         print("[check] 没找到任何身份卡（.agents/*/agent.md）")
         return 1
+    # 0) 本地专属目录不许入库（v2.25.9）
+    # 踩过的坑：.workbuddy/README.md 与 .zcode/README.md 被 `git add -A` 顺手推上去了，
+    # 而这两个文件开头就写着「本目录只在本地、不入库」—— 自相矛盾。
+    # 单个 agent 的身份卡在 .agents/<名>/agent.md，交接结论在 docs/handoff/，那边才该入库。
+    tracked = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True,
+                             text=True, encoding="utf-8", errors="replace")
+    for _line in tracked.stdout.splitlines():
+        _p = _line.strip()
+        if _p.startswith(".workbuddy/") or _p.startswith(".zcode/"):
+            errors.append(
+                "`{}` 是本地专属目录，不该入库 —— 执行 `git rm --cached {}`"
+                "（文件保留在磁盘；结论写到 .agents/<名>/agent.md 或 docs/handoff/）".format(_p, _p))
+
 
     # 1) 必填键
     for c in cards:

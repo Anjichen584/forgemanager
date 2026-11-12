@@ -171,7 +171,20 @@ public final class DailyRewardService {
         }
 
         store.setSignin(uuid, day, today);
-        store.save();
+        // v2.25.9：DailyStore.save() 早就返回 boolean，这里一直没看它。
+        // 写失败时「今天已签」只在内存里，重启后玩家能再签一次 —— 又是重复发奖。
+        // 签到奖励已经造好但一件没发，所以这里直接退出是干净的。
+        //
+        // 但「直接退出」还不够：内存里的记录得一起退回去。否则之后任何一次
+        // save 成功（别人签到 / 黑市买货）都会把这条假的「已签」写进盘，
+        // 玩家这一天的奖励既没拿到、也再也领不了。
+        if (!store.save()) {
+            store.restoreSignin(uuid, prevDay, prevLast);
+            plugin.getLogger().severe("签到进度写入失败，本次未发放：" + p.getName()
+                    + " 第 " + day + " 天 / " + today);
+            Msg.prefix(p, "<red>签到进度存档失败，本次没有发放，请稍后再试（管理员看控制台）。</red>");
+            return;
+        }
         var wallet = plugin.wallet();
         List<String> got = new ArrayList<>();
         if (r.coins() > 0 && wallet.give(p, r.coins(), CoinReason.SIGNIN)) {
