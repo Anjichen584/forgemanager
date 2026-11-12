@@ -61,7 +61,7 @@ public final class SeasonManager {
     /** 载入赛季状态并启动到期检查（每分钟一次）。 */
     public void start() {
         if (stateFile.exists()) {
-            YamlConfiguration yml = YamlConfiguration.loadConfiguration(stateFile);
+            YamlConfiguration yml = com.forgemaster.util.YamlIo.loadOrQuarantine(stateFile, "SeasonManager", plugin.getLogger());
             number = Math.max(1, yml.getInt("number", 1));
             startedAt = yml.getLong("started-at", System.currentTimeMillis());
         } else {
@@ -77,7 +77,7 @@ public final class SeasonManager {
     /** v2.25：公开读档。回档（restore）后按盘上 season.yml 重建内存态。 */
     public void loadState() {
         if (stateFile.exists()) {
-            YamlConfiguration yml = YamlConfiguration.loadConfiguration(stateFile);
+            YamlConfiguration yml = com.forgemaster.util.YamlIo.loadOrQuarantine(stateFile, "SeasonManager", plugin.getLogger());
             number = Math.max(1, yml.getInt("number", 1));
             startedAt = yml.getLong("started-at", System.currentTimeMillis());
         }
@@ -178,7 +178,7 @@ public final class SeasonManager {
             if (!archiveDir.exists() && !archiveDir.mkdirs()) {
                 return "无法创建 seasons 目录，本季未结算。";
             }
-            yml.save(file);
+            com.forgemaster.util.YamlIo.save(file, yml);
         } catch (IOException ex) {
             plugin.getLogger().warning("赛季归档失败: " + ex.getMessage());
             return "归档失败（" + ex.getMessage() + "），本季未重置。";
@@ -259,7 +259,7 @@ public final class SeasonManager {
         yml.set("number", number);
         yml.set("started-at", startedAt);
         try {
-            yml.save(stateFile);
+            com.forgemaster.util.YamlIo.save(stateFile, yml);
         } catch (IOException ex) {
             plugin.getLogger().warning("保存 season.yml 失败: " + ex.getMessage());
         }

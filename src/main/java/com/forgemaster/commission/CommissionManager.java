@@ -65,7 +65,7 @@ public final class CommissionManager {
         if (!file.exists()) {
             return;
         }
-        YamlConfiguration yml = YamlConfiguration.loadConfiguration(file);
+        YamlConfiguration yml = com.forgemaster.util.YamlIo.loadOrQuarantine(file, "CommissionManager", plugin.getLogger());
         ConfigurationSection root = yml.getConfigurationSection("players");
         if (root == null) {
             return;
@@ -109,7 +109,7 @@ public final class CommissionManager {
             yml.set("players." + e.getKey() + ".list", list);
         }
         try {
-            yml.save(file);
+            com.forgemaster.util.YamlIo.save(file, yml);
         } catch (IOException ex) {
             plugin.getLogger().warning("保存 commissions.yml 失败: " + ex.getMessage());
         }

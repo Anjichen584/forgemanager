@@ -78,7 +78,7 @@ public final class CodexService {
         if (!file.exists()) {
             return;
         }
-        YamlConfiguration yml = YamlConfiguration.loadConfiguration(file);
+        YamlConfiguration yml = com.forgemaster.util.YamlIo.loadOrQuarantine(file, "CodexService", plugin.getLogger());
         ConfigurationSection players = yml.getConfigurationSection("players");
         if (players == null) {
             return;
@@ -117,7 +117,7 @@ public final class CodexService {
             yml.set(base + ".claimed", new java.util.ArrayList<>(r.claimed));
         }
         try {
-            yml.save(file);
+            com.forgemaster.util.YamlIo.save(file, yml);
         } catch (IOException ex) {
             plugin.getLogger().warning("codex-data.yml 写入失败: " + ex.getMessage());
         }

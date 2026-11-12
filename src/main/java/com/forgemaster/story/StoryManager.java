@@ -63,7 +63,7 @@ public final class StoryManager {
         chapterIndex.clear();
         baseline.clear();
         if (progressFile.exists()) {
-            YamlConfiguration prog = YamlConfiguration.loadConfiguration(progressFile);
+            YamlConfiguration prog = com.forgemaster.util.YamlIo.loadOrQuarantine(progressFile, "StoryManager", plugin.getLogger());
             ConfigurationSection players = prog.getConfigurationSection("players");
             if (players != null) {
                 for (String key : players.getKeys(false)) {

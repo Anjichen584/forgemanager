@@ -61,7 +61,7 @@ public final class DailyStore {
         if (!file.exists()) {
             return;
         }
-        YamlConfiguration yml = YamlConfiguration.loadConfiguration(file);
+        YamlConfiguration yml = com.forgemaster.util.YamlIo.loadOrQuarantine(file, "DailyStore", plugin.getLogger());
         ConfigurationSection mk = yml.getConfigurationSection("market");
         if (mk != null) {
             for (String uuidKey : mk.getKeys(false)) {
@@ -140,7 +140,7 @@ public final class DailyStore {
             if (!plugin.getDataFolder().exists()) {
                 plugin.getDataFolder().mkdirs();
             }
-            yml.save(file);
+            com.forgemaster.util.YamlIo.save(file, yml);
         } catch (IOException ex) {
             plugin.getLogger().warning("黑市/签到存档保存失败：" + ex.getMessage());
         }

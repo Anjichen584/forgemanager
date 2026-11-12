@@ -445,7 +445,7 @@ public final class SeasonLegacy {
         if (!file.exists()) {
             return out;
         }
-        YamlConfiguration yml = YamlConfiguration.loadConfiguration(file);
+        YamlConfiguration yml = com.forgemaster.util.YamlIo.loadOrQuarantine(file, "SeasonLegacy", plugin.getLogger());
         ConfigurationSection root = yml.getConfigurationSection("seasons");
         if (root == null) {
             return out;
@@ -514,7 +514,7 @@ public final class SeasonLegacy {
             yml.set(base + ".ended-at", l.endedAt());
         }
         try {
-            yml.save(file);
+            com.forgemaster.util.YamlIo.save(file, yml);
             return true;
         } catch (IOException ex) {
             plugin.getLogger().warning("保存 " + FILE_NAME + " 失败: " + ex.getMessage());

@@ -76,7 +76,7 @@ public final class BountyManager {
             return;
         }
         try {
-            var yml = org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(file);
+            var yml = com.forgemaster.util.YamlIo.loadOrQuarantine(file, "BountyManager", plugin.getLogger());
             day = yml.getLong("day", -1);
             claimed.clear();
             claimed.addAll(yml.getStringList("claimed"));
@@ -123,7 +123,7 @@ public final class BountyManager {
                 rows.add(b.minQuality() + "," + b.minLevel() + "," + b.minStage() + "," + b.reward());
             }
             yml.set("list", rows);
-            yml.save(file);
+            com.forgemaster.util.YamlIo.save(file, yml);
         } catch (java.io.IOException ex) {
             plugin.getLogger().warning("悬赏存档保存失败：" + ex.getMessage());
         }
@@ -220,8 +220,15 @@ public final class BountyManager {
         int level = pdc.getOrDefault(Keys.STRENGTHEN, PersistentDataType.INTEGER, 0);
         int stage = pdc.getOrDefault(Keys.EVOLUTION, PersistentDataType.INTEGER, 0);
         if (qIdx < b.minQuality()) {
-            return "<red>品质不够：要 <white>" + Quality.values()[b.minQuality()].display()
-                    + "</white> 以上，这把是 " + q.display() + "。";
+            // v2.25.5：与 Bounty 记录构造器（line 33 的 Math.min 钳制）对齐。
+            // 这里原先直接 Quality.values()[b.minQuality()]，minQuality 越界就 AIOOBE；
+            // q 为 null（PDC 里存了个已改名的品质）时 q.display() 也会 NPE —— 而这两处
+            // 都在 setItemInMainHand(null) 之前，抛出去至少不会丢剑，但玩家会看到一条
+            // 「内部错误」且赏金交不了。钳一下、兜一个名字。
+            Quality[] all = Quality.values();
+            Quality need = all[Math.max(0, Math.min(all.length - 1, b.minQuality()))];
+            return "<red>品质不够：要 <white>" + need.display()
+                    + "</white> 以上，这把是 " + (q == null ? "未知品质" : q.display()) + "。";
         }
         if (level < b.minLevel()) {
             return "<red>强化不够：要 <white>+" + b.minLevel() + "</white> 以上，这把是 +" + level + "。";

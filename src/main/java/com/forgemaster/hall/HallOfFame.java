@@ -99,7 +99,7 @@ public final class HallOfFame {
         File file = hallFile();
         ConfigurationSection sec;
         if (file.exists()) {
-            sec = YamlConfiguration.loadConfiguration(file);
+            sec = com.forgemaster.util.YamlIo.loadOrQuarantine(file, "HallOfFame", plugin.getLogger());
         } else {
             sec = plugin.getConfig().getConfigurationSection("hall-of-fame.location");
         }
@@ -125,7 +125,7 @@ public final class HallOfFame {
             if (!plugin.getDataFolder().exists()) {
                 plugin.getDataFolder().mkdirs();
             }
-            yml.save(file);
+            com.forgemaster.util.YamlIo.save(file, yml);
         } catch (IOException ex) {
             plugin.getLogger().warning("名人堂位置保存失败：" + ex.getMessage());
             return;

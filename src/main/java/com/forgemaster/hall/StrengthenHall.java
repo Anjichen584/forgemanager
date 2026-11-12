@@ -115,7 +115,7 @@ public final class StrengthenHall {
         if (!file.exists()) {
             return;
         }
-        YamlConfiguration yml = YamlConfiguration.loadConfiguration(file);
+        YamlConfiguration yml = com.forgemaster.util.YamlIo.loadOrQuarantine(file, "StrengthenHall", plugin.getLogger());
         ConfigurationSection sec = yml.getConfigurationSection("entry");
         if (sec == null) {
             return;
@@ -156,7 +156,7 @@ public final class StrengthenHall {
         yml.set("entry.forger-id", best.forgerId);
         yml.set("entry.achieved-at", best.achievedAt);
         try {
-            yml.save(file);
+            com.forgemaster.util.YamlIo.save(file, yml);
         } catch (IOException ex) {
             plugin.getLogger().warning("保存 hall-strengthen.yml 失败: " + ex.getMessage());
         }

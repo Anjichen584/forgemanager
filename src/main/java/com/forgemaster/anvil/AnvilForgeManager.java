@@ -1449,7 +1449,7 @@ public final class AnvilForgeManager {
         if (from == null || !from.exists()) {
             return;
         }
-        YamlConfiguration cfg = YamlConfiguration.loadConfiguration(from);
+        YamlConfiguration cfg = com.forgemaster.util.YamlIo.loadOrQuarantine(from, "AnvilForgeManager", plugin.getLogger());
         var root = cfg.getConfigurationSection("anvils");
         if (root == null) {
             return;
@@ -1529,7 +1529,9 @@ public final class AnvilForgeManager {
                 plugin.getLogger().warning("建不出数据目录，砧位没存下来。");
                 return;
             }
-            cfg.save(to);
+            // v2.25.5 修 T0：anvils.yml 是唯一「装着玩家实物剑」的存档 —— 剑在 place() 时
+        // 已从背包取出，所以半截文件 = 剑凭空蒸发。必须原子替换 + 坏档留档。
+        com.forgemaster.util.YamlIo.save(to, cfg);
         } catch (IOException ex) {
             // 保留 dirty，下一轮冲刷重试
             plugin.getLogger().warning("保存砧位失败: " + ex.getMessage());

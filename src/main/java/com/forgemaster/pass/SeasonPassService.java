@@ -145,6 +145,15 @@ public final class SeasonPassService {
      * 与 AuctionStore 同一套写法。领取这种真事务仍然立即落盘。</p>
      */
     private volatile boolean dirty;
+    /**
+     * 脏代数（v2.25.5 修 T0）：{@link #save()} 原来用
+     * {@code if (wasDirty && dirty) dirty = false;} 清脏 —— 但 {@code wasDirty} 与
+     * {@code dirty} 是同一个 volatile 布尔，进入方法时必然都是 true，条件恒真，
+     * 等于「无论写盘窗口内有没有新变更一律清脏」。窗口内 markDirty 的那一笔
+     * （赛季积分 / 已领级数 / 付费轨购买）从此失去唯一的重试路径，被 kill 就永久丢。
+     * 照 ContractStore 的口径改成代数：组装前取 seq，落盘后 seq 没前进才清脏。
+     */
+    private volatile long dirtySeq;
 
     public SeasonPassService(ForgingMasterPlugin plugin) {
         this(plugin, new File(plugin.getDataFolder(), "pass-data.yml"));
@@ -183,7 +192,7 @@ public final class SeasonPassService {
         if (!file.exists()) {
             return;
         }
-        YamlConfiguration yml = YamlConfiguration.loadConfiguration(file);
+        YamlConfiguration yml = com.forgemaster.util.YamlIo.loadOrQuarantine(file, "SeasonPassService", plugin.getLogger());
         ConfigurationSection players = yml.getConfigurationSection("players");
         if (players == null) {
             return;
@@ -312,7 +321,8 @@ public final class SeasonPassService {
         // v2.25.2（4 并发查错）：原来第一行就 dirty = false，然后才组装+写盘。
         // 只要 yml.save 抛 IOException（盘满/文件被占），这一批变更就再也不会重试了 ——
         // 脏标记已经没了。改成写成功之后再清，且写盘窗口内有人 markDirty 就保持脏。
-        boolean wasDirty = dirty;
+        // v2.25.5：代数必须在组装之前取（组装窗口内的 markDirty 不能被误清）
+        long seq = dirtySeq;
         YamlConfiguration yml = new YamlConfiguration();
         for (Map.Entry<UUID, PlayerData> e : data.entrySet()) {
             for (Map.Entry<Integer, SeasonProgress> s : e.getValue().seasons.entrySet()) {
@@ -328,9 +338,9 @@ public final class SeasonPassService {
             if (!plugin.getDataFolder().exists()) {
                 plugin.getDataFolder().mkdirs();
             }
-            yml.save(file);
-            // 写盘期间没有新的 markDirty 才清脏
-            if (wasDirty && dirty) {
+            com.forgemaster.util.YamlIo.save(file, yml);
+            // 写盘窗口内若有新的 markDirty（代数已前进），保持脏，下一次 flush 重写
+            if (seq == dirtySeq) {
                 dirty = false;
             }
         } catch (IOException ex) {
@@ -342,6 +352,7 @@ public final class SeasonPassService {
     /** 只记「有变动」，落盘交给 {@link #flush()}（高频路径用这个） */
     private void markDirty() {
         dirty = true;
+        dirtySeq++;
     }
 
     /**

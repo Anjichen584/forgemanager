@@ -323,6 +323,10 @@ public final class ContractManager {
         p.playSound(p.getLocation(), Sound.ENTITY_ENDER_DRAGON_GROWL, 0.4f, 1.4f);
         r.pool += value;
         store.markDirty(); // 审计 #7：入贡是高频动作，不再主线程同步落盘
+        // v2.25.5 修（与 TombManager.bury 同型）：入贡是「吞」，主手已经 setItemInMainHand(null)，
+        // 剑只活在内存里。ContractStore 的异步冲刷周期是 600 ticks = 30 秒 —— 这个窗口内
+        // 崩服/被杀进程，剑两头都没有（池子没涨、手里也没了）。用一次同步落盘换掉这 30 秒。
+        store.save();
         long req = requirement(r.day, r.missed, relicBonus(p.getUniqueId()));
         if (r.pool >= req) {
             return "<green>贡品已够！</green><gray>等午夜巨龙验收（还剩 "

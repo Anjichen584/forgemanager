@@ -148,7 +148,7 @@ public final class SpectrumService {
         if (!file.exists()) {
             return;
         }
-        YamlConfiguration yml = YamlConfiguration.loadConfiguration(file);
+        YamlConfiguration yml = com.forgemaster.util.YamlIo.loadOrQuarantine(file, "SpectrumService", plugin.getLogger());
         ConfigurationSection players = yml.getConfigurationSection("players");
         if (players == null) {
             return;
@@ -181,7 +181,7 @@ public final class SpectrumService {
             if (!plugin.getDataFolder().exists()) {
                 plugin.getDataFolder().mkdirs();
             }
-            yml.save(file);
+            com.forgemaster.util.YamlIo.save(file, yml);
         } catch (IOException ex) {
             plugin.getLogger().warning("名剑谱存档保存失败：" + ex.getMessage());
         }

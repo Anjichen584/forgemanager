@@ -1,10 +1,10 @@
-# 铸剑大师 · ForgingMaster v2.25.4
+# 铸剑大师 · ForgingMaster v2.25.5
 
 Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「烧红 → 敲打 → 叠钢 → 开刃 → 抛光 → 嵌银丝 → 淬火」的手感搬进 MC，
 锻完之后还有委托、比试、耐久、剑币经济、师徒、成就、段位、剑灵、剑冢、世界事件、剧情、名人堂、商会、拍卖行、排行与赛季。
 
 - 目标 Java：**21+**
-- 构建产物：`target/ForgingMaster-2.25.4.jar`
+- 构建产物：`target/ForgingMaster-2.25.5.jar`
 - 无第三方依赖，纯 Paper API + MiniMessage
 - `config-version`：**20**
 
@@ -29,6 +29,7 @@ Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「�
 
 | 版本 | 一句话 | 详情 |
 | --- | --- | --- |
+| **2.25.5** | **T0 收口：存档原子写 + 坏档留档**：17 份存档从裸 `yml.save` 换成 tmp→fsync→ATOMIC_MOVE，坏档改名 `.corrupt-*` 不再被当成空档覆盖；修掉 `anvils.yml`（砧位上的玩家实物剑）、`pass-data.yml`（付费轨已购）、`codex claimed`（清空即可重复领奖造币）三个 T0；`pass` 清脏条件恒真、契约入贡 30 秒吞剑窗口同修（自检 517/517） | [十四·补十四](#十四补十四v2255t0-收口存档原子写--坏档留档) |
 | **2.25.4** | **压测面 7→12 阶段 + 4 并发 PASS 53**：新增兑换/词条剥离/剑冢取回/竞价/只读风暴五个并发面；加管理员命令 stats rep give\|take（声望首个手动入口）；顺手把「哪些扣费跟 coin-sinks 走、哪些永远走剑币」摸清写成表（自检 515/515） | [十四·补十三](#十四补十三v2254压测面扩到-12-阶段账本口径分类) |
 | **2.25.3** | **/zhujian help 收口**：原来漏了 11 条命令（contract / shangjin / money / spirit / tomb / tombrun / redeem / forge / event / ench / evolve）；改成「玩家段 + 管理员段」两段式，清单抽成纯函数由自检逐条核对 | [十四·补十二](#十四补十二v2253zhujian-help-收口玩家段--管理员段自检逐条核对) |
 | **2.25.2** | **4 并发实测 + 查错轮4**：21 条全修 —— 6 个异步冲刷任务被异常打死、两本账漏改的商会/订单、退服不清的二次确认，自检 513/513；新增 4 bot 并发压测器 31 PASS | [十四·补十一](#十四补十一v22524-并发实测查错轮4) |
@@ -1747,6 +1748,69 @@ vanilla-guard:
 ### 六、自检
 
 以上每项都带自检用例（外部模块经 `SelfTestSuite.addExternal` 挂接），`/zhujian selftest` 全量回归。
+
+---
+
+## 十四·补十四、v2.25.5：T0 收口（存档原子写 + 坏档留档）
+
+服主一句「不求多，至少保证目前的没什么严重 t0bug」，于是这轮**不做新玩法**，只做四路只读审计：
+落盘/异步冲刷、物品与经济守恒、命令与事件健壮性、权限与配置。三路结论是「无 T0」（附覆盖清单），
+落盘那一路抓出真问题。压测与自检的数字最后一起给。
+
+### 一、根因：70 多处裸 `yml.save(file)` + 「解析失败静默当空档」
+
+Bukkit 的 `YamlConfiguration.save(file)` 是**覆盖式直写**，不是原子操作。于是有一个三步连环：
+
+```
+写到一半崩/断电/盘满  →  留下半截 YAML
+        ↓
+下次 loadConfiguration 解析失败只打一条 warning，返回**空配置**
+        ↓
+各存储类 load() 见空 → return（"这个玩家没档案"）→ 首次业务变更触发全量重写
+        ↓
+          原件在内存里被覆盖，人工抢救的机会也没了
+```
+
+新增 [`util/YamlIo.java`](src/main/java/com/forgemaster/util/YamlIo.java)：
+
+- `save(file, yml)`：先写同目录 `<name>.tmp` → `fsync` → `ATOMIC_MOVE` 顶掉目标（不支持原子移动的文件系统退化成 `REPLACE_EXISTING`）。**任何时刻目标文件要么是旧的完整内容，要么是新的完整内容**。
+- `loadOrQuarantine(file, owner, log)`：文件**非空却读不出任何键**（或直接抛 `InvalidConfigurationException`）时，把原件改名成 `<name>.corrupt-<时间戳>` 留在原地，再返回空配置 —— 数据用不了，但服主手上还有东西可救。0 字节文件视为「第一次跑」，不动它。
+
+### 二、三个真 T0
+
+| 存档 | 装着什么 | 坏了会怎样 |
+| --- | --- | --- |
+| `anvils.yml`（[AnvilForgeManager:1452/1534](src/main/java/com/forgemaster/anvil/AnvilForgeManager.java#L1534)） | **砧位上玩家的实物剑**（`place()` 时已从背包取出） | 半截文件 → 重启后砧位表空 → 剑凭空蒸发，且原件被覆盖。**这是唯一装着实物剑的存档，原来完全没保护** |
+| `pass-data.yml`（[SeasonPassService](src/main/java/com/forgemaster/pass/SeasonPassService.java#L341)） | premium **付费轨已购状态** + 赛季积分 + 已领级数 | 归零后付费状态不可再生（真金白银买过），已领记录清空还能重领 |
+| `codex-data.yml`（[CodexService:120](src/main/java/com/forgemaster/codex/CodexService.java#L120)） | 图鉴 `claimed` 领取凭据 | 清空 = **6 个分类奖励 + 全收集奖励可以重领一遍**，`addCoins` 直接产出剑币 —— 不可逆的经济污染 |
+
+### 三、两个「同型」缺口
+
+- **`pass` 的清脏条件恒真**（[SeasonPassService:325](src/main/java/com/forgemaster/pass/SeasonPassService.java#L325)）：`if (wasDirty && dirty) dirty = false;` —— `wasDirty` 和 `dirty` 是**同一个 volatile 布尔**，进方法时必然都 true，条件恒成立，等于「无论写盘窗口内有没有新变更一律清脏」。窗口内 `markDirty` 的那一笔从此没有重试路径。照 `ContractStore` 的口径改成 `dirtySeq` 代数：组装前取 seq，落盘后 seq 没前进才清脏。
+- **契约入贡 30 秒吞剑**（[ContractManager:325](src/main/java/com/forgemaster/contract/ContractManager.java#L325)）：`deposit()` 先 `setItemInMainHand(null)` 再只 `markDirty()`，而 `ContractStore` 的异步冲刷是 600 ticks = **30 秒**。窗口内崩服 = 剑两头都没有（池子没涨、手里也没了）。这跟 v2.25.2 修过的 `TombManager.bury` 是完全同型的缺口，当时漏了这一处；现在同样补一次同步落盘。
+
+### 四、顺手收的两个非 T0
+
+- [BountyManager:222](src/main/java/com/forgemaster/bounty/BountyManager.java#L222)：`Quality.values()[b.minQuality()]` 没钳制（同文件记录构造器有 `Math.min`，这里漏了），且 `q.display()` 在品质名改过之后会 NPE。钳一下、兜一个「未知品质」。
+- [ForgeManager:2244](src/main/java/com/forgemaster/forge/ForgeManager.java#L2244)：`reclaim()` 关的是「任意 ForgeHolder」而非本会话那张，会把玩家另开的锻造界面一起关掉（`giveResult` 幂等所以无复制，纯界面误伤）。补 `h.session() == s`。
+
+### 五、钉子（这次钉的是「以后别再犯」）
+
+1. **`YamlIo` 行为钉子**：原子写后内容正确且 **不留 `.tmp` 残留**；半截文件必须被改名留档（原文件消失 + 出现 `.corrupt-*` + 返回空配置）；0 字节新档不许被当成坏档移走。
+2. **存档守卫钉子**：点名 13 份「必须有 YamlIo」的存档，逐个扫源码，少一个就红。这条钉子自己踩过两个坑，都写进注释了：
+   - 第一版用 `getDataFolder().getParentFile()` 推源码路径 —— 永远推不到，等于**假绿的钉子**；
+   - 第二版向上找「第一个命中」，结果命中了 `ForgingMaster/` 里那份 **2.10.6 的旧源码树**，把改好的判定成没改 —— **假红**。现在给候选打分：含 `util/YamlIo.java` 的优先，其次 pom 版本与运行时一致。
+
+### 六、真机结果
+
+```
+=== 汇总：PASS 56 / WARN 0 / FAIL 0 ===      ← 12 阶段，上一版 53/1/0
+自检完成：共 517 项，通过 517，失败 0          ← 上一版 515
+```
+
+审计的四路覆盖（三路「无 T0」的凭据）：`ForgingCommand` 全 4589 行每个 `args[n]` 都有长度守卫；
+`ForgeListener` 12 个 holder 分支统一「holder 判定 → cancel → 比对顶层」顺序；12 个懒注册 Router 全部 LOWEST + `inTop()` + `onDrag` + `reset()`；
+全库 `catch (Exception) {}` 空吞 **0 处**；`ADMIN_ONLY` 11 项**逐个**核到 handler 内部真的判了 `forgemaster.admin`（不是只靠 Tab 隐藏）。
 
 ---
 

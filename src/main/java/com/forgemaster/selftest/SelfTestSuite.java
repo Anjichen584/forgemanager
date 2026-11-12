@@ -144,6 +144,89 @@ public final class SelfTestSuite {
      * <p>后面必须跟空格 / 换行 / 行尾才算命中 —— 否则 {@code give} 会命中 {@code givefull}、
      * {@code hall} 会命中 {@code halloffame}，断言就变成了假绿。</p>
      */
+    /**
+     * 自检用：定位 {@code src/main/java/com/forgemaster} 这个包根，找不到返回 null。
+     *
+     * <p>这台机器上同时存在两棵树：正在开发的是 {@code ForgingMaster-Lore}，
+     * 而测试服的父目录 {@code ForgingMaster} 里还留着一份 2.10.6 的旧源码树。
+     * 第一版只取「第一个找到的」，于是命中了旧树，把已经改好的存档判成「还在裸写」——
+     * 一条假红。现在给候选打分：<b>含 {@code util/YamlIo.java} 的优先</b>，
+     * 其次是 pom 版本号与运行时一致的，都没有就返回 null（跳过静态部分）。</p>
+     */
+    static java.io.File findSourcePackageRoot() {
+        java.util.LinkedHashSet<java.io.File> candidates = new java.util.LinkedHashSet<>();
+        java.io.File dir = new java.io.File(".").getAbsoluteFile();
+        for (int up = 0; up < 6 && dir != null; up++) {
+            java.io.File hit = packageRootUnder(dir);
+            if (hit != null) {
+                candidates.add(hit);
+            }
+            java.io.File[] children = dir.listFiles(java.io.File::isDirectory);
+            if (children != null) {
+                for (java.io.File child : children) {
+                    java.io.File c = packageRootUnder(child);
+                    if (c != null) {
+                        candidates.add(c);
+                    }
+                }
+            }
+            dir = dir.getParentFile();
+        }
+        String running = null;
+        try {
+            running = pluginVersionOfThisClass();
+        } catch (RuntimeException ex) {
+            running = null;
+        }
+        java.io.File best = null;
+        int bestScore = 0;
+        for (java.io.File c : candidates) {
+            int score = 0;
+            if (new java.io.File(c, "util/YamlIo.java").isFile()) {
+                score += 100;
+            }
+            if (running != null && pomHasVersion(c, running)) {
+                score += 50;
+            }
+            if (score > bestScore) {
+                bestScore = score;
+                best = c;
+            }
+        }
+        return best;
+    }
+
+    private static String pluginVersionOfThisClass() {
+        try {
+            var desc = SelfTestSuite.class.getPackage().getImplementationVersion();
+            return desc;
+        } catch (RuntimeException ex) {
+            return null;
+        }
+    }
+
+    private static boolean pomHasVersion(java.io.File pkgRoot, String version) {
+        java.io.File pom = new java.io.File(pkgRoot, "../../../../pom.xml");
+        if (!pom.isFile()) {
+            return false;
+        }
+        try {
+            String text = new String(java.nio.file.Files.readAllBytes(pom.toPath()),
+                    java.nio.charset.StandardCharsets.UTF_8);
+            return text.contains("<version>" + version + "</version>");
+        } catch (java.io.IOException ex) {
+            return false;
+        }
+    }
+
+    private static java.io.File packageRootUnder(java.io.File base) {
+        if (base == null) {
+            return null;
+        }
+        java.io.File pkg = new java.io.File(base, "src/main/java/com/forgemaster");
+        return pkg.isDirectory() ? pkg : null;
+    }
+
     private static boolean helpHas(String text, String name) {
         String needle = "/zhujian " + name;
         int from = 0;
@@ -3518,6 +3601,119 @@ public final class SelfTestSuite {
                     "扣失败却动了余额：" + before + " → " + plugin.stats().get(fake).reputation);
             require(plugin.stats().spendReputation(fake, before), "余额刚好等于扣款额却扣不动");
             require(plugin.stats().get(fake).reputation == 0, "扣光后余额不是 0");
+        });
+
+        add(g, "YamlIo（v2.25.5）：原子替换不留 .tmp；半截文件必须留档而不是被当成空档", () -> {
+            java.io.File dir = new java.io.File(plugin.getDataFolder(), "selftest-yamlio");
+            if (!dir.exists() && !dir.mkdirs()) {
+                throw new IllegalStateException("建临时目录失败: " + dir);
+            }
+            try {
+                // ① 原子写：内容落地、临时文件不残留
+                java.io.File target = new java.io.File(dir, "probe.yml");
+                org.bukkit.configuration.file.YamlConfiguration yml =
+                        new org.bukkit.configuration.file.YamlConfiguration();
+                yml.set("players.abc.coins", 1234);
+                com.forgemaster.util.YamlIo.save(target, yml);
+                require(target.exists() && target.length() > 0, "原子写入后目标文件是空的");
+                org.bukkit.configuration.file.YamlConfiguration back =
+                        com.forgemaster.util.YamlIo.loadOrQuarantine(target, "SelfTest", plugin.getLogger());
+                require(back.getLong("players.abc.coins") == 1234L, "写进去又读回来数值不对");
+                require(!new java.io.File(dir, "probe.yml.tmp").exists(), "原子写留下了 .tmp 残留");
+
+                // ② 半截文件：必须改名留档，且返回空配置（不是把坏档当成「这个人没档案」）
+                //    注意样例必须是「解析就会失败」的形态 —— 写一半但语法仍合法的 YAML
+                //    （比如少了后半段但括号都闭合）没法与「本来就只有这些内容」区分，
+                //    这里模拟真实的截断：引号/括号没闭合。
+                java.io.File broken = new java.io.File(dir, "broken.yml");
+                java.nio.file.Files.write(broken.toPath(),
+                        ("players:\n  abc:\n    claimed: [1, 2, \"3" + "\n  broken: [")
+                                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                require(com.forgemaster.util.YamlIo.looksTruncated(broken), "半截 YAML 没被识别出来");
+                org.bukkit.configuration.file.YamlConfiguration empty =
+                        com.forgemaster.util.YamlIo.loadOrQuarantine(broken, "SelfTest", plugin.getLogger());
+                require(!broken.exists(), "坏档没有被移走（下次 save 会直接盖掉原件）");
+                require(empty.getKeys(false).isEmpty(), "坏档读出来居然是有效的");
+                java.io.File[] quarantined = dir.listFiles((d, n) -> n.startsWith("broken.yml.corrupt-"));
+                require(quarantined != null && quarantined.length == 1, "没有留下 .corrupt- 留档文件");
+
+                // ③ 空文件是「第一次跑」，不许当成坏档
+                java.io.File fresh = new java.io.File(dir, "fresh.yml");
+                if (!fresh.exists()) {
+                    java.nio.file.Files.write(fresh.toPath(), new byte[0]);
+                }
+                com.forgemaster.util.YamlIo.loadOrQuarantine(fresh, "SelfTest", plugin.getLogger());
+                require(fresh.exists(), "0 字节的新档被当成坏档移走了");
+            } finally {
+                java.io.File[] all = dir.listFiles();
+                if (all != null) {
+                    for (java.io.File f2 : all) {
+                        f2.delete();
+                    }
+                }
+                dir.delete();
+            }
+        });
+
+        add(g, "存档守卫（v2.25.5）：关键存档都走 YamlIo，且坏档不会被静默当成空档", () -> {
+            // 这条钉子的意义：v2.25.5 之前全仓 70+ 处裸 yml.save(file)，一旦写半截，
+            // 下次 load 静默返回空档、再被 save 覆盖 = 玩家资产与领取记录永久消失。
+            // 现在逐个点名「必须有 YamlIo」的存档，少一个就红（新人加存档漏改会被这里挡住）。
+            String[][] critical = {
+                    {"stats", "data.yml"},
+                    {"anvil", "anvils.yml"},
+                    {"auction", "auction.yml"},
+                    {"order", "orders.yml"},
+                    {"contract", "contract.yml"},
+                    {"guild", "guilds.yml"},
+                    {"pass", "pass-data.yml"},
+                    {"codex", "codex-data.yml"},
+                    {"spectrum", "spectrum-data.yml"},
+                    {"blackmarket", "daily-data.yml"},
+                    {"manuals", "manuals-data.yml"},
+                    {"bounty", "bounty-data.yml"},
+                    {"commission", "commission-data.yml"}
+            };
+            java.util.List<String> missing = new ArrayList<>();
+            java.io.File pkgRoot = findSourcePackageRoot();
+            if (pkgRoot != null) {
+                for (String[] row : critical) {
+                    java.io.File dir = new java.io.File(pkgRoot, row[0]);
+                    if (!dir.isDirectory()) {
+                        continue;
+                    }
+                    java.io.File[] files = dir.listFiles((d, n) -> n.endsWith(".java"));
+                    if (files == null) {
+                        continue;
+                    }
+                    boolean found = false;
+                    boolean usesYamlIo = false;
+                    for (java.io.File f2 : files) {
+                        String code;
+                        try {
+                            code = new String(java.nio.file.Files.readAllBytes(f2.toPath()),
+                                    java.nio.charset.StandardCharsets.UTF_8);
+                        } catch (java.io.IOException ex) {
+                            continue;
+                        }
+                        if (!code.contains(row[1])) {
+                            continue;
+                        }
+                        found = true;
+                        if (code.contains("YamlIo.save") || code.contains("YamlIo.loadOrQuarantine")) {
+                            usesYamlIo = true;
+                        }
+                    }
+                    if (found && !usesYamlIo) {
+                        missing.add(row[1]);
+                    }
+                }
+                require(missing.isEmpty(), "这些存档还在裸 yml.save / loadConfiguration："
+                        + String.join(", ", missing) + "（写半截 = 下次当成空档再被覆盖）");
+            } else {
+                // 只在 jar 部署（没有源码树）的环境里跳过静态部分 —— 如实写进日志，不假装查过
+                plugin.getLogger().info("[selftest] 找不到源码树，跳过存档守卫的静态检查（改为只验 YamlIo 行为）");
+            }
         });
 
         add(g, "强化上限按品质逐级提高：粗糙 < … < 神话，且神话封顶 99", () -> {

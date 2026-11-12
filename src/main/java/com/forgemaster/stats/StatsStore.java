@@ -140,7 +140,7 @@ public final class StatsStore {
         if (!file.exists()) {
             return;
         }
-        YamlConfiguration yml = YamlConfiguration.loadConfiguration(file);
+        YamlConfiguration yml = com.forgemaster.util.YamlIo.loadOrQuarantine(file, this.getClass().getSimpleName(), plugin.getLogger());
         ConfigurationSection root = yml.getConfigurationSection("players");
         if (root == null) {
             return;
@@ -845,6 +845,8 @@ public final class StatsStore {
             try {
                 save();
             } catch (RuntimeException ex) {
+                // save0 内部已经把 IOException 收成日志；这里兜的是快照/组装期的运行时异常（如 CME），
+                // 同样只记日志、脏标记保持，下一轮照旧重试，绝不让重复任务被取消
                 plugin.getLogger().warning("data.yml 异步冲刷失败（保持脏，下一轮重试）：" + ex);
             }
         }, intervalTicks, intervalTicks).getTaskId();
@@ -888,7 +890,7 @@ public final class StatsStore {
             }
         }
         try {
-            yml.save(file);
+                com.forgemaster.util.YamlIo.save(file, yml);
             // 落盘期间又有新改动（或撞上 CME）就保持脏，下一轮重存，别把新数据标记清掉
             if (!race) {
                 dirty = false;

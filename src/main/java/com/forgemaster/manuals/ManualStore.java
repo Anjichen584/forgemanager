@@ -67,7 +67,7 @@ public final class ManualStore implements InventoryHolder {
         if (!file.exists()) {
             return;
         }
-        YamlConfiguration yml = YamlConfiguration.loadConfiguration(file);
+        YamlConfiguration yml = com.forgemaster.util.YamlIo.loadOrQuarantine(file, "ManualStore", plugin.getLogger());
         List<Map<?, ?>> raw = yml.getMapList("manuals");
         for (Map<?, ?> m : raw) {
             try {
@@ -98,7 +98,7 @@ public final class ManualStore implements InventoryHolder {
         }
         yml.set("manuals", list);
         try {
-            yml.save(file);
+            com.forgemaster.util.YamlIo.save(file, yml);
         } catch (IOException ex) {
             plugin.getLogger().warning("保存 manuals.yml 失败: " + ex.getMessage());
         }

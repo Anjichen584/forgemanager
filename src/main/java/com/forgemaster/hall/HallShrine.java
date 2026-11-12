@@ -119,7 +119,7 @@ public final class HallShrine {
         if (!file.exists()) {
             return null;
         }
-        ConfigurationSection sec = YamlConfiguration.loadConfiguration(file).getConfigurationSection("shrine");
+        ConfigurationSection sec = com.forgemaster.util.YamlIo.loadOrQuarantine(file, "HallShrine", plugin.getLogger()).getConfigurationSection("shrine");
         if (sec == null) {
             return null;
         }
@@ -141,7 +141,7 @@ public final class HallShrine {
     public void setOrigin(Location loc) {
         File file = hallFile();
         YamlConfiguration yml = file.exists()
-                ? YamlConfiguration.loadConfiguration(file)
+                ? com.forgemaster.util.YamlIo.loadOrQuarantine(file, "HallShrine", plugin.getLogger())
                 : new YamlConfiguration();
         yml.set("shrine.world", loc.getWorld().getName());
         yml.set("shrine.x", loc.getX());
@@ -154,7 +154,7 @@ public final class HallShrine {
                 plugin.getLogger().warning("建不出数据目录，殿堂原点没存下来。");
                 return;
             }
-            yml.save(file);
+            com.forgemaster.util.YamlIo.save(file, yml);
         } catch (IOException ex) {
             plugin.getLogger().warning("保存殿堂原点失败: " + ex.getMessage());
             return;
@@ -168,10 +168,10 @@ public final class HallShrine {
     public void clearOrigin() {
         File file = hallFile();
         if (file.exists()) {
-            YamlConfiguration yml = YamlConfiguration.loadConfiguration(file);
+            YamlConfiguration yml = com.forgemaster.util.YamlIo.loadOrQuarantine(file, "HallShrine", plugin.getLogger());
             yml.set("shrine", null);
             try {
-                yml.save(file);
+                com.forgemaster.util.YamlIo.save(file, yml);
             } catch (IOException ex) {
                 plugin.getLogger().warning("删除殿堂原点失败: " + ex.getMessage());
             }

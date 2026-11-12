@@ -341,7 +341,7 @@ public final class GuildService {
         guilds.clear();
         players.clear();
         if (file.exists()) {
-            YamlConfiguration yml = YamlConfiguration.loadConfiguration(file);
+            YamlConfiguration yml = com.forgemaster.util.YamlIo.loadOrQuarantine(file, this.getClass().getSimpleName(), plugin.getLogger());
             nextId = Math.max(1, yml.getInt("next-id", 1));
             lastWeek = yml.getLong("last-week", 0);
             ConfigurationSection root = yml.getConfigurationSection("guilds");
@@ -1280,7 +1280,7 @@ public final class GuildService {
                 plugin.getLogger().warning("无法创建插件数据目录");
                 return;
             }
-            yml.save(file);
+                com.forgemaster.util.YamlIo.save(file, yml);
             // 写盘期间没有新改动进来才清脏；有竞态就保持脏等下一轮（照 StatsStore 语义）
             if (!race) {
                 dirty = false;

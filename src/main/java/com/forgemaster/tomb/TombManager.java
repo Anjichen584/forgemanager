@@ -149,7 +149,7 @@ public final class TombManager {
         if (!file.exists()) {
             return;
         }
-        YamlConfiguration yml = YamlConfiguration.loadConfiguration(file);
+        YamlConfiguration yml = com.forgemaster.util.YamlIo.loadOrQuarantine(file, this.getClass().getSimpleName(), plugin.getLogger());
         ConfigurationSection root = yml.getConfigurationSection("tombs");
         if (root == null) {
             return;
@@ -270,7 +270,7 @@ public final class TombManager {
             return; // 保持脏，下一轮重写
         }
         try {
-            yml.save(file);
+                com.forgemaster.util.YamlIo.save(file, yml);
             // 写盘与全部变更共用 this 锁：期间不可能插进新变更，这里清脏是安全的
             dirty = false;
         } catch (IOException ex) {

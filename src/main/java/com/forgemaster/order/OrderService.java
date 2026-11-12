@@ -107,7 +107,7 @@ public final class OrderService {
         if (!file.exists()) {
             return;
         }
-        YamlConfiguration yml = YamlConfiguration.loadConfiguration(file);
+        YamlConfiguration yml = com.forgemaster.util.YamlIo.loadOrQuarantine(file, this.getClass().getSimpleName(), plugin.getLogger());
         ConfigurationSection root = yml.getConfigurationSection("orders");
         if (root == null) {
             return;
@@ -140,7 +140,7 @@ public final class OrderService {
             yml.set("orders." + o.id(), o.toMap());
         }
         try {
-            yml.save(file);
+                com.forgemaster.util.YamlIo.save(file, yml);
         } catch (IOException ex) {
             plugin.getLogger().warning("保存 orders.yml 失败: " + ex.getMessage());
         }

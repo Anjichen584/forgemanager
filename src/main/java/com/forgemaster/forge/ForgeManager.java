@@ -2241,7 +2241,11 @@ public final class ForgeManager {
         if (s.phase() == ForgePhase.RESULT) {
             giveResult(s, p);
         }
-        if (p.getOpenInventory().getTopInventory().getHolder() instanceof ForgeHolder) {
+        if (p.getOpenInventory().getTopInventory().getHolder() instanceof ForgeHolder h
+                && h.session() == s) {
+            // v2.25.5：必须确认关掉的正是这个会话的界面。原先只判 instanceof ForgeHolder，
+            // 玩家另开了一个锻造界面时，回收旧会话会把新界面一起关掉（giveResult 幂等、
+            // 不会复制物品，但玩家手里那个界面会凭空消失）。
             p.closeInventory();
         }
     }

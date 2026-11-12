@@ -44,7 +44,7 @@ public final class AuctionStore {
         if (!file.exists()) {
             return;
         }
-        YamlConfiguration yml = YamlConfiguration.loadConfiguration(file);
+        YamlConfiguration yml = com.forgemaster.util.YamlIo.loadOrQuarantine(file, this.getClass().getSimpleName(), plugin.getLogger());
         // Bukkit 对解析失败的 yml 只告警并当空文件处理：一条 item 串反序列化失败
         // 就会把整个拍卖行静默清空。先把原文件改名保留，再当空的来。
         if (yml.getConfigurationSection("listings") == null
@@ -183,7 +183,7 @@ public final class AuctionStore {
             }
         }
         try {
-            yml.save(file);
+                com.forgemaster.util.YamlIo.save(file, yml);
             // 写盘与全部变更共用 this 锁：期间不可能插进新变更，这里清脏是安全的
             dirty = false;
         } catch (IOException ex) {

@@ -58,7 +58,7 @@ public final class ContractStore {
             dirty = false;
             return;
         }
-        YamlConfiguration yml = YamlConfiguration.loadConfiguration(file);
+        YamlConfiguration yml = com.forgemaster.util.YamlIo.loadOrQuarantine(file, this.getClass().getSimpleName(), plugin.getLogger());
         lastSettledFullDay = yml.getLong("global.last-settled-full-day", -1);
         ConfigurationSection players = yml.getConfigurationSection("players");
         if (players == null) {
@@ -162,7 +162,7 @@ public final class ContractStore {
             return; // 保持脏，下一轮重写；任务本身不许死
         }
         try {
-            yml.save(file);
+                com.forgemaster.util.YamlIo.save(file, yml);
             // v2.25.1：写盘窗口内若有 markDirty（seq 已前进），保持脏让下一次冲刷重写；
             // 旧注释「清脏不会漏账」对变更侧不成立 —— Run 对象是主线程直改的，不进本锁
             if (seq == dirtySeq) {
