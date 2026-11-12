@@ -31,6 +31,16 @@ serialize-with: ["workbuddy", "zcode"]
 2. 索引表：**新增一行**（插入后确认分隔行只有一条）
 3. 新章节：`## 十四·补XX、vX.Y.Z：…`，并且**下一节的标题还在**
 
+## README 的体量纪律（这条最容易忘，也最容易犯）
+
+README 曾涨到 **4460 行 / 282 KB**，原因是「每轮追加一节 `## 十四·补XX`」——
+攒了三十多轮就成了一坨，agent 整读炸上下文、只读一半就动手。**已经拆完并有闸门**：
+
+- `python tools/agentdocs.py check` 在 README 超过 **450 行 / 48 KB** 时直接报错。
+- 每轮的叙事**不写 README**：写 `docs/history/v<版本段>.md`（新起 `## ` 小节）或
+  `docs/handoff/archive/v<版本>.md`。README 只加**一行索引**。
+- 判据一句话：**三个月后还有人需要主动读吗？** 是 → `docs/history/`；否 → `docs/handoff/`。
+
 ## 每轮流程
 
 1. 读 `docs/handoff/LATEST.md`（不要靠回忆）

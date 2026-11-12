@@ -46,6 +46,14 @@ if [ "$CODE_CHANGED" = "1" ] && [ "$DOC_CHANGED" = "0" ]; then
     exit 1
 fi
 
+# 2.5) README 体量闸门：防止又攒成几千行
+"$PY" tools/agentdocs.py check >/dev/null 2>&1 || {
+    echo ""
+    "$PY" tools/agentdocs.py check | grep -E 'README 超预算|ERROR'
+    echo "[pre-commit] 上面这些必须先修（README 超预算就往 docs/history/ 搬）"
+    exit 1
+}
+
 # 3) 索引是否最新（防止有人手改 AGENTS.md 的地图）
 if [ -f AGENTS.md ]; then
     if ! "$PY" tools/agentdocs.py index >/dev/null 2>&1; then

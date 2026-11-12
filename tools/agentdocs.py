@@ -45,6 +45,10 @@ INDEX_FILE = os.path.join(AGENTS_DIR, "_index.md")
 LOCK_FILE = os.path.join(AGENTS_DIR, "_lock.json")
 AGENTS_MD = os.path.join(ROOT, "AGENTS.md")
 BEGIN = "<!-- agents:index:begin -->"
+# README 体量预算（v2.25.6 拆分后定）。超了 `check` 直接报错，不靠自觉。
+# 现状 386 行 / 37 KB，留一点余量够加索引行和零星修订。
+README_MAX_LINES = 450
+README_MAX_KB = 48
 END = "<!-- agents:index:end -->"
 
 REQUIRED_KEYS = ("agent", "role", "authority", "status")
@@ -310,6 +314,24 @@ def cmd_check(staged: bool, as_agent: str | None) -> int:
             warns.append("AGENTS.md 的文档地图不是最新的，跑一下 `index`")
     else:
         warns.append("还没有 `.agents/_index.md`，跑一下 `index`")
+
+    # 5.5) README 体量预算 —— 防止又攒成一坨
+    # v2.25.6 之前 README 涨到 4460 行 / 282 KB，agent 整读会炸上下文，只读一半就动手。
+    # 拆完之后加了这道闸：超预算直接报错，并告诉人该往哪写。
+    readme_path = os.path.join(ROOT, "README.md")
+    if os.path.isfile(readme_path):
+        raw = read(readme_path)
+        n_lines = len(raw.splitlines())
+        kb = len(raw.encode("utf-8")) / 1024
+        if n_lines > README_MAX_LINES or kb > README_MAX_KB:
+            errors.append(
+                "README.md 超预算：{} 行 / {:.0f} KB（上限 {} 行 / {} KB）。\n"
+                "         本轮叙事不要往 README 里加小节 —— 写进 `docs/history/v<版本段>.md`（长期价值）\n"
+                "         或 `docs/handoff/archive/v<版本>.md`（本轮交接），README 只加一行索引。".format(
+                    n_lines, kb, README_MAX_LINES, README_MAX_KB))
+        elif n_lines > README_MAX_LINES * 0.9 or kb > README_MAX_KB * 0.9:
+            warns.append("README.md 已到 {} 行 / {:.0f} KB，接近上限（{} 行 / {} KB），下一轮该往回搬点东西".format(
+                n_lines, kb, README_MAX_LINES, README_MAX_KB))
 
     # 6) 提交前：staged 文件是否越界
     if staged:
