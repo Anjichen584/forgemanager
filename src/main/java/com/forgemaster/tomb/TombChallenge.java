@@ -472,7 +472,23 @@ public final class TombChallenge implements Listener {
     /** v2.25.1 修 P2（审计轮3-7）：冷却表退服清理（条目只增不减的约定面） */
     @EventHandler
     public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) {
-        cooldowns.remove(event.getPlayer().getUniqueId());
+        UUID quitId = event.getPlayer().getUniqueId();
+        cooldowns.remove(quitId);
+        // v2.25.2（审计轮4）：退服要把这一场残影就地收掉。
+        // 原来只清冷却，active 里那条得等 awaySeconds（默认 60 秒）宽限期才回收 ——
+        // 这 60 秒里玩家重登后任何 /zhujian tomb challenge 都被「你还有一场残影没了结」
+        // 挡住，而残影实体还留在世界里追着别人打。
+        // 惩罚口径照 finish()：该记冷却就记，别让「退服遁」变成免冷却通道。
+        Active a = active.remove(quitId);
+        if (a != null) {
+            Entity shadow = entityOf(a);
+            if (shadow != null) {
+                shadow.remove();
+            }
+            if (cooldownOnLoss() && cooldownHours() > 0) {
+                markCooldown(a.player, a.tombId);
+            }
+        }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)

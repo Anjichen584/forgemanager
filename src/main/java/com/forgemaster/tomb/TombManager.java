@@ -213,8 +213,15 @@ public final class TombManager {
     }
 
     private void flushIfDirty() {
-        if (dirty) {
+        if (!dirty) {
+            return;
+        }
+        // v2.25.2（4 并发查错）：Bukkit 重复任务抛一次异常即被永久取消 ——
+        // tombs.yml 会就此不再自动落盘。这里兜住，脏标记保持等下一轮。
+        try {
             save();
+        } catch (RuntimeException ex) {
+            plugin.getLogger().warning("tombs.yml 异步冲刷失败（保持脏，下一轮重试）：" + ex);
         }
     }
 
@@ -238,23 +245,29 @@ public final class TombManager {
             return;
         }
         YamlConfiguration yml = new YamlConfiguration();
-        for (Tomb t : tombs.values()) {
-            String base = "tombs." + t.id + ".";
-            yml.set(base + "owner", t.owner.toString());
-            yml.set(base + "owner-name", t.ownerName);
-            yml.set(base + "sword-name", t.swordName);
-            yml.set(base + "buried-at", t.buriedAt);
-            yml.set(base + "material", t.materialId);
-            yml.set(base + "quality", t.quality);
-            yml.set(base + "score", t.score);
-            yml.set(base + "challenges", t.challenges);
-            yml.set(base + "wins", t.wins);
-            yml.set(base + "grade", t.grade);
-            yml.set(base + "affixes", new java.util.ArrayList<>(t.affixes));
-            yml.set(base + "layers", t.layers);
-            yml.set(base + "broken", t.broken);
-            yml.set(base + "broken-at", t.brokenAt);
-            yml.set(base + "item", Base64.getEncoder().encodeToString(t.snapshot.serializeAsBytes()));
+        try {
+            for (Tomb t : tombs.values()) {
+                String base = "tombs." + t.id + ".";
+                yml.set(base + "owner", t.owner.toString());
+                yml.set(base + "owner-name", t.ownerName);
+                yml.set(base + "sword-name", t.swordName);
+                yml.set(base + "buried-at", t.buriedAt);
+                yml.set(base + "material", t.materialId);
+                yml.set(base + "quality", t.quality);
+                yml.set(base + "score", t.score);
+                yml.set(base + "challenges", t.challenges);
+                yml.set(base + "wins", t.wins);
+                yml.set(base + "grade", t.grade);
+                // t.affixes 是普通 ArrayList（埋剑时逐条 add），拷一份可能撞 CME；
+                // 以前整段在 try 之外，抛出去就会打死异步冲刷任务。
+                yml.set(base + "affixes", new java.util.ArrayList<>(t.affixes));
+                yml.set(base + "layers", t.layers);
+                yml.set(base + "broken", t.broken);
+                yml.set(base + "broken-at", t.brokenAt);
+                yml.set(base + "item", Base64.getEncoder().encodeToString(t.snapshot.serializeAsBytes()));
+            }
+        } catch (java.util.ConcurrentModificationException ex) {
+            return; // 保持脏，下一轮重写
         }
         try {
             yml.save(file);
@@ -327,6 +340,9 @@ public final class TombManager {
         tombs.put(id, tomb);
         player.getInventory().setItemInMainHand(null);
         markDirty(); // 审计 #8：标脏交 5 秒异步冲刷，主线程埋剑不再同步整文件重写
+        // v2.25.2（4 并发查错）：埋剑反过来是「吞」——主手已经清空，冢只活在内存里。
+        // 5 秒窗口内崩服 = 剑两头都没有。同样用一次同步落盘换掉。
+        save();
         plugin.stats().countTomb(player.getUniqueId());
         if (plugin.achievements() != null) {
             plugin.achievements().check(player.getUniqueId(), "tomb");
@@ -545,6 +561,11 @@ public final class TombManager {
         }
         tombs.remove(t.id);
         markDirty(); // 审计 #8：标脏交异步冲刷（取剑路径）
+        // v2.25.2（4 并发查错）：这里必须**同步**落盘再交剑。
+        // 原来只标脏，剑已经进了玩家背包而 tombs.yml 里还躺着这把剑 ——
+        // 5 秒窗口内崩服/被杀进程 = 剑既在冢里又在包里（复制）；多人同时取更容易撞上。
+        // 取剑是低频动作，一次整文件写可以接受，换掉这个复制窗口。
+        save();
         giveItem(player, t.snapshot.clone());
         player.playSound(player.getLocation(), Sound.ITEM_ARMOR_EQUIP_CHAIN, 1.0f, 1.0f);
         Msg.prefix(player, "<gray>已从剑冢取回「<#ffd166>" + t.swordName + "</#ffd166>」。</gray>");

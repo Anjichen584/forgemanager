@@ -131,8 +131,15 @@ public final class AuctionStore {
     }
 
     private void flushIfDirty() {
-        if (dirty) {
+        if (!dirty) {
+            return;
+        }
+        // v2.25.2（4 并发查错）：Bukkit 重复任务抛一次异常即被永久取消 ——
+        // 拍卖存档会就此不再自动落盘（挂单/竞价全在内存里，只有关服那次写盘救命）。
+        try {
             save();
+        } catch (RuntimeException ex) {
+            plugin.getLogger().warning("auction.yml 异步冲刷失败（保持脏，下一轮重试）：" + ex);
         }
     }
 

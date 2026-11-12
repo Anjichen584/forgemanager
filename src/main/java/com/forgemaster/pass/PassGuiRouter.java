@@ -164,6 +164,18 @@ public final class PassGuiRouter implements Listener {
         }
     }
 
+    /**
+     * v2.25.2（审计轮4）：退服要拆掉付费轨的「已武装」记录。
+     *
+     * <p>武装表是 static 按 uuid 存的，原来只有 /reload（{@link #reset()}）和三秒过期会清。
+     * 于是「点一下武装 → 立刻退服 → 三秒内重进 → 再点同一格」＝ 一跳过确认直接
+     * 扣 5000 剑币买断付费轨。玩家视角是「我刚回来点了一下，钱没了」。</p>
+     */
+    @EventHandler
+    public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) {
+        ARMED.remove(event.getPlayer().getUniqueId());
+    }
+
     /** 点击是不是落在上层界面（点在玩家背包里就什么都不做） */
     private static boolean inTop(InventoryClickEvent event, Inventory top) {
         return event.getClickedInventory() != null && event.getClickedInventory().equals(top);

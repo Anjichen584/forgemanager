@@ -170,22 +170,31 @@ public final class ContractManager {
         if (w == null) {
             return;
         }
-        long fullTime = w.getFullTime();
-        long fullDay = fullTime / 24000L;
-        long tod = fullTime % 24000L;
-        if (tod >= settleTime() && store.lastSettledFullDay() < fullDay) {
-            store.lastSettledFullDay(fullDay);
-            settleDay();
-        } else if (tod == windowTime()) {
-            // 黄昏：提示所有在线在契玩家贡品窗口开了
-            for (Player p : Bukkit.getOnlinePlayers()) {
-                ContractStore.Run r = store.run(p.getUniqueId());
-                if (r != null && r.joined) {
-                    Msg.action(p, "<gradient:#b06bff:#4dc3ff>「龙息已在山脊上盘旋——今日贡品还差 "
-                            + Math.max(0, requirement(r.day, r.missed, relicBonus(p.getUniqueId())) - r.pool)
-                            + " 估值」</gradient>");
+        // v2.25.2（4 并发查错）：这是每 20 tick 的主线程重复任务，抛一次异常就被
+        // Bukkit 永久取消 —— 之后龙税窗口提示、每日结算全部停摆，只能重启救。
+        try {
+            long fullTime = w.getFullTime();
+            long fullDay = fullTime / 24000L;
+            long tod = fullTime % 24000L;
+            if (tod >= settleTime() && store.lastSettledFullDay() < fullDay) {
+                // v2.25.2：游标必须在结算<b>成功之后</b>推进。原来是先写游标再结算，
+                // settleDay 中途抛异常 → 这一天永久跳过（玩家的超额结转 / 圣物三选一全没了），
+                // 而且游标已经落盘，重启也补不回来。
+                settleDay();
+                store.lastSettledFullDay(fullDay);
+            } else if (tod == windowTime()) {
+                // 黄昏：提示所有在线在契玩家贡品窗口开了
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    ContractStore.Run r = store.run(p.getUniqueId());
+                    if (r != null && r.joined) {
+                        Msg.action(p, "<gradient:#b06bff:#4dc3ff>「龙息已在山脊上盘旋——今日贡品还差 "
+                                + Math.max(0, requirement(r.day, r.missed, relicBonus(p.getUniqueId())) - r.pool)
+                                + " 估值」</gradient>");
+                    }
                 }
             }
+        } catch (RuntimeException ex) {
+            plugin.getLogger().warning("龙税时钟跳拍（跳过本轮，下一轮重试）：" + ex);
         }
     }
 

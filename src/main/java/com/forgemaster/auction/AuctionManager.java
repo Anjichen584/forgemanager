@@ -429,30 +429,38 @@ public final class AuctionManager {
             if (!l.expired(now)) {
                 continue;
             }
-            if (l.hasBidder()) {
-                // 先结案再发钱，防崩溃后重结算时卖家二次收款。
-                // v2.19.1：finish 现在返回「这张单确实是本次结掉的」，结不掉就一分钱都不发
-                // v2.23.1：finish 之后立刻同步落盘，把「单据已结」变成磁盘事实
-                if (!store.finish(l.id(), l.bidder(), l.item())) {
-                    continue;
+            // v2.25.2（4 并发查错）：这是每 5 秒一次的主线程重复任务，
+            // 只要抛一次异常就会被 Bukkit 永久取消 —— 之后所有拍品既不到期也不退款，
+            // 卖家的货和买家的钱一直卡在 auction.yml 里，只能重启救。
+            // 单张单子出错只记日志、跳过，下一轮（5 秒后）自然重试。
+            try {
+                if (l.hasBidder()) {
+                    // 先结案再发钱，防崩溃后重结算时卖家二次收款。
+                    // v2.19.1：finish 现在返回「这张单确实是本次结掉的」，结不掉就一分钱都不发
+                    // v2.23.1：finish 之后立刻同步落盘，把「单据已结」变成磁盘事实
+                    if (!store.finish(l.id(), l.bidder(), l.item())) {
+                        continue;
+                    }
+                    commitStoreNow();
+                    long gain = proceeds(l.price());
+                    if (!wallet.giveTo(l.seller(), l.sellerName(), gain, CoinReason.AUCTION)) {
+                        warnLost("流拍/成交货款", l.id());
+                    }
+                    commitMoneyNow();
+                    notifyPlayer(l.seller(), "<green>你的拍品 #" + l.id() + " 以 " + l.price()
+                            + " 成交，到手 " + gain + " 剑币。");
+                    notifyPlayer(l.bidder(), "<green>你以 " + l.price() + " 拍下 #" + l.id()
+                            + "，用 <white>/zhujian auction claim</white> 领取。");
+                } else {
+                    if (!store.finish(l.id(), l.seller(), l.item())) {
+                        continue;
+                    }
+                    // 流拍只是改归属（货退卖家邮箱），同样同步落盘，避免「货在两处」
+                    commitStoreNow();
+                    notifyPlayer(l.seller(), "<yellow>拍品 #" + l.id() + " 流拍，已退回你的邮箱。");
                 }
-                commitStoreNow();
-                long gain = proceeds(l.price());
-                if (!wallet.giveTo(l.seller(), l.sellerName(), gain, CoinReason.AUCTION)) {
-                    warnLost("流拍/成交货款", l.id());
-                }
-                commitMoneyNow();
-                notifyPlayer(l.seller(), "<green>你的拍品 #" + l.id() + " 以 " + l.price()
-                        + " 成交，到手 " + gain + " 剑币。");
-                notifyPlayer(l.bidder(), "<green>你以 " + l.price() + " 拍下 #" + l.id()
-                        + "，用 <white>/zhujian auction claim</white> 领取。");
-            } else {
-                if (!store.finish(l.id(), l.seller(), l.item())) {
-                    continue;
-                }
-                // 流拍只是改归属（货退卖家邮箱），同样同步落盘，避免「货在两处」
-                commitStoreNow();
-                notifyPlayer(l.seller(), "<yellow>拍品 #" + l.id() + " 流拍，已退回你的邮箱。");
+            } catch (RuntimeException ex) {
+                plugin.getLogger().warning("结算拍品 #" + l.id() + " 失败（跳过，下一轮再试）：" + ex);
             }
         }
     }

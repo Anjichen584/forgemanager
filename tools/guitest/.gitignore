@@ -1,2 +1,4 @@
 node_modules/
 fulltest-run.log
+concurrent4-report.json
+concurrent4-*.log

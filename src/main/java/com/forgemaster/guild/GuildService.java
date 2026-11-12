@@ -426,8 +426,16 @@ public final class GuildService {
         // v2.23：仓库物品 / 委托进度走 5 秒异步冲刷，主线程点击路径零同步 IO。
         // save() 全程 synchronized，与主线程的结构性 save 互斥
         flushTask = Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, () -> {
-            if (warehouse.dirty() || quests.dirty()) {
+            if (!warehouse.dirty() && !quests.dirty()) {
+                return;
+            }
+            // v2.25.2（4 并发查错）：Bukkit 重复任务抛一次异常即被永久取消，此后
+            // 行会仓库/委托再也不会落盘（而且没人会把它起回来）。这里兜住：
+            // 异常只记日志、脏标记保持，5 秒后照旧重试。
+            try {
                 save();
+            } catch (RuntimeException ex) {
+                plugin.getLogger().warning("guild-data.yml 异步冲刷失败（保持脏，下一轮重试）：" + ex);
             }
         }, 100L, 100L);
         quests.start(); // 委托低频轮询（读成员档案增量）
@@ -1216,7 +1224,17 @@ public final class GuildService {
         yml.set("next-id", nextId);
         yml.set("last-week", lastWeek);
         boolean race = false;
-        for (Guild g : new ArrayList<>(guilds.values())) {
+        // v2.25.2：guilds / players 是普通 Map，主线程 put/remove 不持 this 锁，
+        // 所以「拷快照」本身就可能撞 CME。以前两处拷贝都在 try 之外 —— 一旦撞上，
+        // 异常穿透 save() 打死异步冲刷任务，仓库物品从此不再落盘。
+        // 现在拷不成只当「这一轮没写」，脏标记留着等下一轮。
+        List<Guild> guildSnap;
+        try {
+            guildSnap = new ArrayList<>(guilds.values());
+        } catch (java.util.ConcurrentModificationException ex) {
+            return;
+        }
+        for (Guild g : guildSnap) {
             try {
                 String base = "guilds." + g.id;
                 yml.set(base + ".name", g.name);
@@ -1238,7 +1256,13 @@ public final class GuildService {
         }
         quests.write(yml);   // v2.23：guilds.<id>.quest 段
         warehouse.write(yml); // v2.23：warehouses.<id> 段
-        for (Map.Entry<UUID, Member> e : new LinkedHashMap<>(players).entrySet()) {
+        Map<UUID, Member> playerSnap;
+        try {
+            playerSnap = new LinkedHashMap<>(players);
+        } catch (java.util.ConcurrentModificationException ex) {
+            return; // 同上：拷不成就不写，保持脏等下一轮
+        }
+        for (Map.Entry<UUID, Member> e : playerSnap.entrySet()) {
             try {
                 Member m = e.getValue();
                 if (m.guildId.isEmpty() && m.cooldownAt <= 0) {

@@ -115,7 +115,12 @@ public final class StatsStore {
 
     private final Plugin plugin;
     private final File file;
-    private final Map<UUID, Stats> cache = new HashMap<>();
+    // v2.25.2（审计轮4）：裸 HashMap → ConcurrentHashMap。
+    // 剑币主账这条路径上，主线程 record()/addCoins 会 computeIfAbsent 新档案（触发 resize），
+    // 而异步自动保存线程同时在拷快照 —— HashMap 在这种并发下不只是抛 CME，
+    // 结构都可能被写坏。换 CHM 之后「同一份数据被两个线程同时摸」才真的安全；
+    // 下面 save0() 里那句 catch 保留当兜底（防御式，不该再触发）。
+    private final Map<UUID, Stats> cache = new java.util.concurrent.ConcurrentHashMap<>();
     private volatile boolean dirty;
     private int saveTaskId = -1;
     /**
@@ -830,8 +835,17 @@ public final class StatsStore {
             plugin.getServer().getScheduler().cancelTask(saveTaskId);
         }
         saveTaskId = plugin.getServer().getScheduler().runTaskTimerAsynchronously(plugin, () -> {
-            if (dirty) {
+            if (!dirty) {
+                return;
+            }
+            // v2.25.2（4 并发查错）：Bukkit 的重复任务只要抛一次异常就被<b>永久取消</b>，
+            // 而且不会再有人把它起回来 —— 于是 data.yml 从此只能靠关服那次 save()。
+            // 4 个玩家同时锻造时快照拷贝撞 CME 的概率不低，所以这里必须兜住，
+            // 异常只记日志、脏标记保持，下一轮（5 秒后）照旧重试。
+            try {
                 save();
+            } catch (RuntimeException ex) {
+                plugin.getLogger().warning("data.yml 异步冲刷失败（保持脏，下一轮重试）：" + ex);
             }
         }, intervalTicks, intervalTicks).getTaskId();
     }
@@ -851,10 +865,18 @@ public final class StatsStore {
         }
         YamlConfiguration yml = new YamlConfiguration();
         Map<UUID, Stats> snapshot;
-        synchronized (cache) {
-            snapshot = new LinkedHashMap<>(cache);
-        }
         boolean race = false;
+        try {
+            synchronized (cache) {
+                snapshot = new LinkedHashMap<>(cache);
+            }
+        } catch (java.util.ConcurrentModificationException ex) {
+            // v2.25.2：主线程 record()/addCoins 往 cache 里塞档案时<b>不持</b> cache 锁，
+            // 这把锁保护不到被保护对象 —— 拷快照这一步就可能撞 CME。
+            // 以前它在 try 之外，抛出去会连带打死异步冲刷任务；现在只当「这一轮没拷成」：
+            // 不清脏、直接返回，下一轮重拷。
+            return;
+        }
         for (Map.Entry<UUID, Stats> e : snapshot.entrySet()) {
             String base = "players." + e.getKey();
             // 主线程可能在 record() / 师徒 / 成就里改同一份档案：

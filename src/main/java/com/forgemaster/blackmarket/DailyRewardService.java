@@ -125,34 +125,58 @@ public final class DailyRewardService {
         int day = nextDay(uuid);
         Reward r = rewards.get(day - 1);
 
-        var wallet = plugin.wallet();
-        List<String> got = new ArrayList<>();
-        if (r.coins() > 0 && wallet.give(p, r.coins(), CoinReason.SIGNIN)) {
-            got.add("剑币 <#ffd166>+" + wallet.format(r.coins()) + "</#ffd166>");
-        }
-        if (r.materialId() != null) {
-            ItemStack item = materialItem(r.materialId(), r.materialAmount());
-            if (item != null) {
-                for (ItemStack rest : p.getInventory().addItem(item).values()) {
-                    p.getWorld().dropItemNaturally(p.getLocation(), rest);
-                }
-                got.add("<#7ef2c8>" + r.materialAmount() + " × " + materialLabel(r.materialId()) + "</#7ef2c8>");
-            }
-        }
-        if (r.charmId() != null) {
-            String norm = com.forgemaster.strengthen.Charm.normalize(r.charmId());
-            ItemStack charm = com.forgemaster.strengthen.Charm.create(plugin,
-                    norm == null ? com.forgemaster.strengthen.Charm.TALISMAN : norm);
-            charm.setAmount(r.charmAmount());
-            for (ItemStack rest : p.getInventory().addItem(charm).values()) {
-                p.getWorld().dropItemNaturally(p.getLocation(), rest);
-            }
-            got.add("<#b388ff>" + r.charmAmount() + " × "
-                    + com.forgemaster.strengthen.Charm.plainName(r.charmId()) + "</#b388ff>");
-        }
-
+        // v2.25.2（4 并发查错）：先记账、再发奖。原来发完奖才 setSignin ——
+        // 发奖中途抛异常（背包同步、Charm.create、外部经济回调）或此刻崩服，
+        // 就是「奖已到手、签到没记上」，下次进来还能再领一次（重复发币）。
+        // 记账放在前面，发奖若抛异常就回滚记录：宁可让玩家重来一次，也不重复发。
+        int prevDay = dayOf(uuid);
+        String prevLast = lastSign(uuid);
         store.setSignin(uuid, day, today);
         store.save();
+        var wallet = plugin.wallet();
+        List<String> got = new ArrayList<>();
+        try {
+            if (r.coins() > 0 && wallet.give(p, r.coins(), CoinReason.SIGNIN)) {
+                got.add("剑币 <#ffd166>+" + wallet.format(r.coins()) + "</#ffd166>");
+            }
+            if (r.materialId() != null) {
+                ItemStack item = materialItem(r.materialId(), r.materialAmount());
+                if (item != null) {
+                    for (ItemStack rest : p.getInventory().addItem(item).values()) {
+                        p.getWorld().dropItemNaturally(p.getLocation(), rest);
+                    }
+                    got.add("<#7ef2c8>" + r.materialAmount() + " × " + materialLabel(r.materialId()) + "</#7ef2c8>");
+                }
+            }
+            if (r.charmId() != null) {
+                String norm = com.forgemaster.strengthen.Charm.normalize(r.charmId());
+                ItemStack charm = com.forgemaster.strengthen.Charm.create(plugin,
+                        norm == null ? com.forgemaster.strengthen.Charm.TALISMAN : norm);
+                // v2.25.2（审计轮4）：别直接 setAmount(charmAmount)。
+                // 配置写超过该符的堆叠上限（符是 max-stack=1 的实体物品，配 2 就抛
+                // IllegalArgumentException）时整份奖励发不出去；即便有回滚，玩家也被无故挡一次。
+                // 照 SeasonPassService 的口径按上限拆叠，一叠都不少。
+                int preMax = Math.max(1, charm.getMaxStackSize());
+                int remain = Math.max(1, r.charmAmount());
+                while (remain > 0) {
+                    int n = Math.min(remain, preMax);
+                    ItemStack one = charm.clone();
+                    one.setAmount(n);
+                    for (ItemStack rest : p.getInventory().addItem(one).values()) {
+                        p.getWorld().dropItemNaturally(p.getLocation(), rest);
+                    }
+                    remain -= n;
+                }
+                got.add("<#b388ff>" + r.charmAmount() + " × "
+                        + com.forgemaster.strengthen.Charm.plainName(r.charmId()) + "</#b388ff>");
+            }
+        } catch (RuntimeException ex) {
+            store.setSignin(uuid, prevDay, prevLast);
+            store.save();
+            plugin.getLogger().warning("签到发奖失败，已回滚签到进度：" + ex);
+            Msg.prefix(p, "<red>签到发奖出错，进度已回滚，请再试一次（管理员看控制台）。</red>");
+            return;
+        }
 
         p.playSound(p.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 0.9f, 1.2f);
         boolean grand = day == rewards.size();

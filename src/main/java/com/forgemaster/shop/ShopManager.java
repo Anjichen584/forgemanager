@@ -245,7 +245,10 @@ public final class ShopManager {
     private void buy(Player p, ShopEntry e, int qty) {
         UUID id = p.getUniqueId();
         long total = e.unitPrice() * qty;
-        if (!plugin.stats().takeCoins(id, total, CoinReason.SHOP)) {
+        // v2.25.2（审计轮4）：扣款走 Wallet 收口。直连 stats().takeCoins 在
+        // economy.coin-sinks=server 时扣的是剑币、而黑市/签到等入口扣的是金币 ——
+        // 两本账分裂，玩家能用一边的余额在另一边白拿。
+        if (!plugin.wallet().take(p, total, CoinReason.SHOP)) {
             Msg.prefix(p, "<red>剑币不够。</red> 需要 " + CoinRules.fmt(total)
                     + "<gray>，你只有 </gray>" + CoinRules.fmt(plugin.stats().coins(id)) + "<gray>。</gray>");
             p.playSound(p.getLocation(), org.bukkit.Sound.ENTITY_VILLAGER_NO, 0.8f, 1.0f);

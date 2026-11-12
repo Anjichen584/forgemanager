@@ -202,6 +202,12 @@ public final class ForgeListener implements Listener {
             if (!(event.getWhoClicked() instanceof Player player)) {
                 return;
             }
+            // v2.25.2（审计轮4）：补 DOUBLE_CLICK 守卫（与上面 BoardHolder 同款）。
+            // 剑冢面板是有副作用又原地重建的分支：双击第二条包会落在重建后的面板上，
+            // get(id) 已经 null → 走 219 行现场重建，或者对同一把剑多算一次挑战。
+            if (event.getClick() == ClickType.DOUBLE_CLICK) {
+                return;
+            }
             if (event.getClickedInventory() == null || !event.getClickedInventory().equals(top)) {
                 return;
             }

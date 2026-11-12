@@ -174,6 +174,12 @@ public final class OrderService {
             return;
         }
         plugin.auction().store().addMail(owner, item);
+        // v2.25.2（4 并发查错）：跨文件交接必须两头都落盘。
+        // addMail 只标脏（auction.yml 的 mail 段最多晚 5 秒才写），而调用方紧接着会
+        // save() 把 orders.yml 里这把剑删掉 —— 两条序列一叠加，5 秒窗口内崩服就是
+        // 「订单没了、邮箱也没有」= 玩家托管剑凭空消失。
+        // 拍行自己的 claim() 就是「先 replaceMail 再 store.save()」，这里照同一口径。
+        plugin.auction().store().save();
     }
 
     // ------------------------------------------------------------ 发单
@@ -303,7 +309,9 @@ public final class OrderService {
         save();
         // 第三步：动钱——悬赏扣手续费给接单人，手续费销毁（剑币回收口）
         long pay = payout(o.bounty());
-        plugin.stats().addCoins(p.getUniqueId(), pay);
+        // v2.25.2（审计轮4）：发钱必须走 Wallet 收口。直连 stats().addCoins 在
+        // economy.coin-sinks=server 时会分裂两本账（扣的是金币、发的是剑币＝凭空造币）。
+        plugin.wallet().give(p, pay, com.forgemaster.econ.CoinReason.BOUNTY);
         plugin.stats().markDirty();
         int rep = repReward();
         if (rep > 0) {
@@ -342,7 +350,8 @@ public final class OrderService {
         // 先删单据落盘（结案），再退款：崩溃只会漏退，不会二次退款
         orders.remove(id);
         save();
-        plugin.stats().addCoins(p.getUniqueId(), o.bounty());
+        // v2.25.2（审计轮4）：退款与当初扣款必须同一本账，走 Wallet（同 take 的判定）
+        plugin.wallet().give(p, o.bounty(), com.forgemaster.econ.CoinReason.BOUNTY);
         plugin.stats().markDirty();
         return "<green>订单 #" + id + " 已取消，托管悬赏 <gold>" + o.bounty() + "</gold> 剑币全额退回。";
     }

@@ -374,7 +374,11 @@ public final class EconomyBridge {
             Method ok = response.getClass().getMethod("transactionSuccess");
             return (Boolean) ok.invoke(response);
         } catch (Throwable ignored) {
-            return true;
+            // v2.25.2（审计轮4）：读不出成败时按<b>失败</b>处理。
+            // 原来 return true 等于「接口拒了也当成功」—— coin-sinks=server 时
+            // withdraw 明明没扣到钱却照发货（白拿），而且 data.yml 里没有这笔记录，对账查不出。
+            // 宁可让玩家点两次，也不能凭空发货。
+            return false;
         }
     }
 

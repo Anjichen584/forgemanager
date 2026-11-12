@@ -5055,6 +5055,39 @@ public final class SelfTestSuite {
             require(!store.dirty(), "收尾清理后脏标记应归零");
         });
 
+        add(g, "剑冢落盘幂等：标脏翻一次、save 清干净、再 save 不出新内容", () -> {
+            var tombs = plugin.tombs();
+            require(tombs != null, "剑冢管理器没起来");
+            int before = tombs.all().size();
+            tombs.markDirty();
+            require(tombs.dirty(), "剑冢 markDirty 没置脏");
+            tombs.save();
+            require(!tombs.dirty(), "剑冢 save 没清脏标记");
+            tombs.save();
+            require(!tombs.dirty(), "剑冢连续第二次 save 不该再有东西可写（幂等）");
+            require(tombs.all().size() == before, "落盘不该改变内存里的冢数");
+        });
+
+        // v2.25.2（4 并发查错）：异步冲刷任务被打死是「存档静默失效」的最隐蔽形态，
+        // 这里只钉住它依赖的契约 —— save 成功必清脏、连写两次幂等；代数语义由下面的契约用例钉。
+        add(g, "契约落盘幂等 + 游标置脏：save 成功才清脏、连写两次幂等", () -> {
+            var cm = plugin.contractManager();
+            require(cm != null, "周目管理器没起来");
+            var store = cm.store();
+            long day0 = store.lastSettledFullDay();
+            store.markDirty();
+            require(store.dirty(), "契约 markDirty 没置脏");
+            store.save();
+            require(!store.dirty(), "契约 save 没清脏标记");
+            store.save();
+            require(!store.dirty(), "契约连续第二次 save 不该再有东西可写（幂等）");
+            // 游标写回原值（净效果为零，不污染存档），但必须置脏 —— 否则跨天结算会漏
+            store.lastSettledFullDay(day0);
+            require(store.dirty(), "lastSettledFullDay 改动没置脏（跨天结算会漏账）");
+            store.save();
+            require(!store.dirty(), "收尾 save 后应回到干净");
+        });
+
         add(g, "剑灵节流：2 秒窗口内多次命中只落一次账", () -> {
             require(plugin.spirit() != null, "剑灵模块没起来");
             require(plugin.spirit().tierOf(4) == 0, "档位门槛太低，节流用例不适用");

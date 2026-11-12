@@ -109,8 +109,15 @@ public final class ContractStore {
     }
 
     private void flushIfDirty() {
-        if (dirty) {
+        if (!dirty) {
+            return;
+        }
+        // v2.25.2（4 并发查错）：Bukkit 重复任务抛一次异常即被永久取消 ——
+        // 契约存档会就此不再自动落盘，直到关服。这里兜住，脏标记保持等下一轮。
+        try {
             save();
+        } catch (RuntimeException ex) {
+            plugin.getLogger().warning("contract.yml 异步冲刷失败（保持脏，下一轮重试）：" + ex);
         }
     }
 
@@ -130,22 +137,31 @@ public final class ContractStore {
      * 只剩关服 / reload 冲刷（stop）强制调用。
      */
     public synchronized void save() {
+        // v2.25.2（4 并发查错）：代数必须在「组装之前」取。原来在组装完之后取，
+        // 组装窗口内主线程的 markDirty 会被当成「已经包含在本次写盘里」而被清掉 ——
+        // 那一笔变更就永久丢了（脏标记没了，没人再写它）。
+        long seq = dirtySeq;
         YamlConfiguration yml = new YamlConfiguration();
         yml.set("global.last-settled-full-day", lastSettledFullDay);
-        for (Map.Entry<UUID, Run> e : runs.entrySet()) {
-            String base = "players." + e.getKey();
-            Run r = e.getValue();
-            yml.set(base + ".joined", r.joined);
-            yml.set(base + ".day", r.day);
-            yml.set(base + ".missed", r.missed);
-            yml.set(base + ".pool", r.pool);
-            yml.set(base + ".carry", r.carry);
-            yml.set(base + ".relics", new ArrayList<>(r.relics));
-            yml.set(base + ".phoenix-day", r.phoenixDay);
-            yml.set(base + ".pick-pending", r.pickPending == null ? "" : r.pickPending);
+        try {
+            for (Map.Entry<UUID, Run> e : runs.entrySet()) {
+                String base = "players." + e.getKey();
+                Run r = e.getValue();
+                yml.set(base + ".joined", r.joined);
+                yml.set(base + ".day", r.day);
+                yml.set(base + ".missed", r.missed);
+                yml.set(base + ".pool", r.pool);
+                yml.set(base + ".carry", r.carry);
+                // r.relics 是主线程直改的 ArrayList（交付/破除会给它 add/clear），
+                // 这里拷一份就可能撞 CME。以前它在 try 之外，抛出去会打死异步冲刷任务。
+                yml.set(base + ".relics", new ArrayList<>(r.relics));
+                yml.set(base + ".phoenix-day", r.phoenixDay);
+                yml.set(base + ".pick-pending", r.pickPending == null ? "" : r.pickPending);
+            }
+        } catch (java.util.ConcurrentModificationException ex) {
+            return; // 保持脏，下一轮重写；任务本身不许死
         }
         try {
-            long seq = dirtySeq;
             yml.save(file);
             // v2.25.1：写盘窗口内若有 markDirty（seq 已前进），保持脏让下一次冲刷重写；
             // 旧注释「清脏不会漏账」对变更侧不成立 —— Run 对象是主线程直改的，不进本锁

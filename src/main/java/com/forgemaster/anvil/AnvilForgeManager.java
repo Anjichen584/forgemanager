@@ -1424,8 +1424,15 @@ public final class AnvilForgeManager {
     }
 
     private void flushIfDirty() {
-        if (dirty) {
+        if (!dirty) {
+            return;
+        }
+        // v2.25.2（4 并发查错）：Bukkit 重复任务抛一次异常即被永久取消 ——
+        // 此后所有砧位失去持久化（放剑后崩溃=吞、取剑后崩溃=复制，正是 v2.24.1 修过的那两条）。
+        try {
             save();
+        } catch (RuntimeException ex) {
+            plugin.getLogger().warning("anvils.yml 异步冲刷失败（保持脏，下一轮重试）：" + ex);
         }
     }
 

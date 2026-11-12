@@ -309,7 +309,10 @@ public final class SeasonPassService {
 
     /** 整份重建落盘（StoryManager / SpectrumService 风格），登记积分或领取后都会调 */
     public void save() {
-        dirty = false;
+        // v2.25.2（4 并发查错）：原来第一行就 dirty = false，然后才组装+写盘。
+        // 只要 yml.save 抛 IOException（盘满/文件被占），这一批变更就再也不会重试了 ——
+        // 脏标记已经没了。改成写成功之后再清，且写盘窗口内有人 markDirty 就保持脏。
+        boolean wasDirty = dirty;
         YamlConfiguration yml = new YamlConfiguration();
         for (Map.Entry<UUID, PlayerData> e : data.entrySet()) {
             for (Map.Entry<Integer, SeasonProgress> s : e.getValue().seasons.entrySet()) {
@@ -326,7 +329,12 @@ public final class SeasonPassService {
                 plugin.getDataFolder().mkdirs();
             }
             yml.save(file);
+            // 写盘期间没有新的 markDirty 才清脏
+            if (wasDirty && dirty) {
+                dirty = false;
+            }
         } catch (IOException ex) {
+            dirty = true; // 写失败就得留脏，等下一次 flush 重试
             plugin.getLogger().warning("赛季通行证存档保存失败：" + ex.getMessage());
         }
     }

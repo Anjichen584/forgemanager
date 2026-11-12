@@ -1,10 +1,10 @@
-# 铸剑大师 · ForgingMaster v2.25.1
+# 铸剑大师 · ForgingMaster v2.25.2
 
 Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「烧红 → 敲打 → 叠钢 → 开刃 → 抛光 → 嵌银丝 → 淬火」的手感搬进 MC，
 锻完之后还有委托、比试、耐久、剑币经济、师徒、成就、段位、剑灵、剑冢、世界事件、剧情、名人堂、商会、拍卖行、排行与赛季。
 
 - 目标 Java：**21+**
-- 构建产物：`target/ForgingMaster-2.23.5.jar`
+- 构建产物：`target/ForgingMaster-2.25.2.jar`
 - 无第三方依赖，纯 Paper API + MiniMessage
 - `config-version`：**20**
 
@@ -29,6 +29,7 @@ Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「�
 
 | 版本 | 一句话 | 详情 |
 | --- | --- | --- |
+| **2.25.2** | **4 并发实测 + 查错轮4**：21 条全修 —— 6 个异步冲刷任务被异常打死、两本账漏改的商会/订单、退服不清的二次确认，自检 513/513；新增 4 bot 并发压测器 31 PASS | [十四·补十一](#十四补十一v22524-并发实测查错轮4) |
 | **2.25.1** | **查错轮3（组合面）**：16 条全修 —— 保险双账本、重抽净丢词条、比试刷分、无主 holder、ContractStore 丢脏窗口、迁移死代码 | [十四·补十](#十四补十v2251查错轮3组合面16-条全修) |
 | **2.25.0** | **拓展第二轮**：血怒/坚韧附魔 + 灵契重抽 + 强化保险；查错轮2 修 15 条，自检 511/511 | [十四·补九](#十四补九v2250拓展第二轮血怒坚韧灵契重抽与强化保险) |
 | **2.24.1** | **查错轮2**：15 条全修（回档脏冲刷盖回、领奖可复领、黑市跨零点、备份原子化…），自检 498/498 | [十四·补八](#十四补八v2241查错轮215-条全修) |
@@ -1733,6 +1734,69 @@ vanilla-guard:
 以上每项都带自检用例（外部模块经 `SelfTestSuite.addExternal` 挂接），`/zhujian selftest` 全量回归。
 
 ---
+
+## 十四·补十一、v2.25.2：4 并发实测 + 查错轮4（21 条全修）
+
+先用 `tools/guitest/concurrent4.js`（4 个 mineflayer bot 同 tick 抢同一个模块）跑真机并发，再让两个只读 agent 扫「持久化/异步冲刷」与「GUI/经济共享态」。**实测没抓到玩家能复现的重复扣钱/复制物品** —— 抓到的 21 条全是「只在崩溃窗口、异常路径、退服重进时成立」的潜在缺陷，这类缺陷的特点是平时全绿、出事就是一整本账。
+
+### 一、异步冲刷任务被异常打死（最要命的一类，8 条）
+
+Bukkit 的重复任务**抛一次异常就被永久取消**（`AnvilForgeManager:1483` 早就写过这条注释）。6 个存档的 5 秒/5 分钟冲刷在此之前没有任何 try/catch：一次 CME 或外部经济回调异常，`data.yml`、`guild-data.yml`、`tombs.yml`、`auction.yml`、`anvils.yml`、`contract.yml` 就从那一刻起**静默不再落盘**，只能重启救 —— 而玩家的委托「已领」、通行证「已领」、仓库物品全靠这些文件。
+
+- `StatsStore` / `GuildService` / `ContractStore` / `TombManager` / `AuctionStore` / `AnvilForgeManager` / `SeasonPassService` 的冲刷与 `save()` 全部补 try/catch（记日志 + 保持脏，下一轮重试）。
+- `AuctionManager.settleExpired()`（每 5 秒）与 `ContractManager.tickClock()`（每 20 tick）是主线程任务，同款问题：单张拍品/单日结算出错就永久停摆（拍品再也不到期、卖家永远收不到钱）。改为逐条目 try/catch + 跳过本轮，下一轮自然重试。
+- `SeasonPassService.save()` 原来先 `dirty = false` 再写盘，写失败就永久丢脏 → 改为写成功且代数未变才清脏。
+
+### 二、快照拷贝在 try 之外（CME 逃出去就整文件不写）
+
+`new LinkedHashMap<>(cache)` 这类拷贝在主线程正在改的裸 `HashMap` 上执行会抛 CME。原来只有「拷贝本身」包在 try 里、而拷贝操作在锁外/在 try 外，异常直接逃出 `save()`。
+
+- `StatsStore.cache` 换 `ConcurrentHashMap`（剑币主账：主线程 `computeIfAbsent` 建档触发 resize 时，异步线程正在拷快照，裸 HashMap 不只是抛异常，结构都可能写坏）。
+- `GuildService`（行会列表 + 委托 + 仓库三份快照）、`ContractStore`（`r.relics` 拷贝）、`TombManager` 全部把拷贝收进 try，失败就 `return` 并保持脏。
+- `ContractStore.save()` 改成**装配前**先取 `dirtySeq`，写完只在代数未变时清脏（`AnvilForgeManager` 同款）。
+
+### 三、跨文件交接不同步（丢道具/丢钱窗口）
+
+- `OrderService.addMail()` 只把 `auction.yml` 标记为脏就返回 → 5 秒窗口内崩服/重启，交付的剑彻底消失（单据已结、邮箱没有）。改为当场 `store().save()`。
+- `TombManager.take()` 先给物品后落盘 → 5 秒内崩服可复制一把；`bury()` 清主手后异步落盘 → 崩服吞掉一把。两处都改为**先落盘、后交货 / 清手后立即落盘**。
+
+### 四、两本账漏改（coin-sinks=server 时凭空铸币）
+
+`ShopManager.buy()`（商会采购）与 `OrderService`（悬赏托管、交付结算、取单退款）直连 `stats().takeCoins / addCoins`，绕开 `Wallet`。服务器接 Vault 时，扣的是剑币、退的是金币（或反之）—— 与 v2.23.1 修的黑市/签到同源。全部收口 `Wallet`。
+
+`EconomyBridge.responseOk()` 读不出 `transactionSuccess` 时原来 `return true`：接口拒了也当成功 → 扣款失败照发货。改 `return false`（宁可让玩家点两次，不能白给）。
+
+### 五、退服不清的二次确认状态（误扣 5000 剑币）
+
+- `PassGuiRouter` 的付费轨「已武装」是 static per-uuid 表，只有 /reload 与 3 秒过期会清：点一下武装 → 立刻退服 → 3 秒内重进 → 再点同一格 = 一跳过确认直接买断。补 `PlayerQuitEvent` 清理。
+- `SpiritManager.pendingReroll` 同样退服不清：重登后 `reroll confirm` 的 nonce 仍与剑 PDC 匹配 → 跳过预览直接扣钱。
+- `TombChallenge.active` 在退服时那只残影要等 `awaySeconds`（默认 60 秒）才回收，这期间玩家重登被「你还有一场残影没了结」挡住，而残影还在世界里追人打。改为退服就地收场（惩罚口径照 `finish()`，不让退服成为免冷却通道）。
+
+### 六、签到把「发奖」放在「记账」前面
+
+`DailyRewardService.sign()` 先发币/发符、最后才 `setSignin`：发奖中途抛异常（或崩服）→ 奖已到手、签到没记上 → 下次还能再领。改为**先记账再发奖**，发奖抛异常就回滚记录。顺带把符的 `setAmount(charmAmount)` 改成按堆叠上限拆叠（配置写超过 max-stack 时 setAmount 会抛 `IllegalArgumentException`，整份奖励发不出去）。
+
+### 七、剑冢面板补 DOUBLE_CLICK 守卫
+
+`ForgeListener` 里 13 个 holder 分支只有剑冢面板既有点击副作用又原地重建：双击第二包落在重建后的面板上，`get(id)` 已 null → 现场再重建 / 对同一把剑多算一次挑战。
+
+### 八、并发压测器（新增 `tools/guitest/concurrent4.js`）
+
+4 个 bot 同 tick 抢同一模块，7 个阶段 + 每阶段扫服务端日志：
+
+| 阶段 | 抢什么 | 断言口径 |
+| --- | --- | --- |
+| signin | 同 tick 三连签到 | 每只 bot 成功次数 ≤ 1，余额只增一份 |
+| tombrun | 同 tick 三连进秘境（350 币/次） | 只扣一次 300、余额不为负 |
+| blackmarket | 同 tick 连点货架 6 次 | **ground truth 读 `daily-data.yml`**：计数 ≤ 2，超限后一分钱不扣 |
+| auction | 4 人同 tick 抢一口价 | 成交 1 人 / 扣钱 1 人 / 邮箱只发 1 把 |
+| guild | 4 人同 tick 各捐 2 次 100 | 扣款守恒 800 == 基金增量 800 |
+| anvil | 4 人各占一砧上砧取回 | 剑数 1 → 0 → 1（不复制不丢） |
+| dropout | 开着界面直接断线 | 其他人界面照常打开，日志无异常栈 |
+
+`/zhujian selftest` 另加 2 条钉子（剑冢/契约「save 成功才清脏 + 连写幂等」），盲的 511 → **513**。
+
+验证：自检 513/513 失败 0；`concurrent4.js` 全量 **PASS 31 / WARN 0 / FAIL 0**，服务端日志零异常栈。
 
 ## 十四·补十、v2.25.1：查错轮3 · 组合面（16 条全修）
 

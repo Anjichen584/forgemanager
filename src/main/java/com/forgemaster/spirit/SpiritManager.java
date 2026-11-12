@@ -949,6 +949,10 @@ public final class SpiritManager implements Listener {
             flushPending(player, player.getInventory().getItemInMainHand());
         }
         surgeCooldowns.remove(player.getUniqueId()); // 冷却只对在线有意义，退服即清
+        // v2.25.2（审计轮4）：重抽确认的 nonce 也要清。
+        // 原来退服不清，重登后 `/zhujian spirit reroll confirm` 的 nonce 仍与剑上 PDC 匹配，
+        // 于是可以跳过预览直接扣钱 —— 玩家以为自己还在看预览，钱已经没了。
+        pendingReroll.remove(player.getUniqueId());
     }
 
     /**
