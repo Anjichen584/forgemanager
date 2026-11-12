@@ -473,7 +473,17 @@ public final class TombChallenge implements Listener {
     @EventHandler
     public void onQuit(org.bukkit.event.player.PlayerQuitEvent event) {
         UUID quitId = event.getPlayer().getUniqueId();
-        cooldowns.remove(quitId);
+        // v2.25.6 修 P0：原来这一行是 cooldowns.remove(quitId) —— 把该玩家**整张**冷却表删掉。
+        // 而斩影成功是会记冷却的（markCooldown），于是「打赢 → /quit → 重连」就能立刻
+        // 重打同一把剑冢，cooldown-hours=24 形同虚设，同一把剑变成无限材料/彩头来源。
+        // 这里只清「已经过期」的条目：既保住内存契约（条目不会只增不减），
+        // 又不会把还在生效的冷却一起抹掉。
+        Map<String, Long> mine = cooldowns.get(quitId);
+        if (mine != null) {
+            if (pruneExpired(mine, System.currentTimeMillis()) == 0) {
+                cooldowns.remove(quitId);
+            }
+        }
         // v2.25.2（审计轮4）：退服要把这一场残影就地收掉。
         // 原来只清冷却，active 里那条得等 awaySeconds（默认 60 秒）宽限期才回收 ——
         // 这 60 秒里玩家重登后任何 /zhujian tomb challenge 都被「你还有一场残影没了结」
@@ -621,6 +631,24 @@ public final class TombChallenge implements Listener {
             }
         }
         return got;
+    }
+
+    /**
+     * 只清「已经过期」的冷却条目（v2.25.6 修 P0 时拆出来的纯函数，专门为了能钉住语义）。
+     *
+     * <p>原来退服是 {@code cooldowns.remove(uuid)} —— 整张表删掉，把该玩家**还在生效**的
+     * 冷却一起抹了。斩影成功会记冷却，于是「打赢 → /quit → 重连」就能立刻重打同一把剑冢，
+     * {@code cooldown-hours=24} 形同虚设。这里保留未过期的，只回收过期的（内存契约仍然成立：
+     * 条目不会只增不减）。</p>
+     *
+     * @return 清理后还剩几条
+     */
+    public static int pruneExpired(Map<String, Long> mine, long now) {
+        if (mine == null || mine.isEmpty()) {
+            return 0;
+        }
+        mine.values().removeIf(until -> until == null || until <= now);
+        return mine.size();
     }
 
     private void markCooldown(UUID player, String tombId) {

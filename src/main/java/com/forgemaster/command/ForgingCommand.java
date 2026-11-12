@@ -159,6 +159,8 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             }
             // 声望兑换所（v2.24 切片二）：声望换剑币 / 保底护胚类符，扣减走 spendReputation
             case "redeem", "duihuan", "huan" -> redeem(sender, args);
+            // 砧位自查（v2.25.6）：玩家问「我的剑还在不在砧上」，纯只读
+            case "anvil", "tiean", "zhen" -> anvilList(sender, args);
             case "shop", "shanghui" -> shop(sender);
             case "blackmarket", "heishi" -> blackmarket(sender);
             case "signin", "qiandao" -> signin(sender);
@@ -3205,6 +3207,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         addHelp(out, u + "power", "战力评分：手上这把的分数拆解与建议价");
         addHelp(out, u + "pass", "赛季通行证：进度与免费轨道奖励");
         addHelp(out, u + "redeem", "声望兑换所（info · coin <声望数> · charm <符id>）");
+        addHelp(out, u + "anvil [all]", "砧位自查：列出你挂在铁砧上的剑与坐标（all 要管理员）");
 
         out.add(HELP_G_PANEL);
         addHelp(out, u + "codex", "锻造图鉴");
@@ -3680,6 +3683,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             List.of("guild", "hanghui"),
             // 声望兑换所（v2.24 切片二）
             List.of("redeem", "duihuan", "huan"),
+            List.of("anvil", "tiean", "zhen"),
             List.of("master", "shifu"),
             List.of("accept"),
             // ---- 极限锻造 / 世界事件 / 帮助 ----
@@ -3794,6 +3798,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             case "spirit", "jianling" -> tabSpirit(args);
             // 声望兑换所（v2.24 切片二）：分派表与 SUBCOMMANDS 同步，别名的下一层也要有候选
             case "redeem", "duihuan", "huan" -> tabRedeem(args);
+            case "anvil", "tiean", "zhen" -> tabAnvil(sender, args);
             // ---- 服主 ----
             case "metrics", "jingji" -> tabMetrics(args);
             case "config", "peizhi" -> tabConfig(args);
@@ -4382,6 +4387,88 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         return List.of();
     }
 
+    // ------------------------------------------------------------ 砧位自查（v2.25.6）
+
+    /**
+     * {@code /zhujian anvil [all]} —— 列出砧位上还挂着的剑。
+     *
+     * <p>为什么加这条：v2.25.5 之前 {@code anvils.yml} 是裸覆盖写，写坏一次玩家挂在砧上的
+     * 剑就凭空没了（剑在 {@code place()} 时已从背包取出）。存档侧已经修好，但对玩家来说
+     * 「我的剑到底还在不在砧上」以前只能靠跑回那块方块看 —— 超时回收、方块被拆、区块卸载
+     * 都可能让剑回到背包或掉在砧上，人不在跟前根本不知道。</p>
+     *
+     * <p><b>纯只读</b>：只遍历 {@code sessions()} 打印，不碰 ItemStack、不刷新实体、不落盘。</p>
+     */
+    private void anvilList(CommandSender sender, String[] args) {
+        boolean all = args.length >= 2 && isAny(args[1].toLowerCase(Locale.ROOT), "all", "quanbu", "全部");
+        if (all && !sender.hasPermission("forgemaster.admin")) {
+            // 别人的砧位里有别人的剑，不能给普通玩家看
+            Msg.prefix(sender, "<red>只有管理员能看全部砧位。</red>");
+            return;
+        }
+        boolean self = sender instanceof Player;
+        UUID me = self ? ((Player) sender).getUniqueId() : null;
+        var list = new ArrayList<com.forgemaster.anvil.AnvilForgeSession>();
+        for (com.forgemaster.anvil.AnvilForgeSession s : plugin.anvilForge().sessions()) {
+            if (all || (me != null && me.equals(s.owner()))) {
+                list.add(s);
+            }
+        }
+        if (list.isEmpty()) {
+            Msg.prefix(sender, all
+                    ? "<gray>现在没有任何剑挂在铁砧上。</gray>"
+                    : "<gray>你没有剑挂在铁砧上。</gray>");
+            return;
+        }
+        // 老的在前面：玩家最先想知道的是「我最久没管的那把」
+        list.sort(java.util.Comparator.comparingLong(com.forgemaster.anvil.AnvilForgeSession::placedAt));
+        Msg.send(sender, "<dark_gray>──────── <gradient:#ffd166:#ff7a18><bold>砧位"
+                + (all ? "（全部 " + list.size() + " 把）" : "") + "</bold></gradient> <dark_gray>────────");
+        long now = System.currentTimeMillis();
+        long timeoutMin = plugin.anvilForge().timeoutMinutes();
+        for (com.forgemaster.anvil.AnvilForgeSession s : list) {
+            StringBuilder line = new StringBuilder("<gray>· <white>")
+                    .append(s.worldName()).append(" ").append(s.x()).append(", ").append(s.y())
+                    .append(", ").append(s.z());
+            if (all) {
+                line.append(" <dark_gray>|</dark_gray> <yellow>")
+                        .append(s.ownerName() == null || s.ownerName().isBlank()
+                                ? s.owner().toString().substring(0, 8) : s.ownerName());
+            }
+            ItemStack sw = s.sword();
+            if (sw != null) {
+                int lv = plugin.strengthen().levelOf(sw);
+                Quality q = com.forgemaster.quality.Quality.byName(
+                        sw.getPersistentDataContainer().get(com.forgemaster.util.Keys.QUALITY,
+                                org.bukkit.persistence.PersistentDataType.STRING));
+                line.append(" <dark_gray>|</dark_gray> ")
+                        .append(q == null ? "<gray>—" : q.colored())
+                        .append(" <white>+").append(lv).append("</white>");
+            }
+            long mins = Math.max(0, (now - s.placedAt()) / 60000L);
+            line.append(" <dark_gray>|</dark_gray> <gray>放了 ").append(mins).append(" 分钟");
+            if (timeoutMin > 0) {
+                long left = timeoutMin - mins;
+                line.append(left > 0
+                        ? "，还有 " + left + " 分钟自动还你"
+                        : "，已超时（下次校检会还你）");
+            }
+            Msg.send(sender, line.append("</gray>").toString());
+        }
+        if (!all) {
+            Msg.send(sender, "<dark_gray>（走过去右键那块铁砧就能取回；超时或被拆会自动还你）</dark_gray>");
+        }
+    }
+
+    private List<String> tabAnvil(CommandSender sender, String[] args) {
+        if (args.length == 2) {
+            if (sender.hasPermission("forgemaster.admin")) {
+                return filter(List.of("all", "quanbu"), args[1]);
+            }
+            return List.of();
+        }
+        return List.of();
+    }
     private List<String> tabTop(String[] args) {
         if (args.length == 2) {
             return filter(List.of("legacy", "lishi", "chuancheng"), args[1]);

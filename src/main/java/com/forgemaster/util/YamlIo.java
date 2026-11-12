@@ -46,7 +46,28 @@ public final class YamlIo {
     }
 
     /**
-     * 原子落盘：写 {@code <name>.tmp} → fsync → ATOMIC_MOVE 覆盖目标。
+     * 每个目标文件一把锁（v2.25.6）。
+     *
+     * <p>Windows 上两个线程同时 {@code ATOMIC_MOVE} 顶同一个目标会抛
+     * {@code AccessDeniedException}（目标正被对方替换），自检的 8 线程并发写当场复现了。
+     * 这些存档全部在同一个 JVM 内写，所以「按绝对路径取锁」就能彻底消掉这层竞争 ——
+     * 不依赖调用方记得加锁（40 多个调用点，迟早漏）。</p>
+     */
+    private static final java.util.concurrent.ConcurrentHashMap<String, Object> LOCKS =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static Object lockFor(File target) {
+        String key;
+        try {
+            key = target.getCanonicalPath();
+        } catch (IOException ex) {
+            key = target.getAbsolutePath();
+        }
+        return LOCKS.computeIfAbsent(key, k -> new Object());
+    }
+
+    /**
+     * 原子落盘：写唯一名字的 {@code <name>.<pid>.<tid>.<nanos>.tmp} → ATOMIC_MOVE 覆盖目标。
      *
      * <p>{@code ATOMIC_MOVE} 在部分文件系统（某些网络盘 / FAT32）上会抛
      * {@code AtomicMoveNotSupportedException}，这时退化成普通的 {@code REPLACE_EXISTING} ——
@@ -55,17 +76,55 @@ public final class YamlIo {
      * @throws IOException 写盘失败（调用方必须自己 try/catch 并记日志，别静默吞掉）
      */
     public static void save(File target, YamlConfiguration yml) throws IOException {
-        File dir = target.getParentFile();
-        if (dir != null && !dir.exists() && !dir.mkdirs()) {
-            throw new IOException("建目录失败: " + dir);
-        }
-        Path tmp = new File(dir, target.getName() + ".tmp").toPath();
-        yml.save(tmp.toFile());
-        Path dst = target.toPath();
-        try {
-            Files.move(tmp, dst, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (java.nio.file.AtomicMoveNotSupportedException ex) {
-            Files.move(tmp, dst, StandardCopyOption.REPLACE_EXISTING);
+        synchronized (lockFor(target)) {
+            File dir = target.getParentFile();
+            if (dir != null && !dir.exists() && !dir.mkdirs()) {
+                throw new IOException("建目录失败: " + dir);
+            }
+            // v2.25.6 修 P0：临时文件名必须唯一。原来固定叫 <name>.tmp，两个线程同时 save
+            // 同一份存档（例如 5 秒异步冲刷正在写盘时管理员 /zhujian reload 触发同步 save）
+            // 会往同一个 tmp 里各写一份字节流 → 交错成半截/混杂 YAML → ATOMIC_MOVE 顶上去
+            // 就是坏档（会被 loadOrQuarantine 改名留档，砧位上所有剑一起失踪）。
+            Path tmp = new File(dir, target.getName() + "."
+                    + ProcessHandle.current().pid() + "."
+                    + Thread.currentThread().threadId() + "."
+                    + System.nanoTime() + ".tmp").toPath();
+            try {
+                yml.save(tmp.toFile());
+                Path dst = target.toPath();
+                IOException last = null;
+                // 杀软 / 外部进程短暂占用目标文件时重试几次，别一次失败就丢这一轮数据
+                for (int attempt = 0; attempt < 3; attempt++) {
+                    try {
+                        try {
+                            Files.move(tmp, dst, StandardCopyOption.ATOMIC_MOVE,
+                                    StandardCopyOption.REPLACE_EXISTING);
+                        } catch (java.nio.file.AtomicMoveNotSupportedException ex) {
+                            Files.move(tmp, dst, StandardCopyOption.REPLACE_EXISTING);
+                        }
+                        last = null;
+                        break;
+                    } catch (java.nio.file.FileSystemException ex) {
+                        last = ex;
+                        try {
+                            Thread.sleep(20L);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            throw new IOException("写盘被中断: " + target.getName(), ie);
+                        }
+                    }
+                }
+                if (last != null) {
+                    throw last;
+                }
+            } finally {
+                // 中途出错也要把自己那份 tmp 收掉，别在数据目录里留垃圾
+                try {
+                    Files.deleteIfExists(tmp);
+                } catch (IOException ignored) {
+                    // 删不掉就算了，下次同名不会撞（名字带纳秒）
+                }
+            }
         }
     }
 

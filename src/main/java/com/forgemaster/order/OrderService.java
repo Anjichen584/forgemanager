@@ -225,8 +225,17 @@ public final class OrderService {
         Integer strengthen = pdc.get(Keys.STRENGTHEN, PersistentDataType.INTEGER);
 
         // 悬赏托管扣款在前，订单单据随后落盘（崩溃窗口语义见类注释）
-        if (!plugin.stats().takeCoins(p.getUniqueId(), bounty, com.forgemaster.econ.CoinReason.OTHER_OUT)) {
-            return "<red>剑币不足，托管悬赏需要 " + bounty + " 剑币。";
+        // v2.25.6 修 P0（审计：账本口径越界）：这里原来用 stats().takeCoins 扣**剑币**，
+        // 而下面三条退回路径（取消退单 :354、交付发赏 :314、过期退款 :386）早就切到了
+        // wallet()。economy.coin-sinks=server 的服上，扣的是 Vault 金币账外的剑币、
+        // 退的是 Vault 金币 —— 「发单 → 取消」一个循环就把剑币 1:1 洗成服务器金币，
+        // 主手样品不消耗，可以无限重复。README 的 A/B/C 表把「订单托管」明确划在 Wallet 侧
+        // （audit/30-fix-econ.md:109 记的就是这个「越界未改」）。
+        if (!plugin.wallet().take(p, bounty, com.forgemaster.econ.CoinReason.OTHER_OUT)) {
+            // 提示里的币名跟着当前账本走（plugin = 剑币 / server = 服务器金币），
+            // 别再写死「剑币」——玩家看到的币名必须和实际扣的那本账一致
+            return "<red>" + plugin.wallet().ledgerName() + "不足，托管悬赏需要 " + bounty
+                    + " " + plugin.wallet().ledgerName() + "。";
         }
         plugin.stats().markDirty();
         long now = System.currentTimeMillis();

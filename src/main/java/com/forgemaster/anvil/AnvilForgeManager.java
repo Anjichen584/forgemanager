@@ -176,6 +176,15 @@ public final class AnvilForgeManager {
         stopTickTask();
         stopFlushTask();
         save();
+        if (dirty) {
+            // v2.25.6 修 P1：写盘失败（磁盘满 / 文件被占）时 dirty 会留着。
+            // 原来这里照样 sessions.clear()，于是「内存清空 + 文件还是旧的」——
+            // 砧位上的剑既不在背包也不在文件里，谁都找不回来。
+            // 现在改成：写不进去就不清内存，并大声报出来，让人有机会手工救。
+            plugin.getLogger().severe("anvils.yml 落盘失败，砧位数据仍保留在内存中未清空。"
+                    + "请立刻检查磁盘空间 / 文件占用，并在关服前修复，否则这些剑会随进程消失。");
+            return;
+        }
         for (AnvilForgeSession s : sessions.values()) {
             despawn(s);
         }
@@ -1495,10 +1504,22 @@ public final class AnvilForgeManager {
      * 只剩内存。现在：结构变更与本方法的「拍快照」段落互斥，写盘在锁外进行，
      * 只有「写完时代数没再变过」才清脏。</p>
      */
+    /**
+     * 写盘互斥（v2.25.6 修 P0）。原来的 {@code synchronized (this)} 只圈住「拍快照」，
+     * 写盘段在锁外 —— 一次 5 秒异步冲刷正在写盘时执行 {@code /zhujian reload}（stop→save）、
+     * {@code /zhujian backup restore}（flushAll→save）或关服，两路 saveTo 会并发；
+     * {@code stopFlushTask()} 只能取消任务 id，拦不住已经在跑的线程。
+     * 结果有两种，都很糟：①后落地的旧快照赢 → 玩家已取回的剑重新出现在文件里（复制）；
+     * ②两股字节流交错 → 坏档（砧位上所有剑一起失踪）。
+     * 现在整段（快照 + 写盘 + 清脏）都在同一把锁里，后进入的那次拍到的一定是更新的快照。
+     */
+    private final Object saveLock = new Object();
+
     public void saveTo(File to) {
         if (to == null) {
             return;
         }
+        synchronized (saveLock) {
         boolean isMain = to.equals(file);
         long seq;
         java.util.List<AnvilForgeSession> snap;
@@ -1544,6 +1565,7 @@ public final class AnvilForgeManager {
                     dirty = false;
                 }
             }
+        }
         }
     }
 

@@ -430,6 +430,9 @@ public final class TombManager {
         tomb.brokenAt = Math.max(0, brokenAt);
         tombs.put(id, tomb);
         markDirty(); // 审计 #8：标脏交异步冲刷
+        // v2.25.6：碎剑留档同样是「剑已经没了、只活在内存里」，跟 bury 一个道理 ——
+        // 5 秒冲刷窗口内崩服，条目就没了（剑没了、留档也没了）。同步落一次。
+        save();
         return id;
     }
 
@@ -832,6 +835,9 @@ public final class TombManager {
     public void adminRemove(String rawId) {
         if (tombs.remove(rawId.toUpperCase(Locale.ROOT)) != null) {
             markDirty(); // 审计 #8：标脏交异步冲刷
+            // v2.25.6：管理员删档必须立刻落盘。只标脏的话，5 秒内崩服条目会「复活」，
+            // 而这条命令通常正是用来掐掉一把已经被刷过的剑冢的。
+            save();
         }
     }
 

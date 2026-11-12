@@ -3644,6 +3644,50 @@ public final class SelfTestSuite {
                 }
                 com.forgemaster.util.YamlIo.loadOrQuarantine(fresh, "SelfTest", plugin.getLogger());
                 require(fresh.exists(), "0 字节的新档被当成坏档移走了");
+
+                // ④ 并发写同一份存档：临时文件名必须唯一
+                //    v2.25.6 修 P0 —— 原来固定叫 <name>.tmp，异步冲刷撞上 /reload 会让两股
+                //    字节流写同一个 tmp，ATOMIC_MOVE 顶上去就是坏档（砧位上的剑一起失踪）。
+                java.io.File raceTarget = new java.io.File(dir, "race.yml");
+                int threads = 8;
+                java.util.concurrent.CountDownLatch go = new java.util.concurrent.CountDownLatch(1);
+                java.util.List<Thread> ts = new java.util.ArrayList<>();
+                java.util.concurrent.atomic.AtomicInteger raceFailures =
+                        new java.util.concurrent.atomic.AtomicInteger();
+                for (int k = 0; k < threads; k++) {
+                    final int n = k;
+                    Thread th = new Thread(() -> {
+                        try {
+                            go.await();
+                            for (int r = 0; r < 20; r++) {
+                                org.bukkit.configuration.file.YamlConfiguration c =
+                                        new org.bukkit.configuration.file.YamlConfiguration();
+                                c.set("writer", n);
+                                c.set("round", r);
+                                // 灌点体积，让「交错写」真有机会产生坏档
+                                for (int q = 0; q < 40; q++) {
+                                    c.set("pad." + q, "abcdefghijklmnopqrstuvwxyz0123456789-" + n + "-" + r);
+                                }
+                                com.forgemaster.util.YamlIo.save(raceTarget, c);
+                            }
+                        } catch (Exception ex) {
+                            raceFailures.incrementAndGet();
+                        }
+                    });
+                    th.setDaemon(true);
+                    th.start();
+                    ts.add(th);
+                }
+                go.countDown();
+                for (Thread th : ts) {
+                    th.join(20_000L);
+                }
+                require(raceFailures.get() == 0, "并发写有 " + raceFailures.get() + " 次抛异常");
+                require(!com.forgemaster.util.YamlIo.looksTruncated(raceTarget),
+                        "并发写把 race.yml 写成了半截/乱码（临时文件名没做到唯一？）");
+                java.io.File[] tmpLeft = dir.listFiles((d, nm) -> nm.endsWith(".tmp"));
+                require(tmpLeft == null || tmpLeft.length == 0,
+                        "并发写留下了 " + (tmpLeft == null ? 0 : tmpLeft.length) + " 个 .tmp 垃圾文件");
             } finally {
                 java.io.File[] all = dir.listFiles();
                 if (all != null) {
@@ -6267,6 +6311,86 @@ public final class SelfTestSuite {
 
     private void registerTombRiskEventsStory() {
         String g = "剑冢 / 风险 / 事件 / 剧情";
+        add(g, "秘境守卫失踪必须判负，不许当成「这一波已清算」（v2.25.6 修 P0）", () -> {
+            // 出过的真事故：tick() 里「守卫全失踪满 30 秒」被当成 waveCleared，
+            // 玩家进场后 /spawn 站着不动（守卫随区块卸载变 null）就能零战斗通关，
+            // 300 门票换 800 剑币 + 2 残页，可无限重复。
+            // 这里钉死语义：宽限期内只能 WAIT，宽限期满只能 FAIL；
+            // 并且枚举里**不允许**出现第三个「清算」语义 —— 有人加回去这条就红。
+            require(com.forgemaster.tombrun.TombRunService.MissingAction.values().length == 2,
+                    "MissingAction 冒出了第三种语义（是不是又把「失踪」当「已清算」了？）："
+                            + java.util.Arrays.toString(com.forgemaster.tombrun.TombRunService.MissingAction.values()));
+            long t0 = 1_000_000L;
+            require(com.forgemaster.tombrun.TombRunService.missingAction(0, t0, 10)
+                            == com.forgemaster.tombrun.TombRunService.MissingAction.WAIT,
+                    "刚开始失踪就下了结论");
+            require(com.forgemaster.tombrun.TombRunService.missingAction(t0, t0 + 9_999, 10)
+                            == com.forgemaster.tombrun.TombRunService.MissingAction.WAIT,
+                    "宽限期没到就判了");
+            require(com.forgemaster.tombrun.TombRunService.missingAction(t0, t0 + 10_000, 10)
+                            == com.forgemaster.tombrun.TombRunService.MissingAction.FAIL,
+                    "宽限期满了居然不判负（零战斗通关的老 bug 又回来了）");
+            require(com.forgemaster.tombrun.TombRunService.missingAction(t0, t0 + 600_000, 10)
+                            == com.forgemaster.tombrun.TombRunService.MissingAction.FAIL,
+                    "久到离谱也不判负");
+            // 宽限秒数必须真的来自配置（原来硬编码 30 秒，配置了 away-seconds 却不读）
+            require(plugin.tombrun() == null || plugin.tombrun().awaySecondsForTest() >= 1,
+                    "away-seconds 没被读到（还会是硬编码那条路）");
+        });
+
+        add(g, "剑冢挑战冷却：退服只清过期条目，不许把生效中的冷却一起抹掉（v2.25.6 修 P0）", () -> {
+            // 出过的真事故：onQuit 第一行 cooldowns.remove(uuid) 删掉整张表，
+            // 「斩影成功 → /quit → 重连」就能立刻重打同一把剑，24 小时冷却形同虚设。
+            long now = 5_000_000L;
+            java.util.Map<String, Long> mine = new java.util.HashMap<>();
+            mine.put("ALIVE", now + 3_600_000L);   // 还在生效
+            mine.put("DEAD", now - 1L);            // 早过期了
+            mine.put("NULL", null);                // 脏数据（旧版本可能写进来）
+            int left = com.forgemaster.tomb.TombChallenge.pruneExpired(mine, now);
+            require(left == 1, "过期清理算错了，剩 " + left + " 条");
+            require(mine.containsKey("ALIVE"), "生效中的冷却被抹掉了（退服遁又能免冷却重打）");
+            require(!mine.containsKey("DEAD"), "过期条目没回收，内存会只增不减");
+            require(!mine.containsKey("NULL"), "脏条目没回收");
+            require(com.forgemaster.tomb.TombChallenge.pruneExpired(null, now) == 0, "空表应当返回 0");
+            require(com.forgemaster.tomb.TombChallenge.pruneExpired(new java.util.HashMap<>(), now) == 0,
+                    "空 Map 应当返回 0");
+        });
+
+        add(g, "订单托管必须跟 Wallet 同一本账，不许再出现 stats().takeCoins（v2.25.6 修 P0）", () -> {
+            // 出过的真事故：post 用 stats().takeCoins 扣剑币，三条退回路径却走 wallet()。
+            // economy.coin-sinks=server 的服上「发单 → 取消」一个循环就能把剑币 1:1 洗成
+            // 服务器金币，主手样品不消耗，可无限重复。
+            // 这条钉子扫源码：OrderService 里一次 stats().takeCoins 都不许有。
+            java.io.File pkgRoot = findSourcePackageRoot();
+            if (pkgRoot == null) {
+                plugin.getLogger().info("[selftest] 找不到源码树，跳过账本口径守卫");
+                return;
+            }
+            java.io.File src = new java.io.File(pkgRoot, "order/OrderService.java");
+            require(src.isFile(), "找不到 OrderService.java");
+            String code;
+            try {
+                code = new String(java.nio.file.Files.readAllBytes(src.toPath()),
+                        java.nio.charset.StandardCharsets.UTF_8);
+            } catch (java.io.IOException ex) {
+                throw new IllegalStateException("读不到 OrderService.java: " + ex.getMessage());
+            }
+            int bad = 0;
+            for (String line : code.split("\n")) {
+                String trimmed = line.trim();
+                if (trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*")) {
+                    continue; // 注释里提到旧写法是允许的（本文件顶部就在解释这段历史）
+                }
+                if (trimmed.contains("stats().takeCoins")) {
+                    bad++;
+                }
+            }
+            require(bad == 0, "OrderService 又有 " + bad
+                    + " 处 stats().takeCoins —— 订单托管属于 Wallet 侧，混用等于开了洗钱口");
+            require(code.contains("wallet().take"), "OrderService 的托管扣款没走 wallet().take");
+            require(!plugin.wallet().ledgerName().isBlank(), "钱包币名是空的，提示会变成「不足」两字");
+        });
+
         add(g, "剑冢管理器已初始化", () ->
                 require(plugin.tombs() != null, "剑冢管理器未初始化"));
         add(g, "剑冢列表可读（只读）", () ->

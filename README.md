@@ -1,10 +1,10 @@
-# 铸剑大师 · ForgingMaster v2.25.5
+# 铸剑大师 · ForgingMaster v2.25.6
 
 Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「烧红 → 敲打 → 叠钢 → 开刃 → 抛光 → 嵌银丝 → 淬火」的手感搬进 MC，
 锻完之后还有委托、比试、耐久、剑币经济、师徒、成就、段位、剑灵、剑冢、世界事件、剧情、名人堂、商会、拍卖行、排行与赛季。
 
 - 目标 Java：**21+**
-- 构建产物：`target/ForgingMaster-2.25.5.jar`
+- 构建产物：`target/ForgingMaster-2.25.6.jar`
 - 无第三方依赖，纯 Paper API + MiniMessage
 - `config-version`：**20**
 
@@ -29,6 +29,7 @@ Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「�
 
 | 版本 | 一句话 | 详情 |
 | --- | --- | --- |
+| **2.25.6** | **三条 P0 收口 + 砧位并发写盘**：秘境「守卫失踪」被当成通关（300 门票换 800 币可无限刷）、剑冢冷却退服即清空（24h 冷却失效）、订单托管扣剑币却退金币（1:1 洗钱口）；顺带修 `YamlIo` 固定 tmp 名与 `anvils.yml` 无写锁（/reload 撞异步冲刷会复制或丢剑）。新增 `/zhujian anvil` 自查（自检 520/520） | [十四·补十五](#十四补十五v2256三条-p0-收口--砧位并发写盘) |
 | **2.25.5** | **T0 收口：存档原子写 + 坏档留档**：17 份存档从裸 `yml.save` 换成 tmp→fsync→ATOMIC_MOVE，坏档改名 `.corrupt-*` 不再被当成空档覆盖；修掉 `anvils.yml`（砧位上的玩家实物剑）、`pass-data.yml`（付费轨已购）、`codex claimed`（清空即可重复领奖造币）三个 T0；`pass` 清脏条件恒真、契约入贡 30 秒吞剑窗口同修（自检 517/517） | [十四·补十四](#十四补十四v2255t0-收口存档原子写--坏档留档) |
 | **2.25.4** | **压测面 7→12 阶段 + 4 并发 PASS 53**：新增兑换/词条剥离/剑冢取回/竞价/只读风暴五个并发面；加管理员命令 stats rep give\|take（声望首个手动入口）；顺手把「哪些扣费跟 coin-sinks 走、哪些永远走剑币」摸清写成表（自检 515/515） | [十四·补十三](#十四补十三v2254压测面扩到-12-阶段账本口径分类) |
 | **2.25.3** | **/zhujian help 收口**：原来漏了 11 条命令（contract / shangjin / money / spirit / tomb / tombrun / redeem / forge / event / ench / evolve）；改成「玩家段 + 管理员段」两段式，清单抽成纯函数由自检逐条核对 | [十四·补十二](#十四补十二v2253zhujian-help-收口玩家段--管理员段自检逐条核对) |
@@ -1748,6 +1749,122 @@ vanilla-guard:
 ### 六、自检
 
 以上每项都带自检用例（外部模块经 `SelfTestSuite.addExternal` 挂接），`/zhujian selftest` 全量回归。
+
+---
+
+## 十四·补十五、v2.25.6：三条 P0 收口 + 砧位并发写盘
+
+上一版把「存档写坏」这一类收掉了，这一版是四路只读审计（落盘 / 经济守恒 / 命令事件 / 权限配置）复盘，
+抓到的三条 P0 全部是**能被刷的口子**，不是理论风险：每条都有具体复现路径。
+
+### P0-1 秘境：守卫「失踪」被当成「这一波已打完了」
+
+`tombrun/TombRunService.java` 的 `tick()` 原本这样写：
+
+```java
+if (allMissing(run)) {                    // 守卫全都不在了
+    if (now - run.missingSince >= 30_000L) {
+        waveCleared(run, p);              // ← 当成这一波已清算
+    }
+    continue;                             // ← 连「跑太远」那一支都被短路掉
+}
+```
+
+守卫是 `setPersistent(false)` 生成的，**区块卸载就永久消失**。于是：
+
+```
+/zhujian tombrun 进场（门票 300）
+  → /spawn 站着不动
+  → 守卫随区块卸载变成 getEntity(...) == null
+  → 30 秒后「第 N 波已清算」，下一波刷在玩家新位置
+  → 约 90 秒后「秘境试炼通关」：800 剑币 + 2 残页
+```
+
+零战斗、无冷却、可无限重复。而 `config.yml` 里 `away-seconds` 的注释写的是
+「**跑远/守卫失踪多少秒后判负**」—— 实现方向和配置完全相反，实现还硬编码了 30 秒、根本没读那个键。
+
+修法：抽出纯函数 `missingAction(missingSince, now, awaySeconds)`，宽限期内只能 `WAIT`、
+宽限期满只能 `FAIL`；枚举里**不允许**出现第三种「清算」语义，以后谁改回去自检当场红。
+
+### P0-2 剑冢挑战：退服把整张冷却表删了
+
+`tomb/TombChallenge.java` 的 `onQuit` 第一行是 `cooldowns.remove(quitId)` —— 删的是该玩家
+**整张**冷却表。而斩影成功是会记冷却的，于是「打赢 → /quit → 重连」就能立刻重打同一把剑，
+`cooldown-hours = 24` 形同虚设，同一把剑变成无限材料/彩头来源。
+
+修法：抽出 `pruneExpired(mine, now)`，退服只回收**已过期**的条目（内存契约仍然成立），
+生效中的冷却一律留着。
+
+### P0-3 订单托管：扣剑币、退金币 = 1:1 洗钱口
+
+`order/OrderService.java` 的 `post` 用 `stats().takeCoins` 扣**剑币**，而三条退回路径
+（取消退单、交付发赏、过期退款）早就切到了 `wallet()`。在 `economy.coin-sinks: server` 的服上：
+
+```
+/zhujian order post 1000000   → 扣剑币（主手样品不消耗）
+/zhujian order cancel <id>    → 退 Vault 金币
+```
+
+一个循环就把剑币洗成服务器金币，无上限。README 的 A/B/C 表把「订单托管」明确划在 Wallet 侧，
+`audit/30-fix-econ.md:109` 记的就是这个「越界未改」。修法：`post` 改走
+`wallet().take(p, bounty, CoinReason.OTHER_OUT)`，提示文案里的币名跟着 `wallet().ledgerName()` 走，
+不再写死「剑币」。
+
+### 附带：砧位写盘的并发层（审计报的第 4 条 P0）
+
+`anvils.yml` 是唯一装着玩家**实物剑**的存档。上一版给它接了原子写，但有两个洞：
+
+- `YamlIo` 的临时文件名固定为 `<name>.tmp` —— 两个线程同时 save 同一份存档会往同一个 tmp
+  里各写一股字节流，交错成半截/混杂 YAML，`ATOMIC_MOVE` 顶上去就是坏档。
+  自检里 8 线程并发写当场复现（3 次抛异常）。
+- `AnvilForgeManager.saveTo` 的 `synchronized` 只圈住「拍快照」，写盘在锁外。
+  一次 5 秒异步冲刷正在写盘时执行 `/zhujian reload`（stop→save）或 `backup restore`（flushAll→save），
+  两路并发；`stopFlushTask()` 只能取消任务 id，拦不住已经在跑的线程。
+
+后果两种，都很糟：**旧快照压掉新快照**（玩家已取回的剑重新出现在文件里 → 复制）或**坏档**
+（砧位上所有剑一起失踪）。
+
+修法三处：
+1. `YamlIo` 临时文件名带 `pid + tid + nano`，并按**目标文件绝对路径**取锁（不依赖 40 多个调用点各自记得加锁）；`ATOMIC_MOVE` 撞上杀软占用时重试 3 次。
+2. `saveTo` 整段（快照 + 写盘 + 清脏）进同一把锁，后进入的那次拍到的一定是更新的快照。
+3. `stop()` 写盘失败时**不再 `sessions.clear()`** —— 原来是「内存清空 + 文件还是旧的」，
+   剑既不在背包也不在文件里；现在写不进去就保留内存并 `SEVERE` 报出来。
+
+### 新增：`/zhujian anvil` 砧位自查
+
+上一版修了「砧位上的剑会丢」，但玩家**没有任何办法**确认自己的剑还在不在 ——
+超时回收、方块被拆、区块卸载都可能让剑回到背包或掉在砧上，人不在跟前根本不知道。
+现在：
+
+```
+/zhujian anvil        # 我的剑：世界 x,y,z | 品质 +强化 | 放了多久、还剩多久自动还
+/zhujian anvil all    # 管理员：全部砧位 + 主人名
+```
+
+纯只读：只遍历 `sessions()` 打印，不碰 ItemStack、不刷新实体、不落盘。
+
+### 本轮钉子（520 项，新增 3 条语义钉子 + 1 条并发钉子）
+
+1. **秘境失踪必须判负**：钉的是语义不是文案 —— `MissingAction` 只许有两个值，宽限期内 `WAIT`、
+   期满 `FAIL`；顺带断言 `away-seconds` 真的被读到（防退回硬编码 30 秒）。
+2. **冷却只清过期**：`{生效中, 已过期, 脏 null}` 三条一起喂进去，只许留下生效中的那条。
+3. **订单托管不许再出现 `stats().takeCoins`**：扫 `OrderService.java` 源码（跳过注释），
+   一处命中就红；同时要求 `wallet().take` 存在、`ledgerName()` 非空。
+4. **YamlIo 并发写**：8 线程 × 20 轮写同一份存档，要求零异常、目标文件可读、不留 `.tmp` 垃圾。
+
+### 真机结果
+
+```
+自检完成：共 520 项，通过 520，失败 0        ← 上一版 517
+4 并发 12 阶段压测：见下方汇总
+```
+
+### 留给下一轮（已定位、未动）
+
+- `pass/SeasonPassService` 领奖是「先发后记」，`save()` 失败记录不落盘 → 重启可重领；`buyPremium` 先扣 5000 再写已购，失败不回滚。
+- `blackmarket/BlackmarketService` 限购计数写在发货之后 → 崩服可超 `daily-limit`。
+- `order/OrderService:314`、`:354`、`commission/CommissionManager:400` 丢弃 `wallet().give` 的返回值，没有 warning（拍卖行那侧有 `warnLost`，可照抄）。
+- `anvil-forge.enabled` 只在 `place` 判，`strike`/`strikeBatch` 没判（README 曾称已补，实际未补）。
 
 ---
 

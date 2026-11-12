@@ -284,6 +284,35 @@ public final class TombRunService implements Listener {
         listening = true;
     }
 
+    /** 守卫全失踪时该做什么。v2.25.6 之前这里只有「等宽限 → 当作这一波已清算」一条路，见下 */
+    public enum MissingAction {
+        /** 还在宽限期内，先等 */
+        WAIT,
+        /** 宽限期满：判负（门票不退）。**绝不等于「这一波打完了」** */
+        FAIL
+    }
+
+    /**
+     * 「守卫全失踪」的判定。抽成纯函数是为了能被自检钉住 ——
+     * v2.25.6 之前 {@code tick()} 里把失踪满 30 秒直接当成 {@code waveCleared}，
+     * 于是玩家进场后 /spawn 站着不动、守卫随区块卸载变 null，照样通关拿奖（零战斗刷币）。
+     *
+     * @param missingSince 开始失踪的时间戳（0 = 刚发现）
+     * @param now          当前时间戳
+     * @param awaySeconds  宽限秒数（读 {@code tombrun.away-seconds}）
+     */
+    public static MissingAction missingAction(long missingSince, long now, int awaySeconds) {
+        if (missingSince <= 0 || now - missingSince < Math.max(1, awaySeconds) * 1000L) {
+            return MissingAction.WAIT;
+        }
+        return MissingAction.FAIL;
+    }
+
+    /** 供自检断言「宽限秒数真的来自配置，不是硬编码」 */
+    public int awaySecondsForTest() {
+        return awaySeconds();
+    }
+
     /** 每秒扫一遍：超时 / 跑太远 / 守卫失踪 / 仇恨回拴，六路里「超时」「跑太远」两路在这里走 */
     private void tick() {
         if (runs.isEmpty()) {
@@ -292,12 +321,20 @@ public final class TombRunService implements Listener {
         long now = System.currentTimeMillis();
         for (Run run : new ArrayList<>(runs.values())) {
             Player p = Bukkit.getPlayer(run.player);
-            // 守卫失踪：区块卸载 / 被其它插件清场，宽限 30 秒后当作这一波已被清算
+            // 守卫失踪：区块卸载 / 被其它插件清场 / 玩家自己传送走把区块卸了。
+            // v2.25.6 修 P0：原来这里是「失踪满 30 秒 → waveCleared(run, p) → continue」，
+            // 也就是把「守卫没了」当成「这一波已经打完了」。于是玩家进场后直接 /spawn
+            // 站着不动：守卫随区块卸载变成 getEntity(...)=null，30 秒后记为该波已清算，
+            // 下一波刷在他新位置，约 90 秒后照样发通关奖励 —— 300 门票换 800 剑币 + 2 残页，
+            // 零战斗、可无限重复。而 config.yml 里 away-seconds 的注释写得很明确：
+            // 「跑远/守卫失踪多少秒后判负」。实现和配置方向相反，这里按配置来。
+            // 顺带：宽限时间也从硬编码的 30 秒改成读 away-seconds（配置了却不读等于骗人）。
             if (allMissing(run)) {
                 if (run.missingSince == 0) {
                     run.missingSince = now;
-                } else if (now - run.missingSince >= 30_000L) {
-                    waveCleared(run, p);
+                }
+                if (missingAction(run.missingSince, now, awaySeconds()) == MissingAction.FAIL) {
+                    fail(run, "守卫不见了（离得太远，或被别的插件清场）");
                 }
                 continue;
             }
