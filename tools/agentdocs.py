@@ -188,12 +188,23 @@ def build_index(cards: list[dict]) -> str:
         ("AGENTS.md", "foreman", "normative", "唯一入口：读的顺序 / 写权限 / 硬规则"),
         ("docs/handoff/LATEST.md", "foreman", "normative", "上一轮交付报告（**必读**）"),
         ("docs/handoff/README.md", "foreman", "normative", "交接报告怎么用"),
-        ("README.md", "foreman", "normative", "叙事版历史 + 配置 + 命令表（4400+ 行，按章节读）"),
+        ("README.md", "foreman", "normative", "项目索引 + 命令 + 配置 + 技术实现（v2.25.6 从 282 KB 拆到 35 KB）"),
         (".agents/README.md", "foreman", "normative", "身份卡格式与三条铁律"),
     ]
     for doc, owner, level, desc in fixed:
         if os.path.exists(os.path.join(ROOT, doc)):
             lines.append("| `{}` | {} | {} | {} |".format(doc, owner, level, desc))
+    # docs/manual、docs/history、docs/dev：按目录点名，不逐个列
+    for sub, desc in (("manual", "玩法手册（玩法/经济/成长线/升级）"),
+                      ("history", "逐版本叙事（查「以前修过没」「数值为什么这么定」）"),
+                      ("dev", "构建与测试服操作")):
+        d = os.path.join(ROOT, "docs", sub)
+        if os.path.isdir(d):
+            items = sorted(x for x in os.listdir(d) if x.endswith(".md"))
+            if items:
+                lines.append("| `docs/{}/*.md` | foreman | {} | {}：{} |".format(
+                    sub, "informative" if sub != "dev" else "normative", desc,
+                    " / ".join(x[:-3] for x in items)))
     # audit 目录只点名，不逐个列（22 份，列全了反而看不清）
     audit_dir = os.path.join(ROOT, "audit")
     if os.path.isdir(audit_dir):

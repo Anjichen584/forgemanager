@@ -174,9 +174,66 @@ tools/agentdocs.py            index / check / doctor / lock / status
 
 ### 已知遗留
 
-`README.md` **286 KB / 4460 行**，整读会炸上下文。现在靠 `LATEST.md`（8 KB）承接全部硬状态、
-README 只按章节查。下一步该把它拆成 `README.md`（索引 + 快速上手）+ `docs/history/*.md`（逐版本叙事），
-但那是独立一轮的活，别和功能改动混在一起做。
+~~`README.md` **286 KB / 4460 行**，整读会炸上下文。~~ **已在 v2.25.6 文档轮拆完，见第 8 节。**
+
+---
+
+## 8. README 拆分（v2.25.6 文档轮，代码零改动）
+
+### 拆成什么样
+
+| 文件 | 行数 | 字 | 内容 |
+| --- | --- | --- | --- |
+| `README.md` | 386 | 37 K | 只剩：文件头 / 〇 更新索引 / 一 功能概览 / 二 命令与权限 / 三 配置 / 四 数据文件 / 五 技术实现 / 六 文档地图 |
+| `docs/manual/gameplay.md` | 790 | 41 K | 玩法流程、连锻链、环境修正 |
+| `docs/manual/economy.md` | 236 | 12 K | 货币、锻造费与装备（剑币 vs 服务器经济口径表在这） |
+| `docs/manual/progression.md` | 133 | 7 K | 师徒 / 成就匠衔 / 剑灵 / 委托比试 / 专精天赋 |
+| `docs/manual/upgrade.md` | 309 | 17 K | 1.x → 2.0 升级指南 |
+| `docs/history/v2.25.x.md` | 464 | 33 K | |
+| `docs/history/v2.24.x.md` | 40 | 4 K | |
+| `docs/history/v2.23.x.md` | 673 | 47 K | |
+| `docs/history/v2.18-2.21.md` | 993 | 51 K | |
+| `docs/history/v2.10.x.md` | 199 | 11 K | |
+| `docs/dev/build.md` | 442 | 37 K | 构建、测试服、自检与压测操作 |
+
+**282 KB → 37 KB**，README 现在可以整读了。
+
+### 怎么做的（`tools/split_readme.py`，可复核可重跑）
+
+不用手工 edit —— 这个文件已经被手工改动吃掉过两次标题。脚本做四件事：
+
+1. 按行号切块（不按文本匹配，避免「匹配到别处」）。
+2. 按显式规则表 `(标题关键词 → 子目录/文件)` 归位；**没配规则的一律留在 README**（宁可少搬，不可错搬）。
+3. 拆完核对三件事：每个 `## ` 标题拆前拆后**恰好出现一次**、正文非空白字符守恒、`README` 行数/体积。
+4. `--dry-run` 先出报告，`--apply` 才真写。
+
+### 拆的时候真踩到的坑（都已修，写进脚本注释）
+
+1. **跨文件相对链接失效**：README 在仓库根，`[audit/08](audit/08-expansion-plan.md)` 是对的；
+   搬到 `docs/history/` 后指向 `docs/history/audit/...`（不存在）。内链自检抓到 **8 条**死链。
+   修法：搬走的块统一加 `../../` 前缀。
+2. **多打了一个括号**：改写时的正则 `group(1)` 已含左括号，我又拼了一个 `(`，
+   生成 `[x]((../../audit/...))` 这种双括号。同一轮自检抓到。
+3. **锚点被搬走后跳不过去**：索引表里的 `#十四补十五…` 指向已移出 README 的标题。
+   修法：收集**所有层级**（含 `###`）的 slug → 目标文件映射，链接自动改写成
+   `docs/history/xxx.md#锚点`；同文件内引用改成 `#锚点`，跨文件引用改成 `../子目录/文件.md#锚点`。
+4. **有 4 条锚点在拆分前就是死链**：索引表手写的锚点漏字（`+` 换算出的 `-` 少了一个）。
+   顺手用相似度匹配（difflib，阈值 0.82）批量修正。
+
+### 验证方式（可复跑）
+
+```powershell
+# 1) 内容守恒：拆前的每一节正文，逐字出现在新结构里
+python tools/split_readme.py --dry-run          # 标题/字数/体积三项核对
+# 2) 内链全通（67 条；目录链接与源码 #L123 行号锚点算通过）
+```
+
+结果：**42 节正文逐字一致、42 条标题零丢失、67 条内链全通（3 条目录链接、6 条源码行号锚点为正常）。**
+
+### 这轮的两个门
+
+代码零改动（`git diff --cached --name-only` 无 `src/`、无 `pom.xml`），
+所以压测面不受影响；仍跑了自检确认没误伤：**520/520，失败 0**。构建 exit 0。
 
 - 代码：`src/main/java/com/forgemaster/**`（本轮动了 `util/YamlIo`、`anvil/AnvilForgeManager`、`tombrun/TombRunService`、`tomb/TombChallenge`、`tomb/TombManager`、`order/OrderService`、`bounty/BountyManager`、`forge/ForgeManager`、`command/ForgingCommand`、`selftest/SelfTestSuite`）
 - 文档：README `## 十四·补十五`、索引表、头部三行
