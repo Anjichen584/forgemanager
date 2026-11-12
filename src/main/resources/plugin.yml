@@ -11,9 +11,14 @@ commands:
   zhujian:
     description: 铸剑大师主命令；使用 /zhujian help 查看全部子命令
     usage: |-
-      /zhujian help
-      /zhujian <stats|profile|rank|board|duel|manual|contest|shop|auction|master|spirit|tomb|achievements>
-      /zhujian <reload|give|season end|contest start|event|halloffame|backup|restore|selftest>
+      /zhujian help  —— 完整清单；管理员会多出一整段「管理员指令」
+      /zhujian <stats|profile|talent|rank|top|season|achievements|title|power|pass|redeem>
+      /zhujian <codex|collection|relicset|spectrum|env|story|help>
+      /zhujian <strengthen|hammer|evolve|repair|dissolve|imprint|enchant|ench|gem|grade|salvage>
+      /zhujian <manual|record|copy|money|shop|blackmarket|signin>
+      /zhujian <board|order|auction|guild|master|accept|duel|contest>
+      /zhujian <spirit|tomb|tombrun|contract|shangjin|forge|event>
+      【管理员】/zhujian <give|givefull|reload|selftest|backup|restore|config|metrics|fixattrs|halloffame|hall>
     aliases: [ forge, zj, dazhu, zhujianmaster, forgemaster, fm ]
 
 permissions:

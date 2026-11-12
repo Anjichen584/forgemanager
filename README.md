@@ -1,10 +1,10 @@
-# 铸剑大师 · ForgingMaster v2.25.2
+# 铸剑大师 · ForgingMaster v2.25.3
 
 Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「烧红 → 敲打 → 叠钢 → 开刃 → 抛光 → 嵌银丝 → 淬火」的手感搬进 MC，
 锻完之后还有委托、比试、耐久、剑币经济、师徒、成就、段位、剑灵、剑冢、世界事件、剧情、名人堂、商会、拍卖行、排行与赛季。
 
 - 目标 Java：**21+**
-- 构建产物：`target/ForgingMaster-2.25.2.jar`
+- 构建产物：`target/ForgingMaster-2.25.3.jar`
 - 无第三方依赖，纯 Paper API + MiniMessage
 - `config-version`：**20**
 
@@ -29,6 +29,7 @@ Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「�
 
 | 版本 | 一句话 | 详情 |
 | --- | --- | --- |
+| **2.25.3** | **/zhujian help 收口**：原来漏了 11 条命令（contract / shangjin / money / spirit / tomb / tombrun / redeem / forge / event / ench / evolve）；改成「玩家段 + 管理员段」两段式，清单抽成纯函数由自检逐条核对 | [十四·补十二](#十四补十二v2253zhujian-help-收口玩家段--管理员段自检逐条核对) |
 | **2.25.2** | **4 并发实测 + 查错轮4**：21 条全修 —— 6 个异步冲刷任务被异常打死、两本账漏改的商会/订单、退服不清的二次确认，自检 513/513；新增 4 bot 并发压测器 31 PASS | [十四·补十一](#十四补十一v22524-并发实测查错轮4) |
 | **2.25.1** | **查错轮3（组合面）**：16 条全修 —— 保险双账本、重抽净丢词条、比试刷分、无主 holder、ContractStore 丢脏窗口、迁移死代码 | [十四·补十](#十四补十v2251查错轮3组合面16-条全修) |
 | **2.25.0** | **拓展第二轮**：血怒/坚韧附魔 + 灵契重抽 + 强化保险；查错轮2 修 15 条，自检 511/511 | [十四·补九](#十四补九v2250拓展第二轮血怒坚韧灵契重抽与强化保险) |
@@ -1251,9 +1252,6 @@ Lv.10 起额外词条概率每 5 级 +10%（最多 +60%）。
 | `/zhujian strengthen` | 强化主手锻造品的锻造等级（别名 `qianghua`）；加 `info` 看当前等级、上限、下一级花费 |
 | `/zhujian strengthen sim [等级]` | 期望模拟：锻到目标要多少材料/剑币、期望碎几次、达成率（纯模拟不扣费，别名 `moni`） |
 | `/zhujian strengthen curve` | 六档曲线表：+40/+50/+60/+72/+86/+99 逐档的达成率与期望消耗，带相邻档边际成本（只读，v2.19.1，别名 `quxian`/`tubiao`） |
-| `/zhujian config check [all]` | 配置体检：盘上缺哪些必需键 + 「只写在代码里」的实际生效值（只读，v2.19.2，别名 `peizhi`） |
-| `/zhujian metrics` | 经济体检：剑币产出/消耗构成、总量人均中位、基尼系数（服主，v2.20.0，别名 `jingji`） |
-| `/zhujian givefull` | 懒人指令：一次发出满配锻造品（满强化 · 满蜕变 · 满词条 · 满宝石，服主，v2.21.0，别名 `maxitem`/`manpei`） |
 | `/zhujian strengthen reforge [序号]` | 词条重铸：只重抽一条，不列出序号时显示全部词条与预览（别名 `chongzhu` `xilian`） |
 | `/zhujian strengthen reforge gui` | 打开词条重铸界面（同一功能的图形版，带二次确认） |
 | `/zhujian strengthen jianyi` | 看手上这把剑的剑意档位与加成（别名 `prof` `shulian`） |
@@ -1283,7 +1281,15 @@ Lv.10 起额外词条概率每 5 级 +10%（最多 +60%）。
 | `/zhujian tomb [list\|bury\|take 编号\|challenge 编号\|info 编号\|remove 编号]` | 剑冢（别名 `jiantomb` `jianzhong`；`remove` 需 admin） |
 | `/zhujian forge risk` / `forge cancel` | 极限锻造预设 / 撤销 |
 | `/zhujian event [status]` | 查看世界事件 |
-| `/zhujian help` | 帮助 |
+| `/zhujian contract [join\|quit\|deposit]`（别名 `longshui` `shui`） | 龙税契约（v2.19.2）：不带参开面板，`join` 签约 / `quit` 退出 / `deposit` 交税 |
+| `/zhujian shangjin [claim <序号>]`（别名 `bounty` `xuanshang`） | 每日悬赏：不带参看今日货单，`claim` 领赏（按现实日换单，v2.23.4 修「重启当天变空」） |
+| `/zhujian order [post\|cancel]`（别名 `dingdan`） | 锻造订单：不带参开面板 · `post` 发单悬赏 · `cancel` 取消 |
+| `/zhujian redeem [info\|coin <数量>\|charm <符id>]`（别名 `duihuan` `huan`） | 声望兑换所（v2.24）：声望换剑币 1:10（单次 ≤500）或保底护胚类符 |
+| `/zhujian power`（别名 `zhanli`） | 战力评分：手上这把剑的分数拆解与建议价（v2.23 切片 5） |
+| `/zhujian ench [open\|list\|book <id> [等级]]`（别名 `fumotai` `yuangchuang`） | 原创附魔台 54 格（v2.23.3 机制型附魔，与 `enchant` 的附魔书镶孔是两回事） |
+| `/zhujian hammer`（别名 `chongchui` `tiechui`） | 领一把铁匠重锤（原版重锤 MACE 也认） |
+| `/zhujian evolve [sim\|now]`（别名 `tuibian` `jinhua` `jieduan`） | 六阶蜕变：不带参开界面 · `sim` 只看结果 · `now` 直接掷 |
+| `/zhujian help` | 帮助：**玩家段 + 管理员段**两段式，管理员看两段、普通玩家只看玩家段（v2.25.3） |
 
 ### 管理员命令（权限 `forgemaster.admin`，默认 OP）
 
@@ -1304,7 +1310,12 @@ Lv.10 起额外词条概率每 5 级 +10%（最多 +60%）。
 | `/zhujian hall set\|show\|del` | 名人殿堂：脚下设原点 / 立即重摆前三名 / 删除（ItemDisplay 平躺展示，30s 自动重刷） |
 | `/zhujian event start <id>` / `stop` | 手动开启 / 结束世界事件 |
 | `/zhujian backup` | 备份存档并列出备份 |
-| `/zhujian restore <备份id>` | 回档（回档前自动备份当前存档） |
+| `/zhujian restore <备份id>` | 回档（回档前自动备份当前存档；回档后**要重启服务器**，否则内存会把旧数据写回去） |
+| `/zhujian fixattrs [all\|containers]`（别名 `xiufu`） | **存量数据同步**：不带参收敛主手那一件 · `all` 扫全部在线玩家（背包+盔甲+副手+末影箱）· `containers` 扫已加载区块的容器（v2.23.1） |
+| `/zhujian config check [all]` | 配置体检：盘上缺哪些必需键 + 「只写在代码里」的实际生效值（只读，v2.19.2，别名 `peizhi`） |
+| `/zhujian metrics [trend\|csv\|sample\|gui]` | 经济看板：不带参实时报表 · `trend [天数]` · `csv [天数]` · `sample` 立刻采样 · `gui` 三页面板（服主，v2.20.0，别名 `jingji`） |
+| `/zhujian givefull <玩家> <剑胚\|armor-剑胚-部位> [品质]` | 懒人指令：一次发出满配锻造品（满强化 · 满蜕变 · 满词条 · 满宝石，v2.21.0，别名 `maxitem`/`manpei`） |
+| `/zhujian money coin give\|take <玩家> <数量>` | 内置剑币账本的发放 / 扣除（与 `money give\|take` 走同一 `Wallet` 收口） |
 
 ### PlaceholderAPI 占位符（拓展第一档）
 
@@ -1326,7 +1337,9 @@ Lv.10 起额外词条概率每 5 级 +10%（最多 +60%）。
 - **潜行 + 右键铁砧**：直接打开锻造台（`settings.anvil-shortcut`）。
 - 主菜单若干格位提供委托板、图鉴、档案、成就等入口。
 
-> 说明：`plugin.yml` 中的 `usage` 与 `permissions` 段仍是 1.x 版本的简略描述，以本节和代码为准。
+> 说明：`plugin.yml` 的 `usage` 已在 v2.25.3 按上面两张表重写（`/help zhujian` 看到的就是它）；`permissions` 段仍是 1.x 的简略描述，以本节和代码为准。
+>
+> **help 与补全同源**：`/zhujian help` 的内容由 `ForgingCommand.helpLines(label, admin)` 产出，可见性（玩家段 / 管理员段）与首层 Tab 补全、`ADMIN_ONLY` 名单三处同源；自检里有一条钉子逐条核对「分派表每个主名都在 help 里」，漏写直接红。
 
 ---
 
@@ -1732,6 +1745,98 @@ vanilla-guard:
 ### 六、自检
 
 以上每项都带自检用例（外部模块经 `SelfTestSuite.addExternal` 挂接），`/zhujian selftest` 全量回归。
+
+---
+
+## 十四·补十二、v2.25.3：`/zhujian help` 收口（玩家段 + 管理员段，自检逐条核对）
+
+服主追问两句：「管理员指令里补了吗，从头到尾捋捋看看哪些还没加到 help 里」「管理应该是显示玩家+管理员指令，玩家是只显示玩家指令」。
+
+### 一、先数数：help 到底漏了几条
+
+拿 `onCommand` 的 switch 逐条对 help 的散文，**62 条主线里漏了 11 条**——它们有 `case`、有 Tab 补全、有完整实现，就是 help 一个字没写：
+
+| 漏掉的命令 | 干什么 | 玩家为什么要知道 |
+| --- | --- | --- |
+| `contract` | 龙税契约：不带参开面板，`join` / `quit` / `deposit` | 契约是周目核心玩法之一，不知道命令就进不去 |
+| `shangjin` | 每日悬赏：不带参看货单，`claim <序号>` 领赏 | 不写就等于「今天有悬赏但没人领」 |
+| `money` | 剑币余额 `balance [玩家]` | 新人第一句问的就是「我多少钱」 |
+| `spirit` | 剑灵：`feed` / `name` / `reroll` / `show` / `hide` | 喂养和起名全在这条命令下 |
+| `tomb` | 剑冢：`bury` / `take` / `challenge` / `info` / `remove` | 埋剑、挑战残影的入口 |
+| `tombrun` | 秘境：`enter` / `status` / `quit` | 秘境整条玩法没有别的入口 |
+| `redeem` | 声望兑换所：`coin <数量>` / `charm <符id>` | 声望花不出去，玩家会当成 bug 来报 |
+| `forge` | 极限锻造：`risk` 预设 / `cancel` 撤销 | 高风险高收益的那条路 |
+| `event` | 世界事件：`status` / `start` / `stop` | 陨星降临这类事件的状态查询 |
+| `ench` | 原创附魔台：`open` / `list` / `book <id> [等级]` | 和 `enchant`（附魔书镶孔）是两回事，之前只写了一条 |
+| `evolve` | 六阶蜕变：`sim` 只看结果 / `now` 直接掷 | 蜕变是强化之外的第二条成长线 |
+
+顺带一个认知问题：老 help 是**一段到底的散文**，管理员那几条（give / fixattrs / backup…）散落在玩家指令中间，管理员看完也不知道「哪些只有我能用」，玩家则要滑过一堆自己用不了的说明。
+
+### 二、改成两段式 + 抽成纯函数
+
+`help()` 现在只是一层皮，真正的内容在 `ForgingCommand.helpLines(label, admin)`：
+
+```java
+private void help(CommandSender sender, String label) {
+    for (String line : helpLines(label, sender.hasPermission("forgemaster.admin"))) {
+        Msg.send(sender, line);
+    }
+}
+```
+
+- **玩家段**（51 条）：档案与成长 / 图鉴与面板 / 锻造与强化 / 经济与日常 / 社交与对抗 / 剑灵·剑冢·世界 六组，组内按「先看面板、再动手」排。
+- **管理员段**（11 条 + `gem give` / `gem list` / `money give|take` 这些子项）：发放与调试 / 存档与体检 / **存量数据同步** / 名人堂与殿堂。段头直接写「上面那一段你也有」——省得管理员以为切了身份就只剩这几条。
+- 两段的可见性与**首层 Tab 补全、`ADMIN_ONLY` 名单同一份来源**，改一处另两处会被自检顶住。
+
+真机输出（rcon 视角，管理员）：
+
+```
+── 玩家指令 ── 所有人可用
+▏档案与成长
+/zhujian stats [玩家] — 锻造档案 / 专精 / 收集度
+...
+▏剑灵 / 剑冢 / 世界
+/zhujian contract — 龙税契约：不带参开面板 · join / quit / deposit
+...
+── 管理员指令 ── 需要 forgemaster.admin（上面那一段你也有）
+▏发放与调试
+/zhujian give <玩家> <剑胚> [品质] [分数] — 直接发一把
+...
+▏存量数据同步
+/zhujian fixattrs — 存量物品收敛：不带参修主手那一件 · all 扫在线玩家（背包+盔甲+副手+末影箱）· containers 扫已加载容器
+```
+
+### 三、钉子：help 与分派表不许再各写一份
+
+自检新增一条（总数 513 → **514**）：
+
+| 断言 | 想防的事 |
+| --- | --- |
+| 分派表每条 case 的主名，管理员 help 里都必须出现 | 又加了一条 case 忘了写 help（这次漏 11 条就是这么来的） |
+| 玩家段覆盖全部非管理员指令 | 玩家指令被误塞进管理员段，普通玩家按 help 看不到 |
+| 管理员专属（`ADMIN_ONLY`）在玩家段一条都不许出现 | 越权提示，玩家照着敲只会收到「权限不足」 |
+| 管理员段行数必须真的多于玩家段 | 管理员段变成空壳标题 |
+
+配套两条：`ForgingCommand.adminOnlyTable()` 把 `ADMIN_ONLY` 暴露成只读视图给自检；`SelfTestSuite.helpHas()` 匹配时要求名字后面跟空格 / 换行，否则 `give` 会命中 `givefull`、`hall` 会命中 `halloffame`，断言就成了假绿。
+
+### 四、顺手一起收的口子
+
+- `plugin.yml` 的 `usage`：原来只列了 13 个命令（`/help zhujian` 看到的就是它），现在按上面六组 + 管理员段重写。
+- `tools/guitest/tab-check.js`：加 4 条真机 Tab 用例（`fixattrs` / 别名 `xiufu` / `config` / `metrics`），补全这块从「只有自检管」变成「自检 + 真机双管」。
+
+### 五、真机结果（两个视角各导一份）
+
+```
+自检完成：共 514 项，通过 514，失败 0
+✓ help：分派表每条主名都写进了 /zhujian help，管理员段只对管理员出现
+```
+
+| 视角 | 行数 | 内容 |
+| --- | --- | --- |
+| 管理员（rcon / op） | 86 | 玩家指令 51 条 + 管理员指令 11 条 + 分段标题与子参数说明 |
+| 普通玩家（非 op 的 bot 实登） | 65 | 只有「玩家指令」一段，`管理员指令` 标题、`give` / `fixattrs` / `backup` / `selftest` 一个都没漏出来 |
+
+玩家视角末尾那句「管理员能看到上面两段」也只对管理员显示 —— 玩家看到它只会有「我还能切个身份？」的困惑，这版起不再发给他。
 
 ---
 

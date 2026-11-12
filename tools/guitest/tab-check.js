@@ -88,7 +88,12 @@ async function main () {
     ['/zhujian contract ', ['join', 'quit', 'deposit']],
     ['/zhujian rank ', ['coins', 'reputation', 'streak', 'level', 'text']],
     ['/zhujian forge ', ['risk', 'cancel']],
-    ['/zhujian halloffame ', ['set', 'clear']]
+    ['/zhujian halloffame ', ['set', 'clear']],
+    // v2.23.5 那组「同步存量数据」的指令：主名 + 别名 + 第二层都要补得出来
+    ['/zhujian fixattrs ', ['all', 'containers']],
+    ['/zhujian xiufu ', ['all', 'containers']],
+    ['/zhujian config ', ['check']],
+    ['/zhujian metrics ', ['trend', 'csv', 'sample', 'gui']]
   ]
 
   let pass = 0, fail = 0

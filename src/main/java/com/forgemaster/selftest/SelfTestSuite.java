@@ -138,6 +138,32 @@ public final class SelfTestSuite {
         }
     }
 
+    /**
+     * help 文本里是否写了「{@code /zhujian <name>}」这一条。
+     *
+     * <p>后面必须跟空格 / 换行 / 行尾才算命中 —— 否则 {@code give} 会命中 {@code givefull}、
+     * {@code hall} 会命中 {@code halloffame}，断言就变成了假绿。</p>
+     */
+    private static boolean helpHas(String text, String name) {
+        String needle = "/zhujian " + name;
+        int from = 0;
+        while (true) {
+            int at = text.indexOf(needle, from);
+            if (at < 0) {
+                return false;
+            }
+            int end = at + needle.length();
+            if (end >= text.length()) {
+                return true;
+            }
+            char c = text.charAt(end);
+            if (c == ' ' || c == '\n' || c == '\r' || c == '\t') {
+                return true;
+            }
+            from = at + 1;
+        }
+    }
+
     private void register() {
         registerMaterialsAffixesQuench();
         registerForgeFlow();
@@ -3437,6 +3463,44 @@ public final class SelfTestSuite {
             } finally {
                 p.removeAttachment(adminAtt);
             }
+        });
+
+        add(g, "help：分派表每条主名都写进了 /zhujian help，管理员段只对管理员出现", () -> {
+            List<String> playerHelp = com.forgemaster.command.ForgingCommand.helpLines("zhujian", false);
+            List<String> adminHelp = com.forgemaster.command.ForgingCommand.helpLines("zhujian", true);
+            String playerText = String.join("\n", playerHelp);
+            String adminText = String.join("\n", adminHelp);
+
+            // ① 两段都得有东西，且管理员的多出管理员段（不是「管理员段是个空壳」）
+            require(!playerHelp.isEmpty(), "玩家 help 是空的");
+            require(adminHelp.size() > playerHelp.size() + 3,
+                    "管理员 help 没比玩家 help 多出指令段（" + playerHelp.size()
+                            + " vs " + adminHelp.size() + " 行）");
+            require(playerText.contains("/zhujian stats"), "玩家 help 里连 stats 都没有");
+
+            // ② 分派表每条 case 的主名，管理员 help 里必须写（这是核心断言 ——
+            //    contract / shangjin / money / spirit / tomb / tombrun / redeem / forge /
+            //    event / ench / evolve 十一条以前就是这么躲着的）
+            for (List<String> group : com.forgemaster.command.ForgingCommand.subcommandTable()) {
+                String name = group.get(0);
+                require(helpHas(adminText, name),
+                        "help 里没有 " + name + "（分派表有这条 case，help 一个字都没写）");
+            }
+
+            // ③ 玩家段覆盖全部非管理员指令；管理员专属的一条都不许混进去
+            for (List<String> group : com.forgemaster.command.ForgingCommand.subcommandTable()) {
+                String name = group.get(0);
+                boolean adminOnly = com.forgemaster.command.ForgingCommand.adminOnlyTable().contains(name);
+                if (adminOnly) {
+                    require(!helpHas(playerText, name), "玩家 help 里混进了管理员指令：" + name);
+                    require(helpHas(adminText, name), "管理员 help 里缺管理员指令：" + name);
+                } else {
+                    require(helpHas(playerText, name), "玩家 help 里没有 " + name);
+                }
+            }
+
+            // ④ 管理员段必须自报「你也有玩家指令」，别让人以为管理员只剩这几条
+            require(adminText.contains("上面那一段你也有"), "管理员段没说明玩家指令同样可用");
         });
 
         add(g, "强化上限按品质逐级提高：粗糙 < … < 神话，且神话封顶 99", () -> {

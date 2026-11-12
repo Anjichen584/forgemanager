@@ -3141,77 +3141,161 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
     }
 
     private void help(CommandSender sender, String label) {
-        Msg.send(sender, "<dark_gray>──── <gradient:#ffd166:#ff7a18><bold>铸剑大师</bold></gradient> <dark_gray>────");
-        Msg.send(sender, "<white>/" + label + " <gray>— 打开锻造台");
-        Msg.send(sender, "<white>/" + label + " stats [玩家] <gray>— 锻造档案 / 专精 / 收集度");
-        Msg.send(sender, "<white>/" + label + " codex <gray>— 锻造图鉴");
-        Msg.send(sender, "<white>/" + label + " collection <gray>— 收藏图鉴（五类进度 + 分类奖励 + 全收集称号）");
-        Msg.send(sender, "<white>/" + label + " relicset <gray>— 星陨套装：同材料件数 / 档位加成 / 主动技冷却");
-        Msg.send(sender, "<white>/" + label + " spectrum <gray>— 名剑谱：达成条目登记领奖");
-        Msg.send(sender, "<white>/" + label + " pass <gray>— 赛季通行证：进度与免费轨道奖励");
-        Msg.send(sender, "<white>/" + label + " power <gray>— 战力评分：手里这把的分数拆解与建议价");
-        Msg.send(sender, "<white>/" + label + " env <gray>— 当前天气 / 时辰 / 锻造修正面板");
-        Msg.send(sender, "<white>/" + label + " story <gray>— 查看当前剧情章节");
-        if (sender.hasPermission("forgemaster.admin")) {
-            Msg.send(sender, "<white>/" + label + " halloffame set <gray>— 把名人堂盔甲架设在脚下（clear 清理）");
-            Msg.send(sender, "<white>/" + label + " hall set|show|del <gray>— 名人殿堂：脚下设原点 / 立即重摆前三 / 删除");
+        for (String line : helpLines(label, sender.hasPermission("forgemaster.admin"))) {
+            Msg.send(sender, line);
         }
-        Msg.send(sender, "<white>/" + label + " profile [玩家] <gray>— 档案面板（剑币 / 连锻 / 声望 / 成就）");
-        Msg.send(sender, "<white>/" + label + " talent <gray>— 匠人天赋（每 5 级 1 点：add <id> / reset）");
-        Msg.send(sender, "<white>/" + label + " title <gray>— 称号：解锁条件与佩戴（chenghao）");
-        Msg.send(sender, "<white>/" + label + " rank [coins|reputation|streak|level|strengthen] [text] <gray>— 排行榜 GUI（text 看文字版）");
-        Msg.send(sender, "<white>/" + label + " season <gray>— 查看当前赛季");
-        Msg.send(sender, "<white>/" + label + " board <gray>— 锻造委托板（交货换声望）");
-        Msg.send(sender, "<white>/" + label + " duel <玩家> <gray>— 发起比试（accept/deny 应答）");
-        Msg.send(sender, "<white>/" + label + " repair <gray>— 研磨修复手上的剑");
-        Msg.send(sender, "<white>/" + label + " manual <gray>— 剑谱库（点谱直接临摹）");
-        Msg.send(sender, "<white>/" + label + " record <gray>— 把手上这把登记成剑谱");
-        Msg.send(sender, "<white>/" + label + " copy <谱号> <gray>— 临摹（同种子复刻，stop 取消）");
-        Msg.send(sender, "<white>/" + label + " contest <gray>— 锻造大赛状态 / list 看榜");
-        Msg.send(sender, "<white>/" + label + " grade <gray>— 材料分级说明（管理员 up / give）");
-        Msg.send(sender, "<white>/" + label + " auction <gray>— 拍卖行（挂单/竞价/一口价/领取）");
-        Msg.send(sender, "<white>/" + label + " order <gray>— 锻造订单（post 发单悬赏 / cancel 取消 / 面板接单交付）");
-        Msg.send(sender, "<white>/" + label + " master 玩家名 <gray>— 向在线玩家发出拜师邀请（master leave / expel 徒弟名 / 不带参看状态）");
-        Msg.send(sender, "<white>/" + label + " accept <gray>— 收下拜师邀请");
-        Msg.send(sender, "<white>/" + label + " guild <gray>— 行会商会（create 建会 / invite 邀人 / deposit 存金库 / list 全服行会 / upgrade 扩容）");
-        Msg.send(sender, "<dark_gray>    还有 warehouse 金库 / quest 行会委托（info|claim|report <成员> [数量]）");
-        Msg.send(sender, "<white>/" + label + " salvage <gray>— 熔掉手上的锻造品，回一半材料");
-        Msg.send(sender, "<white>/" + label + " top <gray>— 锻造名人堂");
-        Msg.send(sender, "<white>/" + label + " achievements <gray>— 成就界面（已达成 / 未达成 / 进度）");
-        Msg.send(sender, "<white>/" + label + " shop <gray>— 商会（用剑币买原料与图纸）");
-        Msg.send(sender, "<white>/" + label + " blackmarket <gray>— 黑市（每日轮换特价，限购）");
-        Msg.send(sender, "<white>/" + label + " signin <gray>— 每日签到（7 天一轮递增，第 7 天大奖）");
-        Msg.send(sender, "<white>/" + label + " gem <gray>— 宝石台（开孔 / 熔炼 / 镶嵌 / 拆卸 / 合成）");
-        Msg.send(sender, "<dark_gray>    也可以直接 gem socket | smelt | inlay | extract | merge");
-        Msg.send(sender, "<white>/" + label + " strengthen <gray>— 铁砧强化：主手拿剑右键铁砧放上去，手持重锤左键落锤（info 看明牌概率）");
-        Msg.send(sender, "<dark_gray>    strengthen sim <目标> 看单档期望 · strengthen curve 看六档曲线表");
-        Msg.send(sender, "<white>/" + label + " hammer <gray>— 领一把铁匠重锤（原版重锤 MACE 也认）");
-        Msg.send(sender, "<white>/" + label + " strengthen strip <序号> <gray>— 剥一条词条成「词条符」（可交易、可存箱）");
-        Msg.send(sender, "<white>/" + label + " strengthen graft <gray>— 主手锻造品 + 副手词条符：把词条装进去");
-        Msg.send(sender, "<white>/" + label + " imprint merge <gray>— 3 张同名词条符 → 1 张 ×1.5 的同名词条符");
-        Msg.send(sender, "<white>/" + label + " dissolve <gray>— 剑魄分解：拆掉手上锻造品换「剑尘」（强化材料不够时自动抵扣）");
-        Msg.send(sender, "<white>/" + label + " enchant <gray>— 附魔书镶孔（主手装备 + 副手附魔书，与宝石共用孔位）");
-        if (sender.hasPermission("forgemaster.admin")) {
-            Msg.send(sender, "<white>/" + label + " give <玩家> <剑胚> [品质] [分数] <gray>— 直接发一把");
-            Msg.send(sender, "<dark_gray>    装备用 <white>armor-<剑胚>-<部位></white>，例如 "
-                    + "<white>give Steve armor-iron-chestplate LEGENDARY 90</white>");
-            Msg.send(sender, "<white>/" + label + " givefull <玩家> <剑胚> [品质] <gray>— 一次发出满配锻造品"
-                    + "（满强化 · 满蜕变 · 满词条 · 满宝石）");
-            Msg.send(sender, "<white>/" + label + " gem give <玩家|all> <类型|random> [L1~L5] [数量] "
-                    + "<gray>— 发宝石");
-            Msg.send(sender, "<white>/" + label + " gem list <gray>— 列出所有宝石 id / 中文名 / 效果");
-            Msg.send(sender, "<white>/" + label + " reload <gray>— 重载配置");
-            Msg.send(sender, "<white>/" + label + " selftest <gray>— 运行时自检");
-            // v2.23.5：这三条以前只在代码里，help 一个字都没写，服主根本不知道有
-            Msg.send(sender, "<white>/" + label + " fixattrs [all|containers] <gray>— 存量物品收敛"
-                    + "（不带参修主手 · all 扫在线玩家 · containers 扫已加载容器）");
-            Msg.send(sender, "<white>/" + label + " backup <gray>· <white>restore <备份id> <gray>— 存档备份 / 回档");
-            Msg.send(sender, "<white>/" + label + " metrics [trend|csv|sample|gui] <gray>— 经济看板："
-                    + "实时报表 / 近 N 天趋势 / 导出 CSV / 立刻采样 / 三页面板");
-            Msg.send(sender, "<white>/" + label + " config check [all] <gray>— 配置体检：盘上缺键 + 实际生效值");
+    }
+
+    private static final String HELP_HEAD_PLAYER =
+            "<dark_gray>── <#7ee787><bold>玩家指令</bold></#7ee787> <dark_gray>── <gray>所有人可用";
+    private static final String HELP_HEAD_ADMIN =
+            "<dark_gray>── <#ff9a3c><bold>管理员指令</bold></#ff9a3c> <dark_gray>── "
+                    + "<gray>需要 <white>forgemaster.admin</white>（上面那一段你也有）";
+    private static final String HELP_G_GROWTH = "<dark_gray>  ▏档案与成长";
+    private static final String HELP_G_PANEL = "<dark_gray>  ▏图鉴与面板";
+    private static final String HELP_G_FORGE = "<dark_gray>  ▏锻造与强化";
+    private static final String HELP_G_ECON = "<dark_gray>  ▏经济与日常";
+    private static final String HELP_G_SOCIAL = "<dark_gray>  ▏社交与对抗";
+    private static final String HELP_G_WORLD = "<dark_gray>  ▏剑灵 / 剑冢 / 世界";
+    private static final String HELP_G_ADMIN_ITEM = "<dark_gray>  ▏发放与调试";
+    private static final String HELP_G_ADMIN_SAVE = "<dark_gray>  ▏存档与体检";
+    private static final String HELP_G_ADMIN_SYNC = "<dark_gray>  ▏存量数据同步";
+    private static final String HELP_G_ADMIN_HALL = "<dark_gray>  ▏名人堂与殿堂";
+
+    /**
+     * {@code /zhujian help} 的<b>纯文本清单</b>（不直接发消息，自检才能逐行断言）。
+     *
+     * <p><b>为什么要有这个函数（v2.25.3）</b>：help 原来是手写散文，和分派表各写一份，
+     * 于是漏得比 Tab 补全还狠 —— {@code contract} / {@code shangjin} / {@code money} /
+     * {@code spirit} / {@code tomb} / {@code tombrun} / {@code redeem} / {@code forge} /
+     * {@code event} / {@code ench} / {@code evolve} 这十一条<b>有 case、有补全，help 里一个字都没有</b>，
+     * 玩家只能靠问。现在清单抽成这个纯函数，{@code SelfTestSuite} 拿
+     * {@link #subcommandTable()} 逐条核对「这条命令 help 里到底写没写」，漏一条自检直接红。</p>
+     *
+     * <p><b>可见性</b>：管理员看两段（玩家指令 + 管理员指令），普通玩家只看玩家段 ——
+     * 与首层 Tab 补全、{@link #ADMIN_ONLY} 三处同源，改任一处另两处会被自检顶住。</p>
+     *
+     * @param label 玩家实际敲的别名（{@code zhujian} / {@code zj} 之类）
+     * @param admin 是否附上管理员段
+     */
+    public static List<String> helpLines(String label, boolean admin) {
+        String u = "/" + label + " ";
+        List<String> out = new ArrayList<>();
+        out.add("<dark_gray>──── <gradient:#ffd166:#ff7a18><bold>铸剑大师</bold></gradient> <dark_gray>────");
+        out.add("<gray>不带参数直接输入 <white>/" + label + "</white> 打开锻造台；"
+                + "下面每条子命令（含别名、玩家名 / 剑胚 / 谱号 / 编号这些参数）都能 Tab 补全。");
+
+        // ------------------------------------------------------------ 玩家段
+        out.add(" ");
+        out.add(HELP_HEAD_PLAYER);
+        out.add(HELP_G_GROWTH);
+        addHelp(out, u + "stats [玩家]", "锻造档案 / 专精 / 收集度");
+        addHelp(out, u + "profile [玩家]", "档案面板（剑币 / 连锻 / 声望 / 成就）");
+        addHelp(out, u + "talent", "匠人天赋：每 5 级 1 点（add <id> · reset [confirm]）");
+        addHelp(out, u + "rank [coins|reputation|streak|level|strengthen] [text]", "排行榜 GUI（text 看文字版）");
+        addHelp(out, u + "top [legacy]", "锻造名人堂（top legacy 看历代名剑）");
+        addHelp(out, u + "achievements", "成就界面（已达成 / 未达成 / 进度）");
+        addHelp(out, u + "title", "称号：解锁条件与佩戴");
+        addHelp(out, u + "season", "当前赛季与结算倒计时");
+        addHelp(out, u + "power", "战力评分：手上这把的分数拆解与建议价");
+        addHelp(out, u + "pass", "赛季通行证：进度与免费轨道奖励");
+        addHelp(out, u + "redeem", "声望兑换所（info · coin <声望数> · charm <符id>）");
+
+        out.add(HELP_G_PANEL);
+        addHelp(out, u + "codex", "锻造图鉴");
+        addHelp(out, u + "collection", "收藏图鉴（五类进度 + 分类奖励 + 全收集称号）");
+        addHelp(out, u + "relicset", "星陨套装：同材料件数 / 档位加成 / 主动技冷却");
+        addHelp(out, u + "spectrum", "名剑谱：达成条目登记领奖");
+        addHelp(out, u + "env", "当前天气 / 时辰 / 锻造修正面板");
+        addHelp(out, u + "story", "查看当前剧情章节");
+
+        out.add(HELP_G_FORGE);
+        addHelp(out, u + "strengthen", "铁砧强化：右键铁砧放剑、持重锤左键落锤（info 看明牌概率）");
+        out.add("<dark_gray>      sim <目标> 单档期望 · plan <目标> [局数] · curve 六档曲线 · set <等级>");
+        out.add("<dark_gray>      reforge <序号> 重铸 · strip <序号> 剥成词条符 · graft 装词条 · merge 三合一 · jianyi 建议");
+        addHelp(out, u + "hammer", "领一把铁匠重锤（原版重锤 MACE 也认）");
+        addHelp(out, u + "evolve", "六阶蜕变：不带参开界面 · sim 只看结果 · now 直接掷");
+        addHelp(out, u + "repair", "研磨修复手上的剑");
+        addHelp(out, u + "dissolve", "剑魄分解：拆掉手上锻造品换「剑尘」（强化材料不够时自动抵扣）");
+        addHelp(out, u + "imprint", "词条符：不带参查看 · merge 三张同名合成一张 ×1.5");
+        addHelp(out, u + "enchant", "附魔书镶孔（主手装备 + 副手附魔书，与宝石共用孔位）· extract 拆下来");
+        addHelp(out, u + "ench", "原创附魔台 54 格（open · list · book <id> [等级]）");
+        addHelp(out, u + "gem", "宝石台：socket 开孔 · esocket · smelt 熔炼 · inlay 镶嵌 · extract 拆卸 · merge 合成 · list");
+        addHelp(out, u + "grade", "材料分级说明（分级用原版材质名）");
+        addHelp(out, u + "salvage", "熔掉手上的锻造品，回一半材料");
+        addHelp(out, u + "manual", "剑谱库：点谱直接临摹");
+        addHelp(out, u + "record", "把手上这把登记成剑谱");
+        addHelp(out, u + "copy", "临摹：copy <谱号> 开始（同种子复刻）· stop / cancel 取消");
+
+        out.add(HELP_G_ECON);
+        addHelp(out, u + "money", "剑币余额（balance [玩家] · coin balance）");
+        addHelp(out, u + "shop", "商会（用剑币买原料与图纸）");
+        addHelp(out, u + "blackmarket", "黑市（每日轮换特价，限购）");
+        addHelp(out, u + "signin", "每日签到（7 天一轮递增，第 7 天大奖）");
+
+        out.add(HELP_G_SOCIAL);
+        addHelp(out, u + "board", "锻造委托板（交货换声望）");
+        addHelp(out, u + "order", "锻造订单：不带参开面板 · post 发单 · cancel 取消");
+        addHelp(out, u + "auction", "拍卖行：不带参浏览 · sell <起拍价> [一口价] [小时] · bid <单号> <金额> · buy · cancel · claim");
+        addHelp(out, u + "guild", "行会商会：create / invite / kick / deposit / list / upgrade");
+        out.add("<dark_gray>      fund 基金 · tech 科技 · warehouse 金库 · quest 行会委托（info|claim|report）");
+        addHelp(out, u + "master", "师徒：master <玩家名> 邀徒 · leave 退出 · expel <徒弟> 逐出 · graduate 出师 · graduates 名录");
+        addHelp(out, u + "accept", "收下拜师邀请");
+        addHelp(out, u + "duel", "比试：duel <玩家> 发起 · accept / deny 应答");
+        addHelp(out, u + "contest", "锻造大赛：状态 · list 看榜 · watch 观战 · gui 面板");
+
+        out.add(HELP_G_WORLD);
+        addHelp(out, u + "spirit", "剑灵：info · feed 喂养 · name <剑名> · reroll 重抽 · show / hide");
+        addHelp(out, u + "tomb", "剑冢：list · bury 埋剑 · take / challenge / info / remove <编号>");
+        addHelp(out, u + "tombrun", "秘境：enter 进图 · status 看进度 · quit 退出");
+        addHelp(out, u + "contract", "龙税契约：不带参开面板 · join / quit / deposit");
+        addHelp(out, u + "shangjin", "每日悬赏：不带参看货单 · claim <序号> 领赏");
+        addHelp(out, u + "forge", "极限锻造：risk 预设下一把 · cancel 撤销");
+        addHelp(out, u + "event", "世界事件：不带参看状态 · start [id] / stop（这两个要管理员）");
+        addHelp(out, u + "help", "这张表");
+
+        // ------------------------------------------------------------ 管理员段
+        if (admin) {
+            out.add(" ");
+            out.add(HELP_HEAD_ADMIN);
+            out.add(HELP_G_ADMIN_ITEM);
+            addHelp(out, u + "give <玩家> <剑胚> [品质] [分数]", "直接发一把");
+            out.add("<dark_gray>      装备写 <white>armor-<剑胚>-<部位></white>，例如 "
+                    + "<white>/" + label + " give Steve armor-iron-chestplate LEGENDARY 90</white>");
+            addHelp(out, u + "givefull <玩家> <剑胚|armor-剑胚-部位> [品质]", "一次发出满配锻造品（满强化 · 满蜕变 · 满词条 · 满宝石）");
+            addHelp(out, u + "gem give <玩家|all> <类型|random> [L1~L5] [数量]", "发宝石");
+            out.add("<dark_gray>      gem list 列出所有宝石 id / 中文名 / 效果");
+            addHelp(out, u + "money give|take <玩家> <数量>", "发 / 扣剑币（coin give|take 同义）");
+            addHelp(out, u + "reload", "重载配置");
+            addHelp(out, u + "selftest", "运行时自检：全量具名检查项逐条跑一遍（当前 514 项）");
+
+            out.add(HELP_G_ADMIN_SAVE);
+            addHelp(out, u + "backup", "全服存档快照（18 份存档 + metrics 目录）");
+            addHelp(out, u + "restore <备份id>", "回档到某个备份（回档后要重启服务器，否则内存会把旧数据写回去）");
+            addHelp(out, u + "config check [all]", "配置体检：盘上缺键 + 实际生效值");
+            addHelp(out, u + "metrics", "经济看板：不带参实时报表 · trend [天数] · csv [天数] · sample 立刻采样 · gui 三页面板");
+
+            out.add(HELP_G_ADMIN_SYNC);
+            addHelp(out, u + "fixattrs", "存量物品收敛：不带参修主手那一件 · all 扫在线玩家（背包+盔甲+副手+末影箱）· containers 扫已加载容器");
+            out.add("<dark_gray>      离线玩家不用手动处理，上线会被 legacy-repair.on-join 自动扫一遍");
+
+            out.add(HELP_G_ADMIN_HALL);
+            addHelp(out, u + "halloffame set|clear", "把名人堂盔甲架设在脚下 / 清理");
+            addHelp(out, u + "hall set|show|del", "名人殿堂：脚下设原点 / 立即重摆前三 / 删除");
         }
-        Msg.send(sender, "<dark_gray>玩法：烧红 → 卡点落锤 → 序列叠钢 → 稳住刃压 → 选淬火介质");
-        Msg.send(sender, "<dark_gray>　全部子命令（含别名与玩家名 / 剑胚 / 谱号 / 编号这些参数）都能 Tab 补全。");
+
+        out.add(" ");
+        out.add("<dark_gray>玩法：烧红 → 卡点落锤 → 序列叠钢 → 稳住刃压 → 选淬火介质");
+        if (admin) {
+            // 只给管理员看：玩家看到这句只会困惑（他没有「两段」可选）
+            out.add("<dark_gray>　管理员能看到上面两段；普通玩家只有「玩家指令」那一段。");
+        }
+        return out;
+    }
+
+    /** help 的一行：{@code /zhujian xxx — 说明} */
+    private static void addHelp(List<String> out, String cmd, String desc) {
+        out.add("<white>" + cmd + " <gray>— " + desc);
     }
 
     /**
@@ -3548,6 +3632,16 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
      */
     public static List<List<String>> subcommandTable() {
         return SUBCOMMANDS;
+    }
+
+    /**
+     * 自检用：管理员专属子命令的只读视图。
+     *
+     * <p>与首层补全的过滤、{@code helpLines} 的管理员段同一份名单 —— 自检拿它核对
+     * 「玩家 help 里绝不能出现这些、管理员 help 里必须出现这些」。</p>
+     */
+    public static Set<String> adminOnlyTable() {
+        return ADMIN_ONLY;
     }
 
     /** 只有 forgemaster.admin 才看得见的顶层子命令（其余对所有人可见） */
