@@ -124,3 +124,62 @@ git add -A; git commit -m "..."; git push origin main
 - 新文件：`util/YamlIo.java`（v2.25.5 引入，本轮修并发）
 - 新命令：`/zhujian anvil [all]`
 - 自检：517 → **520**
+
+---
+
+## 7. 多 agent 协作骨架（v2.25.6 之后新增，**每轮开工先确认它还在**）
+
+多个 agent（workbuddy / zcode / auditor / foreman）一起改这个仓库时，以前会三件事同时坏：
+
+| 症状 | 根因 | 现在怎么治 |
+| --- | --- | --- |
+| **漏读** | `.workbuddy/` 和 `.zcode/` 被 gitignore，换机器 / 新会话 / 别人接手时根本读不到 | 规则搬进 `.agents/<名>/agent.md`（入库）；`agentdocs.py doctor` 点名未入库的 md |
+| **读取不到** | 没有总入口，agent 只能猜去哪找 | 根 `AGENTS.md` 是唯一入口（**DSH 会自动注入它**）；`index` 生成文档地图写进去 |
+| **打架** | 多个 agent 同时改 `src/**` 或根 `README.md` | 身份卡声明 `may-write` / `must-not-write`；`check --staged` 硬拦；`lock` 串行 |
+
+### 关键文件
+
+```
+AGENTS.md                     唯一入口（自动注入，杠杆最高）
+.agents/<名>/agent.md         身份卡：能写什么 / 绝不能写什么 / 自己的坑
+.agents/_index.md             文档地图（自动生成）
+tools/agentdocs.py            index / check / doctor / lock / status
+.githooks/pre-commit          提交时硬拦越界 + 拦「改代码不写报告」
+```
+
+### 每轮开工必跑
+
+```powershell
+& $py tools\agentdocs.py status     # 锁在谁手里
+& $py tools\agentdocs.py check      # 身份卡 + 文档覆盖率是否还健康
+& $py tools\agentdocs.py doctor     # README 多大、哪些文档没入库
+```
+
+### 动 `src/**` 的规矩
+
+`workbuddy` 和 `zcode` 都写 `src/**`，所以：
+
+```powershell
+& $py tools\agentdocs.py lock --as workbuddy   # 动手前
+& $py tools\agentdocs.py unlock --as workbuddy # 收尾立刻放
+```
+
+锁有 TTL（默认 120 分钟），进程死了也不会永久死锁。别人持锁时不要 `--force`。
+
+### 三条真实教训（写进钩子，别靠自觉）
+
+1. **根 `README.md` 只有 foreman 改**：两个 agent 同时编辑，真的把 `## 十四·补十三` 标题改没了一次。
+2. **改代码必须同时更新报告**：否则这轮的结论在压缩后就蒸发了 —— 钩子现在会拦。
+3. **`.gitignore` 的否定规则有坑**：`*.zcode` 会连 `.zcode` 目录名一起匹配，而「父目录被排除时内部文件无法重新包含」，所以顺序必须是 `!.zcode/` → `.zcode/*` → `!.zcode/README.md`。
+
+### 已知遗留
+
+`README.md` **286 KB / 4460 行**，整读会炸上下文。现在靠 `LATEST.md`（8 KB）承接全部硬状态、
+README 只按章节查。下一步该把它拆成 `README.md`（索引 + 快速上手）+ `docs/history/*.md`（逐版本叙事），
+但那是独立一轮的活，别和功能改动混在一起做。
+
+- 代码：`src/main/java/com/forgemaster/**`（本轮动了 `util/YamlIo`、`anvil/AnvilForgeManager`、`tombrun/TombRunService`、`tomb/TombChallenge`、`tomb/TombManager`、`order/OrderService`、`bounty/BountyManager`、`forge/ForgeManager`、`command/ForgingCommand`、`selftest/SelfTestSuite`）
+- 文档：README `## 十四·补十五`、索引表、头部三行
+- 新文件：`util/YamlIo.java`（v2.25.5 引入，本轮修并发）
+- 新命令：`/zhujian anvil [all]`
+- 自检：517 → **520**
