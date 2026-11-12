@@ -43,12 +43,29 @@ desktop.ini
 *.zcode-session
 
 # ---- AI / 工具生成的会话记录（不是源码，别进公开仓库）----
-.workbuddy/
-.zcode/
+# 注意：.agents/ 是例外 —— 身份卡、索引、交接约定必须入库，
+# 否则换机器/新会话/别人接手时等于不存在（这正是以前「漏读」的根因）。
+.workbuddy/*
+.zcode/*
 .serena/
 *.zcode
+*.zcode-session
+
+# .agents：身份卡与索引入库，串行锁和一次性草稿不入库
+.agents/_lock.json
+.agents/*/scratch/
+
+# 例外必须放在最后。两个坑都踩过：
+# 1) `*.zcode` 会连 `.zcode` 这个**目录名**一起匹配掉；
+# 2) git 的规则是「父目录被排除时，里面的文件无法再被重新包含」，
+#    所以要先把目录本身 `!.zcode/` 救回来，再排内容，再救单个文件。
+!.zcode/
+.zcode/*
+!.zcode/README.md
+!.workbuddy/README.md
 
 # ---- 一次性测试输出 ----
 selftest-stage2.txt
 selftest-stage*.txt
 RESULT-selftest-*.txt
+.agents/_current

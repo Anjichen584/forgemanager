@@ -1,0 +1,60 @@
+#!/bin/sh
+# pre-commit：拦住越界提交 + 拦住忘记写交付报告。
+#
+# 启用（每台机器做一次）：
+#   git config core.hooksPath .githooks
+#
+# 为什么需要：口头约定「别改 README」没用 —— 上一轮真的有 agent 把
+# `## 十四·补十三` 的标题改没了，直到下一轮读 README 才发现。
+# 所以把「谁能写什么」变成提交时硬拦。
+
+PY="${PYTHON:-python}"
+
+# 1) 用谁的身份卡
+AGENT="$(cat .agents/_current 2>/dev/null || echo "")"
+if [ -z "$AGENT" ]; then
+    AGENT="${AGENT_ID:-}"
+fi
+if [ -z "$AGENT" ]; then
+    echo "[pre-commit] 没设置身份。二选一："
+    echo "            echo workbuddy > .agents/_current"
+    echo "            AGENT_ID=workbuddy git commit ..."
+    echo "[pre-commit] 跳过写权限检查（其余检查照跑）"
+    SKIP_SCOPE=1
+fi
+
+if [ -z "$SKIP_SCOPE" ]; then
+    "$PY" tools/agentdocs.py check --staged --as "$AGENT" || exit 1
+fi
+
+# 2) 动了 src 或 pom，就必须同时更新交付报告或 README
+STAGED="$(git diff --cached --name-only)"
+CODE_CHANGED=0
+DOC_CHANGED=0
+echo "$STAGED" | grep -qE '^(src/|pom\.xml)' && CODE_CHANGED=1
+echo "$STAGED" | grep -qE '^(docs/handoff/|README\.md|\.agents/)' && DOC_CHANGED=1
+
+if [ "$CODE_CHANGED" = "1" ] && [ "$DOC_CHANGED" = "0" ]; then
+    echo ""
+    echo "[pre-commit] 你改了代码，但没有更新任何文档。"
+    echo "             请至少二选一："
+    echo "               docs/handoff/archive/v<版本>.md + LATEST.md   （本轮交付报告）"
+    echo "               README.md 的新章节 + 索引表一行"
+    echo "             为什么拦：下一轮靠报告接手，不写就等于这轮的结论丢了。"
+    echo ""
+    echo "             确实只是试试、不想写文档：git commit --no-verify"
+    exit 1
+fi
+
+# 3) 索引是否最新（防止有人手改 AGENTS.md 的地图）
+if [ -f AGENTS.md ]; then
+    if ! "$PY" tools/agentdocs.py index >/dev/null 2>&1; then
+        echo "[pre-commit] 重新生成文档索引失败，检查 tools/agentdocs.py"
+    fi
+    if ! git diff --quiet AGENTS.md .agents/_index.md 2>/dev/null; then
+        git add AGENTS.md .agents/_index.md 2>/dev/null
+        echo "[pre-commit] 已自动刷新文档索引并加入本次提交"
+    fi
+fi
+
+exit 0
