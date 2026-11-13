@@ -37,7 +37,7 @@
 3. **加功能前先搜现有命令面**（`SUBCOMMANDS` + `helpLines()`）。差点加过 `/zhujian top rep`，而 `rank reputation` 早就有了。
 4. **管理命令进 `ADMIN_ONLY`，并且 handler 内部自判 `forgemaster.admin`**。只靠 Tab 隐藏不算。
 5. **锻造系手续费永远是剑币**（`stats().takeCoins`）：强化 / 进化 / 铭刻 / 词条剥离。不是漏改 Wallet。
-6. **自检项数只许增不许减**（当前 **528**）。删钉子等于删安全网。
+6. **自检项数只许增不许减**（当前 **547**）。删钉子等于删安全网。
 7. **并发压测默认 32 个 bot**（`BOT_COUNT` 可改；测试服 `max-players=48`）。
    实测结论：**连接层不是瓶颈** —— 5/6/8/12/24/32 全部 0 次握手节流，32 个上线 58s、存活 32/32。
    唯一硬墙是 `max-players`；`server_full` 是它满了，**不是 429，别重试**（重试只会埋掉真原因）。
@@ -59,7 +59,7 @@
 # 自检（测试服，约 30 秒）
 cd D:\IDEA\mc-plugins\ForgingMaster\testserver
 & 'C:\Users\heiya\AppData\Local\Programs\Python\Python312\python.exe' _run_selftest_full.py
-# 压测（12 阶段 32 并发，约 17 分钟；BOT_COUNT 可改）
+# 压测（17 阶段 32 并发，约 17 分钟；BOT_COUNT 可改）
 cd D:\IDEA\mc-plugins\ForgingMaster-Lore
 & 'C:\Users\heiya\AppData\Local\Programs\Python\Python312\python.exe' tools\guitest\run-stress.py
 ```
@@ -81,10 +81,10 @@ cd D:\IDEA\mc-plugins\ForgingMaster-Lore
 | `README.md` | foreman | normative | 项目索引 + 命令 + 配置 + 技术实现（v2.25.6 从 282 KB 拆到 35 KB） |
 | `.agents/README.md` | foreman | normative | 身份卡格式与三条铁律 |
 | `docs/manual/*.md` | foreman | informative | 玩法手册（玩法/经济/成长线/升级）：economy / gameplay / progression / upgrade |
-| `docs/history/*.md` | foreman | informative | 逐版本叙事（查「以前修过没」「数值为什么这么定」）：v2.10.x / v2.18-2.21 / v2.23.x / v2.24.x / v2.25.x |
+| `docs/history/*.md` | foreman | informative | 逐版本叙事（查「以前修过没」「数值为什么这么定」）：v2.10.x / v2.18-2.21 / v2.23.x / v2.24.x / v2.25.x / v2.26.x |
 | `docs/dev/*.md` | foreman | normative | 构建与测试服操作：build |
 | `audit/*.md` | auditor | informative | 历史审计报告 22 份，按文件名挑着读 |
-| `docs/handoff/archive/` | foreman | archive | 每轮交付报告归档（只增不改）：v2.25.6 / v2.25.7 / v2.25.8 / v2.25.9 |
+| `docs/handoff/archive/` | foreman | archive | 每轮交付报告归档（只增不改）：v2.25.6 / v2.25.7 / v2.25.8 / v2.25.9 / v2.26.0 |
 <!-- agents:index:end -->
 
 ## 六、为什么这么设计

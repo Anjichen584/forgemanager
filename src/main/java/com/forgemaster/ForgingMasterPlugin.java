@@ -115,6 +115,8 @@ public final class ForgingMasterPlugin extends JavaPlugin {
             new com.forgemaster.enchant.EnchantEffects();
     /** 黑市（每日轮换特价）与每日签到：共用一份 daily-data.yml 日期态 */
     private com.forgemaster.blackmarket.DailyStore dailyStore;
+    /** 战力评分曲线（v2.26.0）：power log 的观测数据，非账本 */
+    private com.forgemaster.score.PowerLogStore powerLogStore;
     private com.forgemaster.blackmarket.BlackmarketService blackmarket;
     private com.forgemaster.blackmarket.DailyRewardService dailyReward;
     private ShopManager shop;
@@ -260,6 +262,9 @@ public final class ForgingMasterPlugin extends JavaPlugin {
         blackmarket = new com.forgemaster.blackmarket.BlackmarketService(this, dailyStore);
         dailyReward = new com.forgemaster.blackmarket.DailyRewardService(this, dailyStore);
         dailyReward.load();
+        // 战力评分曲线（v2.26.0）：power log 的观测数据存储，卸载/reload 时随 dailyStore 一起落盘
+        powerLogStore = new com.forgemaster.score.PowerLogStore(this);
+        powerLogStore.load();
         hallOfFame = new com.forgemaster.hall.HallOfFame(this);
         hallOfFame.start();
         // 名人殿堂（拓展第一档）：ItemDisplay 平躺展示前三名，30s 定时重刷
@@ -398,6 +403,9 @@ public final class ForgingMasterPlugin extends JavaPlugin {
             "contest.enabled",
             "contest.interval-minutes",
             "contest.duration-seconds",
+            // v2.26.0：历届赛果档案的保留届数。这键必须进必需键清单 —— 之前只存在于
+            // ContestHistoryStore 的 Java 默认值里，服主在 config.yml 里既看不到也改不了。
+            "contest.history-keep",
             "rank.enabled",
             "season.enabled",
             "season.duration-days",
@@ -759,6 +767,9 @@ public final class ForgingMasterPlugin extends JavaPlugin {
         if (dailyStore != null) {
             dailyStore.save();
         }
+        if (powerLogStore != null) {
+            powerLogStore.save();
+        }
         try {
             com.forgemaster.blackmarket.BlackmarketRouter.reset();
         } catch (RuntimeException ex) {
@@ -862,6 +873,9 @@ public final class ForgingMasterPlugin extends JavaPlugin {
         if (webhook != null) { webhook.reload(); }
         if (dailyStore != null) {
             dailyStore.save();
+        }
+        if (powerLogStore != null) {
+            powerLogStore.save();
         }
         if (dailyReward != null) {
             dailyReward.load();
@@ -1039,6 +1053,11 @@ public final class ForgingMasterPlugin extends JavaPlugin {
     /** v2.25：每日签到存档访问器（回档 flush/reload 用，此前无出口） */
     public com.forgemaster.blackmarket.DailyStore dailyStore() {
         return dailyStore;
+    }
+
+    /** v2.26.0：战力评分曲线访问器（power log） */
+    public com.forgemaster.score.PowerLogStore powerLog() {
+        return powerLogStore;
     }
 
     public com.forgemaster.contract.ContractManager contractManager() {

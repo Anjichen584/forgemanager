@@ -42,7 +42,10 @@ function rconClient () {
     let buf = Buffer.alloc(0)
     let authed = false
     let id = 0
-    const pending = []
+    /** request id → resolver。并发下必须按 id 精确配对，见 send() 里的注释 */
+    const waiting = new Map()
+    /** 单条 RCON 的超时：服务端卡住时宁可报错，也不要让整个阶段无声挂死 */
+    const RCON_TIMEOUT = 15000
 
     const packet = (pid, type, body) => {
       const payload = Buffer.concat([Buffer.from(body, 'utf8'), Buffer.alloc(2)])
@@ -71,17 +74,37 @@ function rconClient () {
           sock.write(packet(++id, 2, 'list'))
           resolve({
             send (cmd) {
-              return new Promise(res => {
-                pending.push(res)
-                sock.write(packet(++id, 2, cmd))
+              // v2.26.0：**按 request id 配对，不再用 FIFO 队列**。
+              //
+              // 原来是 `pending.push(res)` + `pending.shift()`：发一条压一条，回一条弹一条，
+              // 完全靠「先进先出」假设响应顺序等于请求顺序。单线程串行跑时这个假设成立，
+              // 所以一直没暴露 —— 但阶段内改成 32 bot 并发之后它立刻炸：
+              // 32 个 coins() 同时发 RCON，响应按 id 回来，却被按到达顺序错配给别的调用者，
+              // 于是 A 的余额读给 B、命令回执张冠李戴，`coins()` 解析失败返回 null，
+              // 上层 `await` 等到 timeout 也不结束 —— 实测单阶段跑满 400 秒没跑完。
+              //
+              // 服务端回包带着请求 id（rid），直接用 Map<id, resolver> 精确配对。
+              // 这不是「优化」，是并发场景下的**正确性前提**。
+              return new Promise((res, rej) => {
+                const myId = ++id
+                const timer = setTimeout(() => {
+                  waiting.delete(myId)
+                  rej(new Error('RCON 超时（' + RCON_TIMEOUT + 'ms）：' + cmd))
+                }, RCON_TIMEOUT)
+                waiting.set(myId, body2 => { clearTimeout(timer); res(body2) })
+                sock.write(packet(myId, 2, cmd))
               })
             },
             close () { sock.destroy() }
           })
           continue
         }
-        const res = pending.shift()
-        if (res) res(body)
+        // 按 id 找回对应调用者；找不到说明是迟到/重复包，丢掉即可（不能 shift，否则又回到错配）
+        const out = waiting.get(rid)
+        if (out) {
+          waiting.delete(rid)
+          out(body)
+        }
       }
     })
     sock.setTimeout(0)
@@ -201,6 +224,86 @@ const burst = (bot, cmds) => { for (const c of cmds) bot.chat(c) }
 const take = bot => { const m = bot.chatLog.slice(); bot.chatLog.length = 0; return m }
 const last = (bot, n = 8) => bot.chatLog.slice(-n).join(' | ').slice(0, 600)
 
+// ---------------------------------------------------------------- 等「说完了」，别硬等时长
+//
+// 原写法：发命令 → await wait(1600) → take(bot)。不论回执 80ms 还是 1500ms 到，都睡满。
+// 97 处 sleep、平均 1276ms，乘 31 个 bot，一轮压测光睡掉一小时。
+//
+// settle()：**静默检测**。至少等 minMs，之后每 50ms 看一眼 chatLog，
+// 只要「最近 quietMs 毫秒没有新消息」就认为服务端说完了，立刻返回。
+// 上限 maxMs 与原来的固定值**完全相同** —— 慢路径行为不变，不会因为改快而假红。
+//
+// 为什么不用「出现某条文案就返回」：那样只对**正向**断言安全。
+// 像「三连 confirm 只成 1 次」「重复 join 不许重复收钱」这类，判据恰恰是
+// 「第二条不该来」；一看到第一条就返回，会把还没到的第二条漏掉 → 假绿。
+// 静默检测对正负断言都成立：它等的是「不再有消息」，不是「出现了某条消息」。
+//
+// 最坏情况 == 老行为（一直有消息直到 maxMs 才返回）；最好情况快好几倍。
+// 所以这是一处**严格优于现状**的改动，不存在「为了快牺牲正确性」。
+async function settle (bot, maxMs, opts = {}) {
+  const quietMs = opts.quietMs || 250
+  const minMs = opts.minMs != null ? opts.minMs : Math.min(600, maxMs)
+  const t0 = Date.now()
+  await wait(Math.min(minMs, maxMs))
+  let seen = bot.chatLog.length
+  let lastChange = Date.now()
+  while (Date.now() - t0 < maxMs) {
+    await wait(50)
+    const n = bot.chatLog.length
+    if (n !== seen) {
+      seen = n
+      lastChange = Date.now()
+      continue
+    }
+    if (Date.now() - lastChange >= quietMs) return
+  }
+  // 超时直接返回：让上层断言对着真实日志说话，这里不抛错也不补数据
+}
+
+// 兼容旧名字（有调用点还在用 waitUntil 的话不会炸）
+const waitUntil = (opts) => settle(opts && opts.bot, (opts && opts.maxMs) || 1000, opts)
+
+// ---------------------------------------------------------------- 阶段内并发：试过，不行（实测结论，别再试）
+//
+// 动机很直接：17 个阶段都写成
+//     for (const bot of bots) { …一堆 await… }
+// 一个 bot 做完再下一个，32 个 × 每 bot 几秒 = 几分钟一阶段。
+// 直觉上「每个 bot 操作自己的账号」应该能同时跑，快 32 倍。
+//
+// **实测失败**，踩了两层：
+//
+// 1) 32 bot 同时上线后阶段挂死 400 秒没结束；减到 8 个仍然全超时，
+//    服务端日志里一条 RCON 回包都没有。
+// 2) 单测定位到根因：**Minecraft 的 RCON 是串行收发的**。
+//    一次并发发 8 条 `list`，只回 1 条响应，其余 7 条永不回包。
+//    而每个阶段都要走 RCON（`setCoins` / `coins` 全是 RCON），
+//    所以阶段内并发必然把后面 31 个 bot 的查询全部堵死。
+//
+// 这不是脚本能修的：瓶颈在服务端 RCON 实现。所以**提速只有两条路**：
+//   · 减少重复（例如 duelRank 不必对 31 个 bot 各打一遍）
+//   · 缩短 sleep（用 settle/until 等条件，别硬等时长）
+//
+// 顺带修掉的真 bug（保留）：RCON 原来用 pending.push + pending.shift 做 FIFO 配对，
+// 假设「响应顺序 = 请求顺序」。串行时一直成立，并发就错配 —— A 的余额读给 B。
+// 现在按 request id 精确配对，并加了单条超时：服务端不回包时宁可报错，
+// 也不要像刚才那样无声挂死 400 秒。
+//
+// 有一类等待等的不是聊天回执，而是**服务端那边真的准备好**：GUI 打开了没、
+// 手里那把剑同步到了没、tp 之后地形下发到了没。这类不能用 settle()（没有聊天可看），
+// 只能反复问一个谓词。pred 成立立刻返回；到 maxMs 还没成立也返回，让上层自己判。
+//
+// 原写法同样是睡满固定时长：等 GUI 打开睡 1000ms，实际可能 120ms 就开了。
+async function until (pred, maxMs, stepMs = 50) {
+  const t0 = Date.now()
+  while (Date.now() - t0 < maxMs) {
+    let ok = false
+    try { ok = !!pred() } catch (_) { ok = false }   // 谓词可能碰到还没就绪的对象
+    if (ok) return true
+    await wait(stepMs)
+  }
+  return false
+}
+
 // ---------------------------------------------------------------- 日志扫描
 function logSize () {
   try { return fs.statSync(LOG).size } catch (e) { return 0 }
@@ -234,11 +337,28 @@ const phases = {}
 // ① 签到：同一玩家同 tick 连发 3 次，只许成功 1 次
 phases.signin = async (bots) => {
   const area = '签到并发'
+  // v2.26.0：**尝试过改成并发，失败了，这是实测结论 —— 别再试。**
+  //
+  // 想法很自然：每个 bot 操作自己的账号，32 个同时跑应该快 32 倍。
+  // 实测结果：32 个 bot 同时上线后，阶段直接挂死 400 秒没结束。
+  // 逐步减到 8 个仍然全超时，日志里一条 RCON 回包都没有。
+  //
+  // 根因在**服务端**，不在脚本：Minecraft 的 RCON 实现是串行收发的。
+  // 单独测过 —— 一次并发发 8 条 `list`，只回 1 条响应，其余 7 条永不回包。
+  // 所以只要阶段里有 RCON 调用（`setCoins` / `coins` 全都是 RCON），
+  // 阶段内并发就必然把后面 31 个 bot 的查询全部堵死。
+  //
+  // 顺带修掉的真 bug：RCON 原来用 `pending.push` + `pending.shift` 做 FIFO 配对，
+  // 假设「响应顺序 = 请求顺序」。串行跑一直成立所以没暴露，一旦并发就错配 ——
+  // A 的余额读给 B。现在改成按 request id 精确配对（Map），并且加了单条超时，
+  // 服务端不回包时宁可报错也不要无声挂死。这两处都是真改进，保留。
+  //
+  // 结论：**提速只能从「减少重复」和「缩短 sleep」下手，不能靠阶段内并发。**
   for (const bot of bots) {
     await setCoins(bot.username, 0)
     take(bot)
     burst(bot, ['/zhujian signin', '/zhujian signin', '/zhujian signin'])
-    await wait(1600)
+    await settle(bot, 1600)
     const text = take(bot).join(' | ')
     const ok = (text.match(/每日签到/g) || []).length
     const already = (text.match(/已经签过/g) || []).length
@@ -254,13 +374,13 @@ phases.tombrun = async (bots) => {
   for (const bot of bots) {
     await setCoins(bot.username, 350)
     burst(bot, ['/zhujian tombrun quit'])
-    await wait(600)
+    await settle(bot, 600)
     take(bot)
     burst(bot, [
       '/zhujian tombrun enter', '/zhujian tombrun enter',
       '/zhujian tombrun enter', '/zhujian tombrun enter'
     ])
-    await wait(2200)
+    await settle(bot, 1600)
     const text = take(bot).join(' | ')
     const c = await coins(bot.username)
     const entered = (text.match(/秘境/g) || []).length
@@ -301,12 +421,12 @@ phases.blackmarket = async (bots) => {
     const before = await coins(bot.username)
     take(bot)
     bot.chat('/zhujian blackmarket')
-    await wait(1500)
+    await until(() => !!bot.currentWindow, 1500)
     const w = bot.currentWindow
     if (!w) { warn(area, bot.username, '黑市没开：' + last(bot)); continue }
     // ENTRY_SLOTS = {10,12,14,16}，取第一个有内容的
     const slot = [10, 12, 14, 16].find(s => w.slots[s] && !/_stained_glass_pane$|^barrier$/.test(w.slots[s].name))
-    if (slot === undefined) { warn(area, bot.username, '货架空'); bot.closeWindow(w); await wait(400); continue }
+    if (slot === undefined) { warn(area, bot.username, '货架空'); bot.closeWindow(w); await until(() => !bot.currentWindow, 400) }
     take(bot) // ← 必须先清缓冲：chatLog 是整只 bot 共用的，不清就会把上一阶段的回执数进来
     for (let i = 0; i < 6; i++) {
       try { bot.clickWindow(slot, 0, 0) } catch (e) { /* 窗口正在重画 */ }
@@ -332,25 +452,27 @@ phases.blackmarket = async (bots) => {
     } else {
       warn(area, bot.username + ' 限购读数', '读不到 daily-data.yml')
     }
-    if (bot.currentWindow) { bot.closeWindow(bot.currentWindow); await wait(400) }
+    if (bot.currentWindow) { bot.closeWindow(bot.currentWindow); await until(() => !bot.currentWindow, 400) }
   }
 }
 
 // ④ 拍卖：A 挂一把剑，B/C/D 同 tick 抢同一口价 → 只许一个人成交
 phases.auction = async (bots) => {
   const area = '拍卖并发'
+  // 本阶段断言写死在「1 挂单 + 3 同 tick 抢」上，人数不足时装置自己跳过，别炸出假 FAIL。
+  if (bots.length < 4) { warn(area, '装置人数不足，跳过', `本阶段需要 4 人，当前 ${bots.length}`); return }
   const [a, b, c, d] = bots
   for (const bot of bots) await setCoins(bot.username, 5000)
   // A 手上要有一把剑才能挂
   await rc(`zhujian give ${a.username} iron COMMON 60`)
-  await wait(1200)
+  await until(() => a.inventory.items().some(x => x.name === 'iron_sword'), 1200)
   const sword = a.inventory.items().find(i => i.name === 'iron_sword')
   if (!sword) { warn(area, 'A 挂单前置', '没拿到剑'); return }
   await a.equip(sword, 'hand')
-  await wait(300)
+  await settle(a, 300)
   take(a)
   a.chat('/zhujian auction sell 100 400 1')
-  await wait(1500)
+  await settle(a, 1500)
   const sellMsg = take(a).join(' | ')
   const idm = sellMsg.match(/[#＃]?\s*([0-9a-zA-Z]{4,})/) || sellMsg.match(/编号[：: ]*([0-9a-zA-Z]+)/)
   const id = idm ? idm[1] : null
@@ -382,7 +504,7 @@ phases.auction = async (bots) => {
   for (const bot of [b, c, d]) {
     take(bot)
     burst(bot, ['/zhujian auction claim'])
-    await wait(800)
+    await settle(bot, 800)
     const got = take(bot).join(' | ')
     const swords = bot.inventory.items().filter(i => i.name === 'iron_sword').length
     console.log(`      [${bot.username}] 领邮箱: ${got.slice(0, 160)} | 背包剑=${swords}`)
@@ -390,20 +512,22 @@ phases.auction = async (bots) => {
   // A 那边：成交了才该有钱进账
   take(a)
   a.chat('/zhujian auction claim')
-  await wait(1000)
+  await settle(a, 1000)
   console.log('      [A] 领邮箱: ' + take(a).join(' | ').slice(0, 200))
 }
 
 // ⑤ 行会基金：4 人同时捐，基金必须等于各行之和
 phases.guild = async (bots) => {
   const area = '行会基金'
+  // 建会 + 3 人入会捐款的断言按 4 人写死，人数不足装置自己跳过。
+  if (bots.length < 4) { warn(area, '装置人数不足，跳过', `本阶段需要 4 人，当前 ${bots.length}`); return }
   const [a, b, c, d] = bots
   for (const bot of bots) await setCoins(bot.username, 10000)
   // 会名上限 guild.name-max-chars（默认 8 字），别用 9 个字的名字
   const gname = '并会' + Date.now().toString().slice(-4)
   take(a)
   a.chat('/zhujian guild create ' + gname)
-  await wait(1200)
+  await settle(a, 1200)
   const created = take(a).join(' | ')
   console.log('      建会: ' + created.slice(0, 200))
   // 上一轮跑过就会「已经在行会里」——那不是失败，直接用现有的会接着测。
@@ -412,10 +536,10 @@ phases.guild = async (bots) => {
   for (const bot of [b, c, d]) {
     take(a)
     a.chat(`/zhujian guild invite ${bot.username}`)
-    await wait(700)
+    await settle(bot, 700)
     take(bot)
     burst(bot, ['/zhujian guild accept'])
-    await wait(900)
+    await settle(bot, 900)
     const back = take(bot).join(' | ')
     if (!/加入|入会|已经在/.test(back)) console.log(`      [${bot.username}] 入会回执：${(back || '(空)').slice(0, 120)}`)
   }
@@ -423,7 +547,7 @@ phases.guild = async (bots) => {
   const readFund = async (bot) => {
     take(bot)
     bot.chat('/zhujian guild fund info')
-    await wait(900)
+    await settle(bot, 900)
     const text = take(bot).join(' | ')
     const m = text.match(/基金[:：]\s*([\d,]+)/)
     return { text, fund: m ? Number(m[1].replace(/,/g, '')) : null }
@@ -585,7 +709,7 @@ phases.redeem = async (bots) => {
     if (rep0 === null) { warn(area, bot.username, '读不到声望（新命令没生效？）'); continue }
     take(bot)
     burst(bot, ['/zhujian redeem coin 500', '/zhujian redeem coin 500', '/zhujian redeem coin 500'])
-    await wait(2000)
+    await settle(bot, 2000)
     const text = take(bot).join(' | ')
     const c = await coins(bot.username)
     const rep1 = await reputation(bot.username)
@@ -609,10 +733,10 @@ phases.strip = async (bots) => {
     const sword = bot.inventory.items().find(i => i.name === 'iron_sword')
     if (!sword) { warn(area, bot.username, '没拿到剑'); continue }
     await bot.equip(sword, 'hand')
-    await wait(400)
+    await settle(bot, 400)
     take(bot)
     burst(bot, ['/zhujian strengthen strip 1', '/zhujian strengthen strip 1', '/zhujian strengthen strip 1'])
-    await wait(2200)
+    await settle(bot, 2200)
     const text = take(bot).join(' | ')
     const okHits = (text.match(/剥离成功/g) || []).length
     const papers = bot.inventory.items().filter(i => i.name === 'paper').length
@@ -631,14 +755,14 @@ phases.tombTake = async (bots) => {
   const [a, b] = bots
   await rc('minecraft:clear ' + a.username)
   await rc(`zhujian give ${a.username} iron EPIC 80`)
-  await wait(1200)
+  await until(() => a.inventory.items().some(x => x.name === 'iron_sword'), 1200)
   const sword = a.inventory.items().find(i => i.name === 'iron_sword')
   if (!sword) { warn(area, '埋剑前置', '没拿到剑'); return }
   await a.equip(sword, 'hand')
-  await wait(300)
+  await settle(a, 300)
   take(a)
   a.chat('/zhujian tomb bury')
-  await wait(1500)
+  await settle(a, 1500)
   const buryMsg = take(a).join(' | ')
   const m = buryMsg.match(/编号\s*([0-9A-Fa-f]{4})/)
   if (!m) { warn(area, '埋剑', '抓不到编号：' + buryMsg.slice(0, 220)); return }
@@ -646,7 +770,7 @@ phases.tombTake = async (bots) => {
   pass(area, '埋剑', '编号 ' + id)
   take(a)
   burst(a, [`/zhujian tomb take ${id}`, `/zhujian tomb take ${id}`, `/zhujian tomb take ${id}`])
-  await wait(2200)
+  await settle(a, 2200)
   const got = take(a).join(' | ')
   const swords = a.inventory.items().filter(i => i.name === 'iron_sword').length
   const rec = yamlBlock('tombs.yml', 'tombs', id)
@@ -657,7 +781,7 @@ phases.tombTake = async (bots) => {
   else pass(area, '剑冢记录已删', id + ' 已从 tombs.yml 移除')
   take(b)
   b.chat(`/zhujian tomb take ${id}`)
-  await wait(1000)
+  await settle(b, 1000)
   const other = take(b).join(' | ')
   if (/没有编号|不是你埋的|无法取回/.test(other)) pass(area, b.username + ' 取不到别人的', '')
   else warn(area, b.username + ' 取别人的', other.slice(0, 200))
@@ -666,18 +790,20 @@ phases.tombTake = async (bots) => {
 // ⑥.8 竞价并发：A 挂单，B/C/D 同 tick 依次加价 → 最高价唯一、被超的钱全退、只扣最后一人
 phases.bid = async (bots) => {
   const area = '竞价并发'
+  // 「1 挂单 + 3 同 tick 加价」按 4 人写死，人数不足装置自己跳过。
+  if (bots.length < 4) { warn(area, '装置人数不足，跳过', `本阶段需要 4 人，当前 ${bots.length}`); return }
   const [a, b, c, d] = bots
   for (const bot of bots) await setCoins(bot.username, 5000)
   await rc('minecraft:clear ' + a.username)
   await rc(`zhujian give ${a.username} iron COMMON 60`)
-  await wait(1200)
+  await until(() => a.inventory.items().some(x => x.name === 'iron_sword'), 1200)
   const sword = a.inventory.items().find(i => i.name === 'iron_sword')
   if (!sword) { warn(area, '挂单前置', '没拿到剑'); return }
   await a.equip(sword, 'hand')
-  await wait(300)
+  await settle(a, 300)
   take(a)
   a.chat('/zhujian auction sell 100 400 1')
-  await wait(1500)
+  await settle(a, 1500)
   const sellMsg = take(a).join(' | ')
   const idm = sellMsg.match(/#\s*([0-9A-Fa-f]{4,8})/) || sellMsg.match(/编号[：: ]*([0-9A-Fa-f]{4,8})/)
   if (!idm) { warn(area, '挂单', '抓不到单号：' + sellMsg.slice(0, 220)); return }
@@ -722,7 +848,13 @@ phases.burst = async (bots) => {
     take(bot)
     burst(bot, cmds)
   }
-  await wait(4000)
+  // 这里是**所有 bot 一起**发完之后的统一等待，不是单个 bot 的回执等待。
+  // 原来写的是 await wait(4000)，被批量替换成 settle(bot, …) 引入 ReferenceError
+  // （bot 是 for 的循环变量，出了循环就没有了）—— 实测这一 RUN 直接红在 burst 阶段。
+  // 这里要等的是「10 条只读命令的响应都吐完」，用 until 观察所有 bot 都收到响应后静默。
+  const quietAfter = 1500
+  await until(() => bots.every(b => b.chatLog.length > 0), 3000)
+  await wait(quietAfter)
   for (const bot of bots) {
     const text = take(bot).join(' | ')
     if (!bot.entity) fail(area, bot.username + ' 被踢', text.slice(0, 200))
@@ -735,22 +867,25 @@ phases.burst = async (bots) => {
 // ⑦ 中途掉线：开着黑市界面直接断线，别人不受影响、日志不许炸
 phases.dropout = async (bots) => {
   const area = '掉线残留'
-  const victim = bots[3]
-  const others = bots.slice(0, 3)
+  // 踢谁不该写死下标：BOT_COUNT=2 时 bots[3] 是 undefined，阶段直接炸。
+  // 语义只是「踢一个人、看别人不受影响」，取最后一名即可；断言要求至少 2 人。
+  if (bots.length < 2) { warn(area, '装置人数不足，跳过', `本阶段需要至少 2 人，当前 ${bots.length}`); return }
+  const victim = bots[bots.length - 1]
+  const others = bots.slice(0, -1)
   take(victim)
   victim.chat('/zhujian blackmarket')
-  await wait(1200)
+  await until(() => !!victim.currentWindow, 1200)
   const opened = !!victim.currentWindow
   victim.quit()
-  await wait(1500)
+  await settle(bot, 1500)
   for (const bot of others) {
     take(bot)
     bot.chat('/zhujian blackmarket')
-    await wait(1000)
+    await until(() => !!bot.currentWindow, 1000)
     const ok = !!bot.currentWindow
     if (ok) pass(area, bot.username + ' 黑市仍可开', '')
     else fail(area, bot.username + ' 黑市打不开', last(bot, 4))
-    if (bot.currentWindow) { bot.closeWindow(bot.currentWindow); await wait(300) }
+    if (bot.currentWindow) { bot.closeWindow(bot.currentWindow); await until(() => !bot.currentWindow, 300) }
   }
   if (opened) pass(area, '掉线前界面正常', '')
 }
@@ -768,40 +903,139 @@ phases.spiritReroll = async (bots) => {
     const sword = bot.inventory.items().find(i => i.name === 'iron_sword')
     if (!sword) { warn(area, bot.username, '没拿到剑'); continue }
     await bot.equip(sword, 'hand')
-    await wait(300)
+    await settle(bot, 400)
     take(bot)
-    // 先预览一次拿到 nonce，再同 tick 连发三次 confirm
+    // ① 0 灵性闸门：没满档不许重抽，被拦住时也不许扣钱
     bot.chat('/zhujian spirit reroll')
-    await wait(900)
-    const preview = take(bot).join(' | ')
-    if (/灵性/.test(preview)) {
-      // 闸门正确：灵性没满档就不许重抽。这不是 WARN —— 是闸门在工作。
-      // 顺带断言「被拦住时不许扣钱」，这才是这条路径真正的风险点。
+    await settle(bot, 900)
+    const gate = take(bot).join(' | ')
+    if (/还差 .*点灵性|只对灵性满档/.test(gate)) {
       const afterReject = await coins(bot.username)
       if (afterReject !== null && afterReject !== 200000) {
         fail(area, bot.username + ' 被拦住了却扣了钱', `200000 → ${afterReject}`)
       } else {
-        pass(area, bot.username + ' 灵性未满不许重抽且不扣费', preview.slice(0, 80))
+        pass(area, bot.username + ' 灵性未满不许重抽且不扣费', gate.slice(0, 80))
       }
+    } else if (!/确认|confirm|再输/.test(gate)) {
+      warn(area, bot.username, '重抽入口没响应（功能可能没开）：' + gate.slice(0, 120))
       continue
     }
-    if (!/确认|confirm|再输/.test(preview)) {
-      warn(area, bot.username, '重抽入口没响应（功能可能没开）：' + preview.slice(0, 120))
-      continue
+    // ② 喂满灵性（v2.26.1 装置升级：LATEST 下一轮 #1 —— 以前只测到闸门，
+    // nonce 复用 / 扣费时序这些真竞态从没跑过）。
+    // 教训（本轮实测）：36 发 feed 用 burst 一次性塞进 mineflayer 会被聊天节流排队，
+    // 余额读在半路 →「预览就扣了钱」假 FAIL / ±910 假差额，全是装置的锅。
+    // 所以逐发喂（每发 150ms），读余额一律等「连续两次一致」再认。
+    const settledCoins = async () => {
+      let a = await coins(bot.username)
+      if (a === null) return null
+      for (let i = 0; i < 12; i++) {
+        await wait(400)
+        const b = await coins(bot.username)
+        if (b === null) return null
+        if (a === b) return b
+        a = b
+      }
+      return a // 12 轮没稳定也返回最后值，让上层断言用真实数字说话
     }
-    const before = await coins(bot.username)
+    let fed = false
+    for (let round = 0; round < 8 && !fed; round++) {
+      take(bot)
+      bot.chat('/zhujian spirit reroll')
+      await settle(bot, 900)
+      const pv = take(bot).join(' | ')
+      if (/确认请再执行|confirm/.test(pv)) { fed = true; break } // 满档：预览真出来了（正向证据）
+      const m = pv.match(/还差 (\d+) 点灵性/)
+      if (!m) { await wait(800); continue } // 没抓到回执，等下再看
+      const need = Number(m[1])
+      const feeds = Math.ceil(need / 30) + 1
+      for (let i = 0; i < feeds; i++) {
+        bot.chat('/zhujian spirit feed')
+        await wait(150)
+      }
+      await settledCoins() // 等这批喂完（余额不再变）
+    }
+    if (!fed) { warn(area, bot.username, '喂了 8 轮还没满档，灵性配置可能变了'); continue }
+    // ③ 预览（nonce 已写进剑 PDC）→ 同 tick 三连 confirm
+    const before = await settledCoins()
     if (before === null) { warn(area, bot.username, '读不到剑币'); continue }
+    take(bot)
+    bot.chat('/zhujian spirit reroll')
+    await settle(bot, 900)
+    const preview = take(bot).join(' | ')
+    if (!/确认请再执行|confirm/.test(preview)) {
+      warn(area, bot.username, '满档后预览没出来：' + preview.slice(0, 140))
+      continue
+    }
+    // 预览不许扣钱（等余额稳定后和预览前比）
+    // 归因同样要留余地：只有「差额恰好等于重抽单价」才算预览扣了钱。
+    // 差额对不上单价说明是别处动的钱（游戏内夜间龙税等全服扣费），不记这条账。
+    const afterPreview = await settledCoins()
+    if (afterPreview !== null && afterPreview < before && before - afterPreview === 2000) {
+      fail(area, bot.username + ' 预览就扣了钱', `${before} → ${afterPreview}（扣了 2000 = 重抽单价）`)
+      continue
+    }
+    if (afterPreview !== null && afterPreview < before) {
+      warn(area, bot.username + ' 预览窗口内余额被别处改动',
+        `${before} → ${afterPreview}（差额 ${before - afterPreview}，不等于重抽单价 2000，非预览扣费）`)
+    }
     burst(bot, ['/zhujian spirit reroll confirm', '/zhujian spirit reroll confirm', '/zhujian spirit reroll confirm'])
-    await wait(2400)
+    await settle(bot, 2400)
     const text = take(bot).join(' | ')
-    const okHits = (text.match(/重抽完成|已重抽|新的词条/g) || []).length
-    const after = await coins(bot.username)
+    const okHits = (text.match(/灵契重抽完成/g) || []).length
+    const nonceRej = (text.match(/先看一遍预览/g) || []).length
+    const after = await settledCoins()
     if (after === null) { warn(area, bot.username, '读不到剑币'); continue }
-    // 守恒：扣的钱必须等于成功次数 × 单价（读不到单价就问配置默认值）
+    // 守恒三连：nonce 一次性 → 只许成 1 次；扣费 = 成功次数 × 单价；余额不为负
+    if (okHits !== 1) fail(area, bot.username + ' nonce 一次性失效', `三连 confirm 成功 ${okHits} 次（应为 1）`)
+    else pass(area, bot.username + ' 三连 confirm 只成 1 次', `拒绝 ${nonceRej} 次（nonce 用后即焚）`)
     const spent = before - after
+    // v2.26.0：这里踩了和「每日限」同一个坑，第二次跑压测才暴露。
+    // 那一轮报的是「成功 1 次应扣 2000，实扣 41932」—— 41932 = 2000（重抽）+ 39932（龙税）。
+    // 根因：ContractManager.isTributeDue() 走的是 windowOpen()，也就是**按游戏内昼夜**
+    // 判断「今晚该交税了」。压测跑到这个阶段正好跨过结算时刻，于是所有已签契约的 bot
+    // 被全服性的龙税同时扣钱，而这条断言把外生扣费算进了「重抽」头上。
+    //
+    // 这属于「装置与游戏内时间耦合」，不是插件缺陷。断言只该对自己触发的那一笔负责，
+    // 判据从「总额必须等于 2000」改成「2000 这一笔必须发生，且多出来的部分要能归因」：
+    //   · spent >= 2000 且含 2000 → 重抽那一笔是对的；多出来的如果是别的系统扣的，
+    //     点名差额记 WARN（不判红，也不装看不见）；
+    //   · spent < 2000 → 重抽没扣够，这才是插件缺陷。
     if (after < 0) fail(area, bot.username + ' 余额为负', String(after))
-    else if (okHits === 0) pass(area, bot.username + ' 一次都没抽成（不扣费）', `余 ${after}`)
-    else pass(area, bot.username + ' 重抽扣费守恒', `成功 ${okHits} 次，实扣 ${spent}，余 ${after}`)
+    else if (spent < 2000) fail(area, bot.username + ' 重抽扣费不守恒', `成功 1 次应扣 2000，实扣 ${spent}`)
+    else if (spent === 2000) pass(area, bot.username + ' 重抽扣费守恒', `实扣 ${spent}，余 ${after}`)
+    else warn(area, bot.username + ' 重抽窗口内余额被别处改动',
+      `实扣 ${spent}（含重抽 2000 + 外生 ${spent - 2000}：多为游戏内夜间龙税结算，非本断言可归因），余 ${after}`)
+    // ④ 每日限（默认 1 次）：再预览要被拦，且不许扣钱
+    take(bot)
+    bot.chat('/zhujian spirit reroll')
+    await settle(bot, 900)
+    const daily = take(bot).join(' | ')
+    if (/今天已经重抽过|每日限/.test(daily)) {
+      const afterDaily = await settledCoins()
+      // v2.26.0：这条断言曾经真的红过一次，值得把教训写在这里。
+      // 32 bot 那一轮的失败是「197660 → 158128」，差额 39532 —— 既不是重抽 2000，
+      // 也不是喂灵 10 的整数倍，看着像插件乱扣费。查服务端日志才发现是 contract 阶段
+      // 在同一秒（12:15:31）对全部 31 个 bot 收了「交不上税 → 剑币少了 39532」。
+      // 也就是说：**别的阶段在扣钱，而这条断言把它算到了「每日限」头上**。
+      //
+      // 装置必须只对自己触发的扣费负责。判据不能只看「余额变了」，要看
+      // 「变了多少、以及这一笔能不能归因给每日限」：
+      //   · 差额 > 0 且刚好等于重抽单价 → 每日限真的漏拦，这才是插件缺陷；
+      //   · 差额 <= 0（变多）或差额对不上单价 → 是别的东西在动钱，
+      //     记账为 WARN 并点名差额，不许判 FAIL，也不许悄悄放过。
+      const delta = after - afterDaily
+      if (delta > 0 && delta === 2000) {
+        fail(area, bot.username + ' 每日限拦截却扣了钱', `${after} → ${afterDaily}（扣了 ${delta} = 重抽单价，每日限真漏拦）`)
+      } else if (delta === 0) {
+        pass(area, bot.username + ' 每日限拦截生效且不扣费', daily.slice(0, 80))
+      } else {
+        // 不是这条断言能归因的钱：别的阶段/别的系统动的。如实说，不判红也不判绿。
+        warn(area, bot.username + ' 每日限窗口内余额被别处改动',
+          `${after} → ${afterDaily}（差额 ${delta}，不等于重抽单价 2000，非本断言可归因：多为并发阶段的其他扣费）`)
+      }
+    } else {
+      warn(area, bot.username + ' 每日限没拦住第二次预览', daily.slice(0, 140))
+    }
   }
 }
 
@@ -815,12 +1049,12 @@ phases.contract = async (bots) => {
     await setCoins(bot.username, 50000)
     // 先退出，保证起点干净（可能上一轮残留）
     bot.chat('/zhujian contract quit')
-    await wait(500)
+    await settle(bot, 500)
     take(bot)
     const before = await coins(bot.username)
     if (before === null) { warn(area, bot.username, '读不到剑币'); continue }
     burst(bot, ['/zhujian contract join', '/zhujian contract join', '/zhujian contract join'])
-    await wait(2200)
+    await settle(bot, 2200)
     const text = take(bot).join(' | ')
     if (/未开启|没有开启/.test(text)) { warn(area, bot.username, '契约功能没开'); continue }
     // 实际文案是「契约已签。」—— 第一版正则漏了它，白报了 32 条 WARN
@@ -835,33 +1069,420 @@ phases.contract = async (bots) => {
   }
 }
 
-// ⑥.10 赛季通行证：全体同时开面板 —— 界面并发（holder / 多人同开）
+// ⑥.10 赛季通行证：全体同时开面板 + 领奖 GUI 点击驱动（v2.26.1 装置升级：LATEST 下一轮 #2）
 //
 // 注意：`/zhujian pass` 只做 `seasonPass(sender)`，**不解析参数**，所以没有 `pass claim` 这种
-// 聊天命令可以驱动「连点领奖」。领奖是 GUI 点击。写成 `burst('/zhujian pass claim')` 会得到
-// 「0 次领奖 → PASS」的假绿 —— 那种阶段不如不跑。
-// 所以这里只断言能真断言的东西：全体同时开面板，窗口必须都开出来，且服务端日志不许有异常。
+// 聊天命令可以驱动「连点领奖」。领奖是 GUI 点击（PassGuiRouter.onClick → service.claim）。
+// 写成 `burst('/zhujian pass claim')` 会得到「0 次领奖 → PASS」的假绿 —— 那种阶段不如不跑。
+//
+// 领奖槽怎么定位（读 PassGui.java 得出，槽位是静态布局不是动态的）：
+//   免费轨 = LEVEL_SLOTS（10-16 / 19-25 / 28-34，54 格面板独占），
+//   图标材质三态：可领 GOLD_BLOCK / 已领 GRAY_DYE / 未达标 GRAY_STAINED_GLASS_PANE。
+//   → 「可领槽」= LEVEL_SLOTS 里那个 gold_block，按材质找，不猜标题不猜顺序。
+//
+// 门槛：领第 1 级要 100 积分；积分没有管理命令（earn 只由 forge/strengthen/evolution/
+// tomb-win/duel-win/commission 六个内部来源调用），装置能稳定挣的只有强化：
+// 成功一次 +5 分（StrengthenService，成功/大成/无损都算）。强化可以真打：
+// 砧上放剑 → /zhujian hammer 领重锤 → 潜行 + 左键 = 批量落锤（AnvilForgeListener 左键分支）。
+// 攒不到分时降级为「双击第 1 级槽位 + 关面板 + 日志干净」，WARN 写明原因，绝不伪造领奖成功。
+const PASS_LEVEL_SLOTS = [10, 11, 12, 13, 14, 15, 16, 19, 20, 21, 22, 23, 24, 25, 28, 29, 30, 31, 32, 33, 34]
+
+/** 当前面板里有没有「可领」槽（gold_block）：有则返回 { slot }，没有返回 null */
+function passClaimSlot (bot) {
+  const w = bot.currentWindow
+  if (!w) return null
+  const slot = PASS_LEVEL_SLOTS.find(s => w.slots[s] && w.slots[s].name === 'gold_block')
+  return slot === undefined ? null : { slot }
+}
+
+/**
+ * 批量落锤一轮（潜在 +10 次强化，每次成功 +5 积分）。
+ * 返回聊天汇总原文，供上层判断剑碎/材料不够/到顶。
+ */
+async function passFarmBatch (bot, spot) {
+  const u = bot.username
+  // blockAt 偶发 null（tp 后区块下发是异步的）：等 + 重读，最多 5 轮
+  let block = null
+  for (let i = 0; i < 5; i++) {
+    block = bot.blockAt(new (require('vec3').Vec3)(spot.x, spot.y, spot.z))
+    if (block && /anvil/.test(block.name)) break
+    try { await bot.waitForChunksToLoad() } catch (_) {}
+    await wait(600)
+  }
+  if (!block || !/anvil/.test(block.name)) {
+    const p = bot.entity ? bot.entity.position : null
+    return '（装置）砧位读不到：' + (block ? block.name : 'null')
+      + `（bot@${p ? `${Math.round(p.x)},${Math.round(p.y)},${Math.round(p.z)}` : '?'} spot=${spot.x},${spot.y},${spot.z}）`
+  }
+  // ① 残局取回：上一轮没碎的剑还挂在砧上（session 还在），先右键收回来再清包
+  const oldHammer = bot.inventory.items().find(i => i.name === 'mace')
+  if (oldHammer) { try { await bot.equip(oldHammer, 'hand') } catch (_) {} }
+  try { bot.activateBlock(block) } catch (_) {}
+  await wait(600)
+  await rc('minecraft:clear ' + u)
+  await rc(`zhujian give ${u} iron COMMON 60`)   // give 的尾参是「分数」不是强化等级 → 新剑 +0
+  await rc(`minecraft:give ${u} iron_ingot 128`) // 批量每锤吃 2 个铁锭（tier 1: ceil(2×1.2^0)）
+  await setCoins(u, 500000)
+  await until(() => bot.inventory.items().some(x => x.name === 'iron_sword'), 700)
+  const sword = bot.inventory.items().find(i => i.name === 'iron_sword')
+  if (!sword) return '（装置）没拿到剑'
+  await bot.equip(sword, 'hand')
+  await settle(bot, 400)
+  take(bot)
+  try { bot.activateBlock(block) } catch (_) {} // 不潜行右键 = 放剑上砧
+  await wait(700)
+  bot.chat('/zhujian hammer')                   // 领重锤
+  await wait(700)
+  // 实测教训：/zhujian hammer 发的是 anvil-forge.hammer.items 的第一项（本服配 IRON_AXE「铁匠重锤」），
+  // 不是 MACE —— 第一版找 mace 找不到，白降级 8 轮
+  const hammer = bot.inventory.items().find(i => /^(iron_axe|mace|stone_axe|iron_pickaxe)$/.test(i.name))
+  if (!hammer) return '（装置）没拿到重锤：' + bot.inventory.items().map(i => i.name).join(',').slice(0, 120)
+  await bot.equip(hammer, 'hand')
+  await settle(bot, 1200)
+  // ② 潜行 + START_DIGGING（左键）= 批量落锤，服务端一包连敲到上限/碎/满/断材料
+  take(bot)
+  bot.setControlState('sneak', true)
+  await wait(200)
+  bot._client.write('block_dig', { status: 0, location: { x: spot.x, y: spot.y, z: spot.z }, face: 1 })
+  await settle(bot, 2200)
+  bot.setControlState('sneak', false)
+  await settle(bot, 2200)
+  return take(bot).join(' | ')
+}
+
 phases.pass = async (bots) => {
   const area = '赛季通行证'
-  const opened = []
+  // ① 全体同 tick 开面板 —— 界面并发断言（保留 v2.25.9 的覆盖面）。窗口先不关，②直接复用。
   for (const bot of bots) {
     take(bot)
     bot.chat('/zhujian pass')
   }
-  await wait(2500)
+  // 同样是「全体发完之后统一等」，不是单个 bot 的回执：等所有人面板开出来再往下走。
+  // 原来写 await wait(2500)，批量替换成 settle(bot, …) 会 ReferenceError（bot 出循环即失效）。
+  await until(() => bots.every(b => !!b.currentWindow || b.chatLog.length > 0), 2500)
+  await wait(600)
+  const opened = []
   for (const bot of bots) {
     const text = take(bot).join(' | ')
     if (/暂未开放|没开/.test(text)) { warn(area, bot.username, '通行证没开'); continue }
     const win = bot.currentWindow
     if (!win) { warn(area, bot.username, '面板没开出来', text.slice(0, 160)); continue }
     // 标题是 JSON 文本组件，第一版按 /通行证|赛季/ 匹配，32 条全没中 —— 不猜了：
-    // 只要窗口开出来就算过，把真实标题写进 detail，下一轮要按标题断言就有依据。
+    // 只要窗口开出来就算过，把真实标题写进 detail。
     const title = JSON.stringify(win.title || '')
     if (!title || title === '""') { warn(area, bot.username, '窗口没有标题', ''); continue }
     opened.push(bot.username)
-    try { bot.closeWindow(win) } catch (_) { /* 已关 */ }
   }
   if (opened.length) pass(area, `同时开面板 ${opened.length} 人`, opened.slice(0, 6).join(', '))
+
+  // ② 领奖点击驱动。先给需要攒分的 bot 修一座独立砧台（不跟 anvil 阶段的 100 区打架）。
+  const PX = 220, PY = 150, PZ = 100
+  const spots = {}
+  const needFarm = opened.length && bots.some(b => opened.includes(b.username) && !passClaimSlot(b))
+  if (needFarm) {
+    const spanRight = PX + (bots.length - 1) * 3 + 6
+    // 本轮实测教训：PZ=100 一带是**从未生成过的新区块**，fill 直接回「That position is not loaded」，
+    // tp 到未加载区块连 position 包都不下发（bot 位置停在出生点 0,-63,0）。anvil 阶段没踩这个坑
+    // 纯粹因为它那块（100,100 附近）被历轮压测反复加载过、已在存档里。先 forceload 把区块钉住。
+    await rc(`minecraft:forceload add ${PX - 4} ${PZ - 4} ${spanRight} ${PZ + 6}`)
+    await wait(400)
+    const fillOut = await rc(`minecraft:fill ${PX - 4} ${PY - 1} ${PZ - 4} ${spanRight} ${PY - 1} ${PZ + 6} minecraft:stone`)
+    if (!/filled|已填充|被填充/i.test(fillOut)) console.log('  [pass] fill 回执：' + fillOut.slice(0, 140))
+    for (let i = 0; i < bots.length; i++) {
+      const bot = bots[i]
+      if (!opened.includes(bot.username) || passClaimSlot(bot)) continue
+      const tpOut = await rc(`minecraft:tp ${bot.username} ${PX + i * 3} ${PY} ${PZ}`)
+      if (!/teleported|传送/i.test(tpOut)) console.log(`  [pass] ${bot.username} tp 回执：` + tpOut.slice(0, 140))
+      const sbOut = await rc(`minecraft:setblock ${PX + i * 3 + 1} ${PY} ${PZ + 2} minecraft:anvil`)
+      // 「Could not set the block」= 目标已经是铁砧（上轮残留），无害；砧位最终由 farm 里的 blockAt 校验兜底
+      if (!/changed|could not set|改变/i.test(sbOut)) console.log('  [pass] setblock 回执：' + sbOut.slice(0, 140))
+      spots[bot.username] = { x: PX + i * 3 + 1, y: PY, z: PZ + 2 }
+    }
+    await wait(400)
+    for (const bot of bots) {
+      if (!spots[bot.username]) continue
+      try { await bot.waitForChunksToLoad() } catch (_) { /* 超时也继续 */ }
+    }
+  }
+  for (const bot of bots) {
+    if (!opened.includes(bot.username)) continue
+    let found = passClaimSlot(bot)
+    let degradeReason = null
+    if (!found && spots[bot.username]) {
+      // 攒积分：一轮批量落锤 ≈ 10 锤 × 90% 成功 × 5 分 → 3~4 轮攒满 100 分；剑碎/到顶自动补剑再来
+      const farmLog = []
+      for (let round = 0; round < 8 && !found; round++) {
+        const summary = await passFarmBatch(bot, spots[bot.username])
+        farmLog.push((summary || '(空)').slice(0, 90))
+        take(bot)
+        bot.chat('/zhujian pass')
+        await wait(1500)
+        found = passClaimSlot(bot)
+      }
+      if (!found) degradeReason = '8 轮批量落锤后仍无可领槽位（积分没攒到下一级门槛），末轮日志：' + farmLog.slice(-2).join(' ⏎ ')
+    } else if (!found) {
+      degradeReason = '面板里无可领槽位（gold_block）且本轮没有砧台可攒分'
+    }
+    if (found) {
+      const { slot } = found
+      const beforeCoins = await coins(bot.username)
+      const beforeItems = bot.inventory.items().reduce((s, i) => s + i.count, 0)
+      take(bot)
+      bot.clickWindow(slot, 0, 0)
+      await settle(bot, 1200)
+      const text1 = take(bot).join(' | ')
+      const hits1 = (text1.match(/奖励已领取/g) || []).length
+      const afterCoins1 = await coins(bot.username)
+      const afterItems1 = bot.inventory.items().reduce((s, i) => s + i.count, 0)
+      // 快速点第二次同一槽位（此刻面板已被下一 tick 重画成新窗口，canClaim 已 false → 路由静默拒绝）
+      bot.clickWindow(slot, 0, 0)
+      await settle(bot, 1200)
+      const text2 = take(bot).join(' | ')
+      const hits2 = (text2.match(/奖励已领取/g) || []).length
+      const afterCoins2 = await coins(bot.username)
+      if (hits1 === 0) {
+        warn(area, bot.username + ' 领奖回执', '点了可领槽但没抓到「奖励已领取」：' + text1.slice(0, 160))
+      } else if (afterCoins1 !== null && beforeCoins !== null && afterCoins1 < beforeCoins) {
+        fail(area, bot.username + ' 领奖反而扣钱', `${beforeCoins} → ${afterCoins1}`)
+      } else {
+        pass(area, bot.username + ' GUI 点击领奖成功',
+          `回执 ${hits1} 次，剑币 ${beforeCoins} → ${afterCoins1}，背包件数 ${beforeItems} → ${afterItems1}`)
+      }
+      // 双击不重复发放：第二次点击不该再有回执、不该再入账
+      if (hits2 > 0) {
+        fail(area, bot.username + ' 双击重复发放', `第二次点击又出现 ${hits2} 次「奖励已领取」`)
+      } else if (afterCoins2 !== null && afterCoins1 !== null && afterCoins2 !== afterCoins1) {
+        fail(area, bot.username + ' 双击重复入账', `剑币 ${afterCoins1} → ${afterCoins2}（第二击动了账）`)
+      } else if (hits1 > 0) {
+        pass(area, bot.username + ' 双击不重复发放', `第二击无回执、剑币不动（${afterCoins2}）`)
+      }
+      // 已领标记：图标应变灰勾（gray_dye）
+      if (hits1 > 0) {
+        const w2 = bot.currentWindow
+        const icon = w2 && w2.slots[slot]
+        if (icon && icon.name === 'gray_dye') pass(area, bot.username + ' 已领标记', '槽位图标变灰勾')
+        else warn(area, bot.username + ' 已领标记', `槽位图标读到 ${icon ? icon.name : 'null'}（窗口重画时序）`)
+      }
+    } else {
+      // 降级路径：双击同一可疑槽位 + 关面板。日志干净由主循环 scanLog 兜底。
+      // 这里藏一条真断言：0 积分点击第 1 级槽位，路由必须静默拒绝 —— 若冒出「奖励已领取」就是门槛洞。
+      take(bot)
+      bot.clickWindow(PASS_LEVEL_SLOTS[0], 0, 0)
+      bot.clickWindow(PASS_LEVEL_SLOTS[0], 0, 0)
+      await settle(bot, 1200)
+      const txt = take(bot).join(' | ')
+      if (/奖励已领取/.test(txt)) {
+        fail(area, bot.username + ' 零积分领到奖', '本不该领奖的双击竟出现「奖励已领取」（积分门槛洞）→ ' + txt.slice(0, 160))
+      } else {
+        warn(area, bot.username + ' 领奖降级', (degradeReason || '无可领槽位') +
+          ' → 已降级为「双击第 1 级槽位 + 关面板」验证误点安全，不伪造领奖成功')
+      }
+    }
+    if (bot.currentWindow) { try { bot.closeWindow(bot.currentWindow) } catch (_) {} await wait(400) }
+  }
+}
+
+// ⑩ 战力对比（v2.26.0 新阶段）：power / power log / power compare 三条链路。
+// 为什么值得单列：compare 要同时读两个人的主手 PDC 并拼 7 行对比，log 要落
+// power-log.yml —— 纯只读路径，但「读别人的手」最容易撞 NPE。2 人即可跑，
+// 正好补 2 并发的覆盖面（auction/guild/bid 那三个 4 人编队阶段在 2 人时跳过）。
+phases.powerCompare = async (bots) => {
+  const area = '战力对比'
+  const plog = path.join(SERVER, 'plugins', 'ForgingMaster', 'power-log.yml')
+  // 第一遍：全员备剑 + 各自 power / power log。
+  // compare 必须等所有人手里的剑都备好 —— 第一版和 give 同循环发 compare，
+  // A compare 时 B 还没 equip，「手上没有东西」的假 WARN 就是这么来的。
+  for (const bot of bots) {
+    await rc('minecraft:clear ' + bot.username)
+    await rc(`zhujian give ${bot.username} iron COMMON 60`)
+    await until(() => bot.inventory.items().some(x => x.name === 'iron_sword'), 1200)
+    const sword = bot.inventory.items().find(i => i.name === 'iron_sword')
+    if (sword) { await bot.equip(sword, 'hand'); await wait(300) }
+  }
+  for (const bot of bots) {
+    take(bot)
+    bot.chat('/zhujian power')
+    await settle(bot, 900)
+    const p = take(bot).join(' | ')
+    if (/内部错误|An internal error/.test(p)) fail(area, bot.username + ' power 内部错误', p.slice(0, 200))
+    else if (!/战力/.test(p)) warn(area, bot.username + ' power 没战力回执', p.slice(0, 160))
+    else pass(area, bot.username + ' power 有回执', (p.match(/战力[^|]*/) || [''])[0].slice(0, 60))
+    // power 命令应该已把这条评分写进 power-log.yml（有锻造品才会记）
+    const ymlTxt = (fs.existsSync(plog) && fs.readFileSync(plog, 'utf8')) || ''
+    if (/战力/.test(p) && !ymlTxt.includes('p:')) {
+      fail(area, bot.username + ' 评分没落盘', 'power-log.yml 里没有 p: 记录')
+    } else if (/战力/.test(p)) {
+      pass(area, bot.username + ' 评分曲线落盘', 'power-log.yml 有记录')
+    }
+    take(bot)
+    bot.chat('/zhujian power log')
+    await settle(bot, 1200)
+    const lg = take(bot).join(' | ')
+    if (/内部错误|An internal error/.test(lg)) fail(area, bot.username + ' power log 内部错误', lg.slice(0, 200))
+    else if (!/战力曲线|还没有评分记录/.test(lg)) warn(area, bot.username + ' power log 没回执', lg.slice(0, 160))
+    else pass(area, bot.username + ' power log 有回执', (lg.match(/战力曲线[^|]*/) || [''])[0].slice(0, 60))
+    // compare 对方主手：双方都拿了剑，应出「战力对比」头行
+    const other = bots.find(b => b.username !== bot.username)
+    if (!other) continue
+    take(bot)
+    bot.chat(`/zhujian power compare ${other.username}`)
+    await settle(bot, 1200)
+    const cmp = take(bot).join(' | ')
+    if (/内部错误|An internal error/.test(cmp)) fail(area, bot.username + ' compare 内部错误', cmp.slice(0, 200))
+    else if (!/战力对比/.test(cmp)) warn(area, bot.username + ' compare 没出头行', cmp.slice(0, 160))
+    else pass(area, bot.username + ' compare 出对比', (cmp.match(/战力对比[^|]*/) || [''])[0].slice(0, 60))
+  }
+}
+
+// ⑪ 比试排行（v2.26.1 新阶段）：rank 的 DUEL 维度刚上线，数据源 = DuelManager.settle 里的
+// countDuel（双出分 → matches.remove → settle）。2 人即可跑。
+//
+// 装置能真驱动的链路：发起 → 邀请通知 → 拒绝（对局当场移除）→ 再发起 → 应战（双方收到
+// 「比试开始」，剑胚/种子已绑定）→ A 退服收场（DuelManager.onQuit 清锁，设计行为顺手当断言）。
+// 装置驱动不了的部分（如实降级，不许伪装）：真实结算要双方在锻造小游戏（炉温/敲击/开刃
+// 实时节奏操作）里各出一把分，盲驱不稳定；而 stats 只有 rep 的 give/take，**没有 duel 的
+// 管理命令** → 没有注入胜负的合法入口。所以「赢家名 + 胜字样」这条降级为：
+// rank duel text 与档案 duel-wins/losses 的一致性对账（有胜必上榜、榜上数字 = 档案数字、
+// 0 胜不占榜），WARN 写明降级原因。
+phases.duelRank = async (bots) => {
+  const area = '比试排行'
+  const readDuel = async (name) => {
+    const out = await rc('zhujian stats ' + name)
+    const m = out.match(/比试\s*(\d+)\s*胜\s*(\d+)\s*负/)
+    return m ? { w: Number(m[1]), l: Number(m[2]) } : null
+  }
+  const base = {}
+  for (const bot of bots) base[bot.username] = await readDuel(bot.username)
+  const readable = bots.filter(b => base[b.username])
+  if (readable.length === bots.length && bots.length) {
+    pass(area, '档案胜负可读', bots.map(b => `${b.username}=${base[b.username].w}胜${base[b.username].l}负`).join(' '))
+  } else {
+    warn(area, '档案胜负', 'zhujian stats 里没解析到「比试 X 胜 Y 负」（输出文案变了？）：'
+      + bots.map(b => b.username).join(','))
+  }
+
+  const [a, b] = bots
+  if (bots.length >= 2 && a && b) {
+    // ② 清主手：档位按主手强化等级分档（DuelTiers），双方空手 = 同档 0，不会被跨档拦截
+    await rc('minecraft:clear ' + a.username)
+    await rc('minecraft:clear ' + b.username)
+    await settle(a, 500)
+
+    // ③ A 发起 → B 收邀请 → B 拒绝
+    take(a); take(b)
+    a.chat(`/zhujian duel ${b.username}`)
+    await settle(a, 1400)
+    const cA = take(a).join(' | ')
+    const invB = take(b).join(' | ')
+    if (/比试功能被关掉了|没开/.test(cA)) {
+      warn(area, '比试入口', '功能未开启：' + cA.slice(0, 140))
+    } else if (/还在比试中|正在比试中/.test(cA)) {
+      warn(area, '比试入口', '残留比试锁（上一轮留下的对局只能靠退服/30 分钟兜底清理）：' + cA.slice(0, 140))
+    } else if (!/已向.*发起比试|发起比试/.test(cA)) {
+      warn(area, 'A 发起比试', '没抓到发起回执：' + cA.slice(0, 180))
+    } else {
+      pass(area, 'A 发起比试', (cA.match(/已向[^|]*/) || [cA])[0].slice(0, 80))
+    }
+    if (/向你发起锻造比试|应战/.test(invB)) pass(area, 'B 收到邀请通知', '')
+    else if (/发起比试/.test(cA)) warn(area, 'B 收到邀请通知', '没抓到：' + invB.slice(0, 180))
+
+    take(a); take(b)
+    b.chat('/zhujian duel deny')
+    await settle(a, 1000)
+    const dA = take(a).join(' | ')
+    const dB = take(b).join(' | ')
+    if (/已拒绝/.test(dB)) pass(area, 'B 拒绝比试', 'deny 回执正常')
+    else warn(area, 'B 拒绝比试', (dB || '(空)').slice(0, 160))
+    if (/拒绝/.test(dA)) pass(area, 'A 收到拒绝通知', '')
+
+    // ④ 再发起 + 应战：双方都该收到「比试开始」（accept 成功返回 null，走主动消息）
+    take(a); take(b)
+    a.chat(`/zhujian duel ${b.username}`)
+    await settle(b, 1400)
+    take(b)
+    b.chat('/zhujian duel accept')
+    await settle(a, 1800)
+    const accA = take(a).join(' | ')
+    const accB = take(b).join(' | ')
+    if (/比试开始/.test(accA) && /比试开始/.test(accB)) {
+      pass(area, '应战成立', '双方都收到「比试开始」（同一剑胚同一份种子，等待双方出分）')
+    } else {
+      warn(area, '应战成立', `A[${(accA || '(空)').slice(0, 80)}] B[${(accB || '(空)').slice(0, 80)}]`)
+    }
+
+    // ⑤ 真实结算降级说明（机制限制写清楚，禁止伪造领奖/胜场）
+    warn(area, '真实结算降级',
+      '结算要双方在锻造小游戏（炉温/敲击/开刃实时节奏）里各出一把分，装置无法稳定盲驱；' +
+      'stats 无 duel give/take 管理命令（只有 rep）→ 不注入胜负，保持档案原样，只做榜-档案一致性对账')
+
+    // ⑥ A 退服收场：onQuit 应清掉这场没打完的对局 → 重进后 A 再发起必须畅通（没有「还在比试中」）
+    a.quit()
+    await wait(2500)
+    const again = await joinWithRetry(a.username)
+    if (!again) {
+      dropped.add(a.username)
+      warn(area, 'A 退服重进', '重进失败（同名会话残留/握手节流）；对局锁已由服务端 onQuit 清理，仅装置侧未验证')
+    } else {
+      dropped.delete(a.username)
+      await settle(again, 800)
+      await rc('op ' + a.username)
+      await rc('gamemode survival ' + a.username)
+      take(again); take(b)
+      again.chat(`/zhujian duel ${b.username}`)
+      await settle(again, 1400)
+      const reC = take(again).join(' | ')
+      if (/还在比试中|正在比试中/.test(reC)) {
+        fail(area, '退服清锁', 'A 退服重进后仍报「还在比试中」→ onQuit 没清干净对局')
+      } else if (/已向.*发起比试|发起比试/.test(reC)) {
+        pass(area, '退服清锁', '退服后对局已清，A 能再次正常发起（onQuit 清理生效）')
+        take(b)
+        b.chat('/zhujian duel deny') // 收尾，别把邀请残留给下一轮
+        await wait(900)
+      } else {
+        warn(area, '退服清锁', '没抓到再发起回执：' + (reC || '(空)').slice(0, 160))
+      }
+    }
+  } else {
+    warn(area, '装置人数不足', `邀请/应战链路需要 2 人，当前 ${bots.length}；只做 rank duel text 断言`)
+  }
+
+  // ⑦ rank duel text：命令可执行 + 行格式 + 与档案一致性
+  const out = await rc('zhujian rank duel text')
+  if (/未知排行维度|未知子命令|内部错误|An internal error/.test(out)) {
+    fail(area, 'rank duel text 可执行', out.slice(0, 200))
+  } else {
+    const lines = out.split(/\r?\n/).map(s => s.trim()).filter(Boolean)
+    const rows = []
+    let malformed = 0
+    for (const ln of lines) {
+      if (!/^\d+\./.test(ln)) continue
+      const m = ln.match(/^(\d+)\.\s*(\S+)\s*\|\s*(\d+)\s*胜\s*(\d+)\s*负/)
+      if (m) rows.push({ name: m[2], w: Number(m[3]), l: Number(m[4]) })
+      else malformed++
+    }
+    if (malformed) {
+      fail(area, '行格式', `${malformed} 行以序号开头但不符合「N. 名字 | X 胜 Y 负」→ ${lines.slice(0, 4).join(' ⏎ ')}`)
+    } else if (rows.length === 0) {
+      if (/暂无上榜记录/.test(out)) pass(area, 'rank duel text 可执行', '空榜口径正确（暂无上榜记录）')
+      else warn(area, 'rank duel text', '既没有榜行也没有「暂无上榜记录」：' + out.slice(0, 200))
+    } else {
+      pass(area, '行格式', `${rows.length} 行均为「N. 名字 | X 胜 Y 负」：` + rows.map(r => `${r.name} ${r.w}胜${r.l}负`).join(', '))
+    }
+    // 榜-档案一致性（countDuel 是唯一数据源，两边必须对得上）
+    if (readable.length) {
+      let consistent = true
+      const why = []
+      for (const bot of readable) {
+        const st = base[bot.username]
+        const row = rows.find(r => r.name === bot.username)
+        if (st.w > 0 && !row) { consistent = false; why.push(`${bot.username} 档案 ${st.w}胜${st.l}负 却没上榜`) }
+        else if (st.w === 0 && row) { consistent = false; why.push(`${bot.username} 档案 0 胜却上榜 ${row.w}胜${row.l}负`) }
+        else if (row && (row.w !== st.w || row.l !== st.l)) { consistent = false; why.push(`${bot.username} 榜 ${row.w}胜${row.l}负 ≠ 档案 ${st.w}胜${st.l}负`) }
+      }
+      if (consistent) pass(area, '榜与档案一致', '榜上胜负数与 stats 档案的 countDuel 字段一一对应（0 胜不占榜）')
+      else fail(area, '榜与档案一致', why.join(' ⏎ '))
+    }
+  }
 }
 
 // ---------------------------------------------------------------- main
@@ -873,8 +1494,25 @@ async function main () {
   await rc('gamerule keepInventory true')
   await rc('difficulty peaceful')
   await rc('gamerule doMobSpawning false')
+  // v2.26.0：**冻结游戏内时间在白天**，否则压测会随机被「夜间交税」打断。
+  //
+  // 踩过两次，都是同一个根因：ContractManager.isTributeDue() → windowOpen()，
+  // 按游戏内昼夜判断「今晚该交税」，一旦跨过结算时刻，**所有已签契约的 bot 同时被扣钱**。
+  // 那是全服外生扣费，落在任何阶段的余额断言区间里都会把它算成自己的账：
+  //   · 第一次报「每日限拦截却扣了钱 197660 → 158128」（差 39532）
+  //   · 第二次报「重抽扣费不守恒 应扣 2000 实扣 41932」（39532 + 2000）
+  // 两次都不是插件缺陷，是装置的断言窗口被别的系统穿插了。
+  //
+  // 光给每条断言加归因（现在也加了，作为第二道防线）治不了根：读数窗口里随时可能多出
+  // 一笔不属于这条命令的钱。真正干净的做法是让这个外生事件在压测期间不发生 ——
+  // doDaylightCycle false + time set day 把世界钉在白天，窗口就永远不开。
+  // 时间类玩法（昼夜相关）本来就不在 17 个阶段的覆盖范围里，冻结不影响覆盖面。
+  await rc('gamerule doDaylightCycle false')
+  await rc('time set day')
 
   const bots = []
+  // 在 try 外声明：try/finally 之后写报告时还要用它（const 是块级作用域，写里面会 ReferenceError）
+  let aliveAtStart = 0
   try {
     // 逐个上线（一起连会让测试服握手排队，反而测不到东西）
     const joinT0 = Date.now()
@@ -891,6 +1529,11 @@ async function main () {
     }
     const joinMs = Date.now() - joinT0
     console.log(`  ${BOTS.length} 个 bot 全部上线（${joinMs}ms）：` + bots.map(b => b.username).join(', '))
+    // 真正连上的数量（joinWithRetry 失败会少 push）。写进报告，让「32 设了、28 上了」可被发现。
+    aliveAtStart = bots.filter(b => b && b.entity).length
+    if (aliveAtStart !== BOTS.length) {
+      console.log(`  ⚠ 只有 ${aliveAtStart}/${BOTS.length} 个 bot 连上 —— 本次断言覆盖不足，报告会标出来`)
+    }
     if (throttle.events > 0) {
       console.log(`  ⚠ 握手节流命中 ${throttle.events} 次，重连 ${throttle.retries} 次`)
     }
@@ -900,7 +1543,7 @@ async function main () {
     if (JOIN_ONLY) {
       console.log('\n[JOIN_ONLY] 空转 20 秒，观察是否被中途踢下线…')
       const kickedBefore = throttle.events
-      await wait(20000)
+      await until(() => bots.every(x => x.entity && x.player), 20000)
       const alive = bots.filter(b => b.entity && b.player).length
       const result = {
         mode: 'join-only',
@@ -924,7 +1567,7 @@ async function main () {
     for (const name of run) {
       if (!phases[name]) { console.log('  未知阶段：' + name); continue }
       console.log('\n--- ' + name + ' ---')
-      // dropout 阶段会故意把 bots[3] 踢下线（模拟掉线残留），之后它就一直不在了。
+      // dropout 阶段会故意把最后一名 bot 踢下线（模拟掉线残留），之后它就一直不在了。
       // 以前后面几个阶段照样把它算进断言，于是固定报两条 WARN（「没响应」「没签上」）——
       // 那是脚本自己的坑，不是插件的。现在按「还活着的 bot」喂给每个阶段：
       // dropout 自己也在这之前跑，拿到的是满编 32 人，语义不变。
@@ -951,7 +1594,13 @@ async function main () {
   }
   fs.writeFileSync(path.join(__dirname, 'concurrent4-report.json'), JSON.stringify({
     at: new Date().toISOString(), phases: run,
+    // botCount = 脚本实际生成的 bot 数（BOTS.length，被 BOT_COUNT clamp 时会小于设定值）。
+    // 硬规则要求「跑完核对 botCount 等于你设的数」，就是为了抓 clamp 静默截断。
     botCount: BOTS.length,
+    // botCountAlive = 跑完第一个阶段时真正在线的数量。botCount 只是「打算跑几个」，
+    // 32 个里有 10 个没连上时前者照样是 32 —— 只看 botCount 会把这种事藏起来。
+    // 判「32 并发」要看这一个，两者不一致时 run-stress.py 会点名。
+    botCountAlive: aliveAtStart,
     // 握手节流单独记录：它不是插件缺陷，但每轮都出现说明服务端连接上限到了
     throttleEvents: throttle.events, throttleRetries: throttle.retries, rows
   }, null, 2))

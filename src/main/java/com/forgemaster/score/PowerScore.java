@@ -170,6 +170,85 @@ public final class PowerScore {
     }
 
     /**
+     * 两把剑的对比拆解（v2.26.0）：{@code mine} 是自己的主手，{@code theirs} 是对方主手。
+     *
+     * <p>和 {@link #breakdown} 同一个数据源（PDC + 各服务读数），纯只读：
+     * 不写 PDC、不落盘、不碰经济。任何一边不是锻造品时直接说明原因返回，
+     * 不硬比 —— 和一把铁锭比分数没有意义。</p>
+     *
+     * @param otherName 对方名字（只用于展示）
+     */
+    public static List<String> compare(ForgingMasterPlugin plugin, ItemStack mine, String otherName, ItemStack theirs) {
+        List<String> out = new ArrayList<>();
+        if (mine == null || mine.getType().isAir()) {
+            out.add("<red>你手上没有东西，先拿一把剑。</red>");
+            return out;
+        }
+        if (theirs == null || theirs.getType().isAir()) {
+            out.add("<red>" + otherName + " 手上没有东西，比不了。</red>");
+            return out;
+        }
+        if (!isForged(mine)) {
+            out.add("<red>你手上这件不是锻造品，没有战力分。</red>");
+            return out;
+        }
+        if (!isForged(theirs)) {
+            out.add("<red>" + otherName + " 手上那件不是锻造品，没有可比性。</red>");
+            return out;
+        }
+        long pa = of(plugin, mine);
+        long pb = of(plugin, theirs);
+        Quality qa = MaterialLookup.qualityOf(mine);
+        Quality qb = MaterialLookup.qualityOf(theirs);
+        var ma = MaterialLookup.materialOf(plugin, mine);
+        var mb = MaterialLookup.materialOf(plugin, theirs);
+        out.add("<white>战力对比</white> <#ffd166>" + pa + "</#ffd166> <gray>vs</gray> <#ffd166>" + pb + "</#ffd166>");
+        if (pa == pb) {
+            out.add("<gray>势均力敌，分毫不差。</gray>");
+        } else {
+            long diff = Math.abs(pa - pb);
+            String winner = pa > pb ? "你的" : otherName + " 的";
+            out.add("<gray>" + winner + "更高，差 <white>" + diff + "</white> 分（"
+                    + (diff * 100 / Math.max(1, Math.min(pa, pb))) + "%）</gray>");
+        }
+        out.add("<dark_gray>────</dark_gray> <white>你</white> <dark_gray>|</dark_gray> <white>" + otherName + "</white>");
+        out.add(row("品质", qa == null ? "?" : qa.display(), qb == null ? "?" : qb.display()));
+        out.add(row("材质", ma == null ? "?" : ma.display() + "（档 " + ma.tier() + "）",
+                mb == null ? "?" : mb.display() + "（档 " + mb.tier() + "）"));
+        out.add(row("强化", "+" + levelOf(plugin, mine), "+" + levelOf(plugin, theirs)));
+        out.add(row("蜕变", stageOf(plugin, mine) + " 阶", stageOf(plugin, theirs) + " 阶"));
+        out.add(row("词条", affixIds(mine.getItemMeta()).size() + " 条",
+                affixIds(theirs.getItemMeta()).size() + " 条"));
+        var gs = plugin.gems();
+        int ga = gs == null ? 0 : gs.gemsOf(mine).size() + gs.enchantsOf(mine).size();
+        int gb = gs == null ? 0 : gs.gemsOf(theirs).size() + gs.enchantsOf(theirs).size();
+        out.add(row("宝石/附魔", ga + " 件", gb + " 件"));
+        var sm = plugin.spirit();
+        int sa = sm == null ? 0 : Math.max(0, sm.spiritOf(mine));
+        int sb = sm == null ? 0 : Math.max(0, sm.spiritOf(theirs));
+        out.add(row("灵性", String.valueOf(sa), String.valueOf(sb)));
+        return out;
+    }
+
+    /** 对比小行：「标签 <white>a</white> <dark_gray>|</dark_gray> <white>b</white>」 */
+    private static String row(String label, String a, String b) {
+        return "<gray>" + label + ":</gray> <white>" + a + "</white> <dark_gray>|</dark_gray> <white>" + b + "</white>";
+    }
+
+    /** 是不是锻造品（PDC 由服务器写入，客户端伪造不了） */
+    private static boolean isForged(ItemStack item) {
+        if (item == null || item.getType().isAir()) {
+            return false;
+        }
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null) {
+            return false;
+        }
+        Byte forged = meta.getPersistentDataContainer().get(Keys.FORGED, PersistentDataType.BYTE);
+        return forged != null && forged == 1;
+    }
+
+    /**
      * 评级：把裸分翻译成人话。
      *
      * <p>分界走配置（{@code power-score.grades.<名>.min}），默认五档，

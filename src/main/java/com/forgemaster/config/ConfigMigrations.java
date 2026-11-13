@@ -67,9 +67,10 @@ public final class ConfigMigrations {
      * <p><b>别忘这一步</b>：{@link #run} 的第一句就是
      * {@code config-version >= CURRENT_VERSION ? return}，只加 step 不提版本号，
      * 那个 step 对已在运行的服务器**永远不会执行**（steps 17/18/19 的教训各写了一遍，
-     * 详见 step19 的注释）。v2.23.1 加 step22 时从 12 抬到 13，加 step23（战力评分）时再抬到 14，加 step24（属性天花板）时抬到 15。</p>
+     * 详见 step19 的注释）。v2.23.1 加 step22 时从 12 抬到 13，加 step23（战力评分）时再抬到 14，加 step24（属性天花板）时抬到 15。
+     * v2.26.0 加 step32（大赛历届档案 history-keep）时抬到 23。</p>
      */
-    public static final int CURRENT_VERSION = 22;
+    public static final int CURRENT_VERSION = 23;
 
     private ConfigMigrations() {
     }
@@ -111,6 +112,7 @@ public final class ConfigMigrations {
         step29DurabilityLoreCap(plugin, cfg);
         step30Expansion24(plugin, cfg);
         step31Expansion25(plugin, cfg);
+        step32ContestHistory(plugin, cfg);
         cfg.set("config-version", CURRENT_VERSION);
         plugin.saveConfig();
     }
@@ -1282,6 +1284,21 @@ public final class ConfigMigrations {
      * 这里只补键，不动服主已调过的 {@code durability-lore-step}；
      * 键已存在时 putIfAbsent 语义，一个字都不碰。</p>
      */
+    /**
+     * step32（v2.26.0）：大赛历届档案的保留届数 {@code contest.history-keep}。
+     *
+     * <p>为什么单独开一步：这个键 v2.26.0 才加，而 jar 内置 config.yml 里有它 ——
+     * 老档（磁盘上没有这个键）会让 {@code cfg.contains} 顺着 defaults 答「有」，
+     * 于是服主在 config.yml 里永远找不到、也改不了这个旋钮。所以必须走
+     * {@link #existsOnDisk} 而不是 {@code cfg.contains}，口径与 step29 同一个教训。</p>
+     */
+    private static void step32ContestHistory(ForgingMasterPlugin plugin, FileConfiguration cfg) {
+        if (!existsOnDisk(plugin, "contest.history-keep")) {
+            cfg.set("contest.history-keep", 20);
+            plugin.getLogger().info("[migrate] step32：补 contest.history-keep = 20（大赛历届档案保留届数）");
+        }
+    }
+
     /**
      * step31（v2.25 拓展）：血怒/坚韧附魔上限、灵契重抽、强化保险三段新键。
      * 与 step30 同口径：contains 判断，只补缺，绝不覆盖服主已有值。

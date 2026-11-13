@@ -138,6 +138,154 @@ public final class SelfTestSuite {
         }
     }
 
+    /** 源码扫描钉子用的命中计数（v2.26.0）：失败信息里要报命中数，别只说「没找到」 */
+    private static int hits(String haystack, String needle) {
+        if (haystack == null || needle == null || needle.isEmpty()) {
+            return 0;
+        }
+        int n = 0, idx = 0;
+        while ((idx = haystack.indexOf(needle, idx)) >= 0) {
+            n++;
+            idx += needle.length();
+        }
+        return n;
+    }
+
+    /**
+     * 源码扫描钉子的通用前置（v2.26.0 抽出）：读文件并剔除注释行。
+     *
+     * <p>为什么必须剔注释：本仓库的注释密度极高，而且习惯在注释里引用「原来的错误写法」
+     * （例如「这里曾经是 stats().get(uuid)」）。不剔注释的话，一条「不许出现 X」的钉子
+     * 会被自己那句解释说明反向命中 —— 假红比假绿更浪费时间。读不到文件返回空串，
+     * 让调用方的 hits() 自然得 0，由各自的 require 报出来。</p>
+     */
+    private static String nonCommentSource(java.io.File f) {
+        if (f == null || !f.isFile()) {
+            return "";
+        }
+        String code;
+        try {
+            code = new String(java.nio.file.Files.readAllBytes(f.toPath()),
+                    java.nio.charset.StandardCharsets.UTF_8);
+        } catch (java.io.IOException ex) {
+            return "";
+        }
+        StringBuilder nc = new StringBuilder();
+        for (String line : code.split("\n")) {
+            String t = line.trim();
+            if (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")) {
+                continue;
+            }
+            nc.append(stripTrailingComment(line)).append('\n');
+        }
+        return nc.toString();
+    }
+
+    /**
+     * 去掉行尾注释（v2.26.0 审计轮补）。
+     *
+     * <p>为什么会咬人：{@code nonCommentSource} 原来只剔「以 // 开头」的整行，
+     * 而本仓库最常见的写法是<b>行尾说明</b> —— {@code addHelp(out, u, "…");  // 原来写死 514 项}。
+     * 那一行会被整行保留，「不许出现 514」的钉子当场变红，而代码其实是对的。
+     * 这类假红会让人去改钉子（而不是改代码），比假绿更坏。</p>
+     *
+     * <p>做法是最小心的那种：逐字符走，进入双引号 / 单引号字面量后不再认双斜杠，
+     * 遇到引号外的双斜杠就截断。不处理行内块注释（本仓库没有这种写法），
+     * 也不处理 text block —— 这两个只会让钉子更严，不会假绿。</p>
+     */
+    private static String stripTrailingComment(String line) {
+        boolean inStr = false;
+        boolean inChr = false;
+        for (int i = 0; i < line.length() - 1; i++) {
+            char c = line.charAt(i);
+            if (c == '\\' && (inStr || inChr)) {
+                i++; // 跳过转义的下一个字符
+                continue;
+            }
+            if (c == '"' && !inChr) {
+                inStr = !inStr;
+                continue;
+            }
+            if (c == '\'' && !inStr) {
+                inChr = !inChr;
+                continue;
+            }
+            if (!inStr && !inChr && c == '/' && line.charAt(i + 1) == '/') {
+                return line.substring(0, i);
+            }
+        }
+        return line;
+    }
+
+    /**
+     * 从整份（已剔注释的）源码里切出某个方法体（v2.26.0）。
+     *
+     * <p>切法：从 {@code marker}（含签名前缀，例如 {@code "void statsOfPublic("}）往后取，
+     * 一直取到下一个「缩进 4 空格 + private/public/static」的成员声明之前。
+     * 不够严谨（字符串里出现这种缩进会误切），但对本仓库的排版足够 ——
+     * 它是给「方法体内不许出现某调用」这类钉子用的，误切只会让钉子更严、不会假绿。
+     * 找不到 marker 返回 null，调用方 require 报红。</p>
+     */
+    private static String methodBody(String source, String marker) {
+        if (source == null || marker == null) {
+            return null;
+        }
+        int at = source.indexOf(marker);
+        if (at < 0) {
+            return null;
+        }
+        // 往回退到这一行的行首，保证返回体里包含完整签名
+        int head = source.lastIndexOf('\n', at);
+        head = head < 0 ? 0 : head + 1;
+        int tail = source.length();
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("\n    (?:private|public|protected|static|final)\\s")
+                .matcher(source);
+        if (m.find(Math.max(at, head + marker.length()))) {
+            tail = m.start();
+        }
+        return source.substring(head, tail);
+    }
+
+    /**
+     * 从一段方法体里切出「以某个 needle 开头的那一小截」（v2.26.0 审计轮补）。
+     *
+     * <p>为什么需要它：判断「reload 段里有没有 save()」这类断言，如果对整段文本用
+     * {@code contains(".save()")}，那 {@code flushAll} 里任何一处 save 都会误伤；
+     * 反过来只查 {@code !reload.contains("powerLog().save()")} 又只堵了一种拼法
+     * （写成 {@code store.save()} 就漏过）。按 needle 定位、往后取到下一个 swallow(...)
+     * 或方法尾，才是真的在说「这一段」。</p>
+     *
+     * <p>切法故意保守：从 needle 所在行开始，往后最多取 12 行或到下一个
+     * {@code swallow(} 为止。取不到 needle 返回 null，调用方 require 报红。</p>
+     */
+    private static String sliceByMarker(String body, String needle) {
+        if (body == null || needle == null) {
+            return null;
+        }
+        int at = body.indexOf(needle);
+        if (at < 0) {
+            return null;
+        }
+        int lineStart = body.lastIndexOf('\n', at);
+        lineStart = lineStart < 0 ? 0 : lineStart + 1;
+        int end = body.length();
+        int next = body.indexOf("swallow(", at + needle.length());
+        if (next > 0) {
+            end = next;
+        }
+        String chunk = body.substring(lineStart, end);
+        String[] lines = chunk.split("\n");
+        if (lines.length > 12) {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < 12; i++) {
+                sb.append(lines[i]).append('\n');
+            }
+            return sb.toString();
+        }
+        return chunk;
+    }
+
     /**
      * help 文本里是否写了「{@code /zhujian <name>}」这一条。
      *
@@ -3703,20 +3851,27 @@ public final class SelfTestSuite {
             // 这条钉子的意义：v2.25.5 之前全仓 70+ 处裸 yml.save(file)，一旦写半截，
             // 下次 load 静默返回空档、再被 save 覆盖 = 玩家资产与领取记录永久消失。
             // 现在逐个点名「必须有 YamlIo」的存档，少一个就红（新人加存档漏改会被这里挡住）。
+            // v2.26.0 审计轮修：下面三行文件名原来写错了（guilds.yml / manuals-data.yml /
+            // commission-data.yml），源码里文件名对不上 → found 恒 false → 这行被静默跳过，
+            // 三个模块等于从来没被这条钉子检查过。注释里那句「新人加存档漏改会被这里挡住」
+            // 因此名不副实。现在改成真实文件名，并加一条「找不到就红」的断言（见下）。
             String[][] critical = {
                     {"stats", "data.yml"},
                     {"anvil", "anvils.yml"},
                     {"auction", "auction.yml"},
                     {"order", "orders.yml"},
                     {"contract", "contract.yml"},
-                    {"guild", "guilds.yml"},
+                    {"guild", "guild-data.yml"},
                     {"pass", "pass-data.yml"},
                     {"codex", "codex-data.yml"},
                     {"spectrum", "spectrum-data.yml"},
                     {"blackmarket", "daily-data.yml"},
-                    {"manuals", "manuals-data.yml"},
+                    {"manuals", "manuals.yml"},
                     {"bounty", "bounty-data.yml"},
-                    {"commission", "commission-data.yml"}
+                    {"commission", "commissions.yml"},
+                    // v2.26.0 审计轮补：它是全仓唯一「在 SAVE_FILES 里 + 裸 save() + 不在本表」
+                    // 的组合 —— 存档守卫完全管不到它，等于漏了一个高价值存档。
+                    {"story", "story-progress.yml"}
             };
             java.util.List<String> missing = new ArrayList<>();
             java.io.File pkgRoot = findSourcePackageRoot();
@@ -3751,6 +3906,11 @@ public final class SelfTestSuite {
                     if (found && !usesYamlIo) {
                         missing.add(row[1]);
                     }
+                    // v2.26.0 审计轮补：文件名写错（或该包压根没有这个文件）时，
+                    // 上面会静默跳过 —— 那就是「看着在查，其实什么都没查」。
+                    // 这条断言让拼错立刻红，而不是等下一个审计轮才发现。
+                    require(found, "存档守卫表里的 " + row[1] + " 在 " + row[0]
+                            + " 包里找不到（文件名写错了？那样这一行等于没检查）");
                 }
                 require(missing.isEmpty(), "这些存档还在裸 yml.save / loadConfiguration："
                         + String.join(", ", missing) + "（写半截 = 下次当成空档再被覆盖）");
@@ -5705,6 +5865,628 @@ public final class SelfTestSuite {
             } finally {
                 store.restoreSignin(u, 0, null); // 净效果为零，不碰真实数据
             }
+        });
+        add(g, "断约罚金必须判 takeCoins 返回值（v2.26.0 修 P2）", () -> {
+            // 反例：罚金没收上来（余额在 coins() 读取与扣款之间变化），广播却照喊
+            // 「剑币少了 N」= 全服看到一条假账。收缴失败必须按实际措辞 + 留痕。
+            java.io.File pkgRoot = findSourcePackageRoot();
+            if (pkgRoot == null) {
+                plugin.getLogger().info("[selftest] 找不到源码树，跳过罚金返回值守卫");
+                return;
+            }
+            java.io.File src = new java.io.File(pkgRoot, "contract/ContractManager.java");
+            require(src.isFile(), "找不到 ContractManager.java");
+            String code;
+            try {
+                code = new String(java.nio.file.Files.readAllBytes(src.toPath()),
+                        java.nio.charset.StandardCharsets.UTF_8);
+            } catch (java.io.IOException ex) {
+                throw new IllegalStateException("读不到 ContractManager.java: " + ex.getMessage());
+            }
+            require(code.contains("collected = plugin.stats().takeCoins"),
+                    "断约罚金必须接收 takeCoins 返回值（collected = ...），不能裸调");
+            require(code.contains("!collected"), "收缴失败必须有分支处理，不许静默吞");
+            require(code.contains("罚金分文未能收缴"),
+                    "收缴失败时广播必须换成如实措辞，不许再喊「剑币少了 N」的假账");
+        });
+        add(g, "战力曲线：append/of 往返 + 去重 + remove 净效果为零（v2.26.0）", () -> {
+            var store = plugin.powerLog();
+            require(store != null, "战力曲线存储没初始化");
+            require(store.save(), "PowerLogStore.save() 在正常环境下应返回 true");
+            UUID u = UUID.nameUUIDFromBytes("selftest-powerlog".getBytes());
+            try {
+                var en = new com.forgemaster.score.PowerLogStore.Entry();
+                en.at = System.currentTimeMillis();
+                en.power = 1234L;
+                en.quality = "精良";
+                en.material = "iron";
+                en.level = 5;
+                en.stage = 0;
+                require(store.append(u, en), "append 应落盘成功");
+                require(store.of(u).size() == 1 && store.of(u).get(0).power == 1234L,
+                        "append 后 of() 应能读回这条记录");
+                // 10 分钟窗口内各分项全同：第二条直接吞掉，不许刷屏
+                require(store.append(u, en), "重复评分应视为已记录（返回 true）");
+                require(store.of(u).size() == 1, "窗口内重复评分不许产生第二个点");
+                // power ≤ 0 的记录没有意义，拒收
+                var zero = new com.forgemaster.score.PowerLogStore.Entry();
+                zero.at = System.currentTimeMillis();
+                zero.power = 0L;
+                require(!store.append(u, zero), "power=0 的记录应被拒收");
+            } finally {
+                store.remove(u); // 净效果为零，不污染真实 power-log.yml
+            }
+            require(store.of(u).isEmpty(), "remove 后曲线应为空");
+        });
+        add(g, "公开档案不许露隐私面（v2.26.0 stats of）", () -> {
+            // statsOfPublic 是对陌生人开放的视图：ProfilePanel（剑币/连锻）和 coins 一旦
+            // 被塞进去，等于把钱包挂在公屏上。钉子锁死白名单视图。
+            java.io.File pkgRoot = findSourcePackageRoot();
+            if (pkgRoot == null) {
+                plugin.getLogger().info("[selftest] 找不到源码树，跳过公开档案守卫");
+                return;
+            }
+            java.io.File src = new java.io.File(pkgRoot, "command/ForgingCommand.java");
+            require(src.isFile(), "找不到 ForgingCommand.java");
+            String code;
+            try {
+                code = new String(java.nio.file.Files.readAllBytes(src.toPath()),
+                        java.nio.charset.StandardCharsets.UTF_8);
+            } catch (java.io.IOException ex) {
+                throw new IllegalStateException("读不到 ForgingCommand.java: " + ex.getMessage());
+            }
+            String chunk = null;
+            for (String part : code.split("\\n    (?:private|public) ")) {
+                if (part.contains("锻造档案（公开）")) {
+                    chunk = part;
+                    break;
+                }
+            }
+            require(chunk != null, "找不到 statsOfPublic 方法体（标记串「锻造档案（公开）」被挪走了？）");
+            require(!chunk.contains("ProfilePanel"), "公开档案不许调 ProfilePanel（那是剑币/隐私面板）");
+            require(!chunk.contains("coins("), "公开档案不许读剑币");
+            require(chunk.contains("titleOf") && chunk.contains("duelWins"),
+                    "公开档案的成长/荣誉白名单字段被删了？");
+        });
+        add(g, "power compare：非锻造品要说明原因，锻造品出对比头（v2.26.0）", () -> {
+            ItemStack plain = new ItemStack(Material.IRON_SWORD);
+            ItemStack forged = new ItemStack(Material.IRON_SWORD);
+            var meta = forged.getItemMeta();
+            meta.getPersistentDataContainer().set(com.forgemaster.util.Keys.FORGED,
+                    org.bukkit.persistence.PersistentDataType.BYTE, (byte) 1);
+            forged.setItemMeta(meta);
+            // 两把白板：没有可比性，要给出原因而不是抛异常
+            var out = com.forgemaster.score.PowerScore.compare(plugin, plain, "Conc02", plain);
+            require(!out.isEmpty() && String.join("", out).contains("不是锻造品"),
+                    "两把非锻造品应提示「不是锻造品」，实际: " + out);
+            // 一边锻造一边白板：同样要有原因
+            out = com.forgemaster.score.PowerScore.compare(plugin, forged, "Conc02", plain);
+            require(!out.isEmpty() && String.join("", out).contains("不是锻造品"),
+                    "一边非锻造品应说明没有可比性");
+            // 两把锻造品：出对比头，任何一边分数 ≥ 0
+            out = com.forgemaster.score.PowerScore.compare(plugin, forged, "Conc02",
+                    forged.clone());
+            require(!out.isEmpty() && String.join("", out).contains("战力对比"),
+                    "两把锻造品应出「战力对比」头行");
+        });
+        add(g, "rank 比试维度：解析 / 排序值 / 展示三件套（v2.26.0）", () -> {
+            // 战绩本身一直有落库（DuelManager 结算 countDuel），缺的是「看得见」：
+            // rank 加了第 6 个维度 DUEL —— 别名、量纲隔离、文案都要活。
+            var duel = com.forgemaster.ranking.Metric.parse("duel");
+            require(duel == com.forgemaster.ranking.Metric.DUEL, "duel 别名解析失败");
+            require(com.forgemaster.ranking.Metric.parse("bishi") == com.forgemaster.ranking.Metric.DUEL,
+                    "bishi 别名解析失败");
+            var st = new com.forgemaster.stats.StatsStore.Stats();
+            st.duelWins = 3;
+            st.duelLosses = 1;
+            require(com.forgemaster.ranking.Metric.DUEL.value(st) == 3 * 1_000_000.0 - 1,
+                    "比试排序值应为 胜×1e6 − 负（量纲隔离），实际 " + com.forgemaster.ranking.Metric.DUEL.value(st));
+            var st2 = new com.forgemaster.stats.StatsStore.Stats();
+            st2.duelWins = 3;
+            st2.duelLosses = 5;
+            require(com.forgemaster.ranking.Metric.DUEL.value(st) > com.forgemaster.ranking.Metric.DUEL.value(st2),
+                    "同胜场时输得少的要排前面");
+            String disp = com.forgemaster.ranking.Metric.DUEL.display(st);
+            require(disp.contains("3") && disp.contains("胜") && disp.contains("1") && disp.contains("负"),
+                    "比试展示文案异常: " + disp);
+        });
+        add(g, "rank 维度数与 GUI 槽位数一致（v2.26.0）", () -> {
+            // 反例：往 Metric 加维度却忘加 METRIC_SLOTS，GUI 底行的切换图标会静默消失
+            // （RankMenu 循环被 min(values().length, slots.length) 截断，不报错）。
+            int metrics = com.forgemaster.ranking.Metric.values().length;
+            int slots = com.forgemaster.ranking.RankMenu.METRIC_SLOTS.length;
+            require(slots >= metrics,
+                    "rank 有 " + metrics + " 个维度但 GUI 只有 " + slots + " 个槽位 —— 第 "
+                            + (slots + 1) + " 个维度的切换图标看不见");
+            for (int s : com.forgemaster.ranking.RankMenu.METRIC_SLOTS) {
+                require(s != com.forgemaster.ranking.RankMenu.CLOSE_SLOT && s != com.forgemaster.ranking.RankMenu.MY_SLOT,
+                        "维度槽位 " + s + " 撞上了关闭/我的按钮槽");
+            }
+        });
+        add(g, "比试结算必须双面记战绩（v2.26.0）", () -> {
+            // countDuel 是战绩的唯一写入口：只记赢家不记输家的话，比试维度会变成
+            // 「只有胜场、负场恒 0」的假榜。钉死结算处两人都要记账。
+            java.io.File pkgRoot = findSourcePackageRoot();
+            if (pkgRoot == null) {
+                plugin.getLogger().info("[selftest] 找不到源码树，跳过比试记战绩守卫");
+                return;
+            }
+            java.io.File src = new java.io.File(pkgRoot, "duel/DuelManager.java");
+            require(src.isFile(), "找不到 DuelManager.java");
+            String code;
+            try {
+                code = new String(java.nio.file.Files.readAllBytes(src.toPath()),
+                        java.nio.charset.StandardCharsets.UTF_8);
+            } catch (java.io.IOException ex) {
+                throw new IllegalStateException("读不到 DuelManager.java: " + ex.getMessage());
+            }
+            int hits = (code.split("plugin\\.stats\\(\\)\\.countDuel\\(", -1).length) - 1;
+            require(hits >= 2, "DuelManager 结算处 countDuel 只出现 " + hits
+                    + " 次（应 ≥2：赢家和输家都要记）");
+        });
+        add(g, "contract pick：聊天补领幂等且单次消费（v2.26.0）", () -> {
+            // 离线错过三选一面板的玩家用 /zhujian contract pick <1|2|3> 补领。
+            // 幂等红线：重复 pick / 无 pending / 序号越界都要有明确回执且零状态变化；
+            // 先清再发的单次消费结构必须挡死同一 pending 发两件。
+            var cm = plugin.contractManager();
+            require(cm != null, "ContractManager 没初始化");
+            if (!cm.active()) {
+                plugin.getLogger().info("[selftest] 契约未开启（contract.enabled=false），跳过 pick 幂等钉子");
+                return;
+            }
+            var store = cm.store();
+            UUID u = UUID.nameUUIDFromBytes("selftest-contract-pick".getBytes());
+            String relicId = null;
+            for (var d : cm.relics().all()) {
+                relicId = d.id();
+                break;
+            }
+            require(relicId != null, "圣物池为空，无法构造 pending");
+            try {
+                var r = store.ensure(u);
+                r.relics.clear();
+                r.pickPending = relicId;
+                // 越界：要在 pending 还在时测，回执必须明确且不动任何状态
+                String oob = cm.pickPendingByIndex(u, 9);
+                require(oob != null && oob.contains("序号越界"),
+                        "越界序号应有「序号越界」回执，实际: " + oob);
+                require(r.pickPending.equals(relicId) && r.relics.isEmpty(),
+                        "越界 pick 不许产生任何状态变化");
+                // 首次领取：发放 + pending 清空
+                String first = cm.pickPendingByIndex(u, 1);
+                require(first != null && first.contains("圣物到手"),
+                        "首次 pick 应发放圣物，实际: " + first);
+                require(r.relics.contains(relicId) && r.pickPending.isBlank(),
+                        "发放后圣物入库、pending 清空");
+                // 重复领取：明确回执 + 不再发第二件
+                String second = cm.pickPendingByIndex(u, 1);
+                require(second != null && second.contains("没有待选"),
+                        "重复 pick 应有「没有待选」回执，实际: " + second);
+                require(r.relics.size() == 1, "重复 pick 后圣物数量必须还是 1（单次消费）");
+            } finally {
+                store.remove(u); // 净效果为零，不污染真实 contract.yml
+            }
+        });
+        add(g, "contest history：赛果归档往返 + 保留 N 届裁剪 + 同届幂等（v2.26.0）", () -> {
+            // 用自检专用文件，不碰真实 contest-history.yml；finally 删档 = 净效果为零
+            java.io.File tmp = new java.io.File(plugin.getDataFolder(), "selftest-contest-history.yml");
+            try {
+                var store = new com.forgemaster.contests.ContestHistoryStore(plugin, tmp, 3);
+                require(store.recent(10).isEmpty(), "新档案应为空");
+                for (int i = 1; i <= 4; i++) {
+                    var e = new com.forgemaster.contests.ContestHistoryStore.Entry();
+                    e.code = String.format("%06X", i);
+                    e.at = System.currentTimeMillis();
+                    e.material = "测试剑胚";
+                    e.winner = "Bot" + i;
+                    e.winnerScore = i;
+                    e.players = i;
+                    e.top.add("1. Bot" + i + ":" + i + ".0");
+                    require(store.record(e), "第 " + i + " 届归档落盘应成功");
+                }
+                require(store.size() == 3, "keep=3 时只保留最近 3 届，实际 " + store.size());
+                require(store.byCode("000001") == null, "最老的一届应被裁掉");
+                require(store.byCode("000004") != null, "最新一届必须在档");
+                require(store.byCode("000004").winner.equals("Bot4"), "按届次号应查回同一届");
+                // 同一届重复归档：幂等，不许出第二条
+                var dup = new com.forgemaster.contests.ContestHistoryStore.Entry();
+                dup.code = "000004";
+                dup.at = System.currentTimeMillis();
+                dup.winner = "Bot4";
+                require(store.record(dup), "重复归档应返回 true（已在档）");
+                require(store.size() == 3, "重复归档不许产生新条目");
+            } finally {
+                tmp.delete(); // 净效果为零
+            }
+        });
+        add(g, "contract pick / contest history：命令三处同源 + 领奖不碰剑币（v2.26.0）", () -> {
+            // 源码扫描钉子：只扫非注释行，失败要报命中数。
+            java.io.File pkgRoot = findSourcePackageRoot();
+            if (pkgRoot == null) {
+                plugin.getLogger().info("[selftest] 找不到源码树，跳过命令面守卫");
+                return;
+            }
+            java.io.File src = new java.io.File(pkgRoot, "command/ForgingCommand.java");
+            require(src.isFile(), "找不到 ForgingCommand.java");
+            String code;
+            try {
+                code = new String(java.nio.file.Files.readAllBytes(src.toPath()),
+                        java.nio.charset.StandardCharsets.UTF_8);
+            } catch (java.io.IOException ex) {
+                throw new IllegalStateException("读不到 ForgingCommand.java: " + ex.getMessage());
+            }
+            StringBuilder nc = new StringBuilder();
+            for (String line : code.split("\n")) {
+                String t = line.trim();
+                if (t.startsWith("//") || t.startsWith("*") || t.startsWith("/*")) {
+                    continue;
+                }
+                nc.append(line).append('\n');
+            }
+            String body = nc.toString();
+            // ① 分派：contract 的 pick 子命令、contest 的 history 子命令
+            int pickDispatch = hits(body, "case \"pick\", \"xuan\", \"xuanze\"");
+            require(pickDispatch == 1, "contract pick 分派 case 应恰好 1 处，实际 " + pickDispatch);
+            // v2.26.0 修：history 分派从「contest() 里的 if 分支」提到方法入口（contest.enabled
+            // 不该连坐只读档案），所以断言改成认别名组本身：分派 + tabContest 候选各一处。
+            int histDispatch = hits(body, "\"history\", \"lishi\", \"dangan\"");
+            require(histDispatch == 2, "contest history 别名组应出现在分派 + tabContest（恰好 2 处），实际 "
+                    + histDispatch);
+            // ② help：两条都要在 helpLines 里
+            int pickHelp = hits(body, "pick <1|2|3>");
+            require(pickHelp == 1, "contract pick 的 help 文案应恰好 1 处，实际 " + pickHelp);
+            int histHelp = hits(body, "history 历届档案");
+            require(histHelp == 1, "contest history 的 help 文案应恰好 1 处，实际 " + histHelp);
+            // ③ Tab：pick 别名组（分派 + tabContract 各 1）与 history 别名组（分派 + tabContest 各 1）
+            int pickTab = hits(body, "\"pick\", \"xuan\", \"xuanze\"");
+            require(pickTab >= 2, "pick 别名组应出现在分派 + tabContract（≥2 处），实际 " + pickTab);
+            int histTab = hits(body, "\"history\", \"lishi\"");
+            require(histTab >= 1, "history 别名组应出现在 tabContest（≥1 处），实际 " + histTab);
+            // ④ 领奖路径不碰剑币：contractPick 方法体内不许出现 wallet / takeCoins
+            //（用 "void contractPick(" 定位，避免命中 contract() 分派里的调用点）
+            String chunk = null;
+            for (String part : code.split("\\n    (?:private|public) ")) {
+                if (part.contains("void contractPick(")) {
+                    chunk = part;
+                    break;
+                }
+            }
+            require(chunk != null, "找不到 contractPick 方法体（方法被挪走或改名了？）");
+            int coinHits = hits(chunk, "takeCoins") + hits(chunk, "wallet()");
+            require(coinHits == 0, "contract pick 领奖路径出现剑币调用 " + coinHits
+                    + " 处（红线：只发圣物，绝不碰钱包）");
+        });
+        add(g, "stats of 只读不建档：公开档案走 peek 不走 get（v2.26.0）", () -> {
+            // v2.26.0 的真实缺陷（审计轮查出）：statsOfPublic 用了 stats().get(uuid)，
+            // 而 get() 是 computeIfAbsent —— 任何人对任意名字敲一次
+            // /zhujian stats of <名字> 就会往 data.yml 里灌一条空档案，循环刷即可无限膨胀。
+            // StatsStore:252 的 peek() 注释专门警告过这件事（PAPI 桥）。这条钉子守住方法体。
+            java.io.File pkgRoot = findSourcePackageRoot();
+            if (pkgRoot == null) {
+                plugin.getLogger().info("[selftest] 找不到源码树，跳过 stats of 只读守卫");
+                return;
+            }
+            String body = nonCommentSource(new java.io.File(pkgRoot, "command/ForgingCommand.java"));
+            String chunk = methodBody(body, "void statsOfPublic(");
+            require(chunk != null, "找不到 statsOfPublic 方法体（改名了？）");
+            int creating = hits(chunk, "stats().get(");
+            require(creating == 0, "stats of 里出现了会建空档案的 stats().get( " + creating
+                    + " 处（必须用 peek，见 StatsStore:252）");
+            // 更宽的判据：上面那条只认 stats().get( 这一种拼法，改写成
+            // `var s = plugin.stats(); s.get(id)` 或 `stats().computeIfAbsent(` 都会漏过。
+            // 这里按「会建档的入口名」封死：get( / computeIfAbsent( / computeIfPresent( 都不许出现。
+            for (String bad : new String[]{".computeIfAbsent(", ".computeIfPresent("}) {
+                require(hits(chunk, bad) == 0,
+                        "stats of 里出现了建档入口 " + bad + "（必须用 peek）");
+            }
+            int readOnly = hits(chunk, "stats().peek(");
+            require(readOnly == 1, "stats of 应恰好 1 次 peek 取档案，实际 " + readOnly);
+            // 且必须判空：查不到要直说，不能靠新建的空档案渲染出一片 0
+            require(chunk.contains("st == null"), "stats of 没有对 peek 的 null 结果判空");
+            // v2.26.0 审计轮补：判空条件曾经只看了 7 个字段，把「有币 / 有成就 / 有强化记录
+            // 但 forged=0」的玩家误判成查不到（管理员发币、成就奖励币都会走到这一步）。
+            // 判空逻辑现在抽成 isEmptyStats()，所以这里按名字核它真的存在且被判空分支调用。
+            require(chunk.contains("isEmptyStats(st)"),
+                    "stats of 的判空没收口到 isEmptyStats()，容易再漏字段");
+            String guard = methodBody(body, "boolean isEmptyStats(");
+            require(guard != null, "找不到 isEmptyStats 方法体（改名了？）");
+            for (String field : new String[]{"coins", "achievements", "achvPoints",
+                    "bestStrengthen", "talents", "patterns", "spirits", "tombs"}) {
+                require(guard.contains("st." + field),
+                        "isEmptyStats 漏了字段 " + field
+                                + " —— 只在这些字段上有数据的玩家会被误判成「查不到档案」");
+            }
+        });
+        add(g, "power log 展示中文品质 / 材质名（v2.26.0）", () -> {
+            // 盘上存的是稳定键（品质枚举名 FINE、材质 id iron），展示层必须翻成中文：
+            // 否则 /zhujian power 说「凡品」、/zhujian power log 说「品质 FINE」，
+            // 同一个玩家看到两套词。这条钉子盯住展示路径的两个翻译调用。
+            java.io.File pkgRoot = findSourcePackageRoot();
+            if (pkgRoot == null) {
+                return;
+            }
+            String body = nonCommentSource(new java.io.File(pkgRoot, "command/ForgingCommand.java"));
+            String chunk = methodBody(body, "void powerLog(");
+            require(chunk != null, "找不到 powerLog 方法体（改名了？）");
+            require(hits(chunk, "Quality.byName(en.quality)") == 1,
+                    "power log 没把品质键翻回 Quality（会直接打印 FINE / EPIC）");
+            require(hits(chunk, "MaterialLookup.resolve(plugin, en.material)") == 1,
+                    "power log 没把材质 id 翻回显示名（会直接打印 iron）");
+        });
+        add(g, "help 文案不写死会漂的数字（v2.26.0）", () -> {
+            // 真实缺陷：helpLines 里写死「当前 514 项」「18 份存档」，而实际早已是
+            // 538 项 / 19 份。写死数字 = 埋一个必然过期的坑，而且没人会去改。
+            // 现在：自检项数不报数，备份份数从 SAVE_FILES.length 取。
+            java.io.File pkgRoot = findSourcePackageRoot();
+            if (pkgRoot == null) {
+                return;
+            }
+            String body = nonCommentSource(new java.io.File(pkgRoot, "command/ForgingCommand.java"));
+            String chunk = methodBody(body, "static List<String> helpLines(");
+            require(chunk != null, "找不到 helpLines 方法体（改名了？）");
+            require(hits(chunk, "514") == 0, "help 里还写死着旧的 514 项");
+            require(hits(chunk, "18 份存档") == 0, "help 里还写死着旧的 18 份存档");
+            // 用 >=1 而不是 ==1：把长度提成局部变量（int n = SAVE_FILES.length 再拼 + n +）
+            // 是更好的写法，写成 ==1 会把它判红 —— 那是逼人改回坏写法。
+            require(hits(chunk, "SAVE_FILES.length") >= 1,
+                    "help 的备份份数应从 SAVE_FILES.length 取，别写死");
+        });
+        add(g, "contest.history-keep 出现在内置 config 与必需键清单（v2.26.0）", () -> {
+            // 真实缺陷：这个键只在 ContestHistoryStore 的 Java 默认值里，
+            // 内置 config.yml 没有 → 服主看不见、改不了，/zhujian config check 也点不出名。
+            var stream = plugin.getResource("config.yml");
+            require(stream != null, "jar 里没有 config.yml 资源");
+            var raw = org.bukkit.configuration.file.YamlConfiguration.loadConfiguration(
+                    new java.io.InputStreamReader(stream, java.nio.charset.StandardCharsets.UTF_8));
+            require(raw.contains("contest.history-keep"),
+                    "内置 config.yml 缺 contest.history-keep（服主看不到这个旋钮）");
+            boolean listed = false;
+            for (String k : com.forgemaster.ForgingMasterPlugin.REQUIRED_CONFIG_KEYS) {
+                if ("contest.history-keep".equals(k)) {
+                    listed = true;
+                    break;
+                }
+            }
+            require(listed, "REQUIRED_CONFIG_KEYS 没收录 contest.history-keep（防漂移断言管不到它）");
+            require(raw.getInt("contest.history-keep", -1) >= 1,
+                    "contest.history-keep 的内置默认值必须是正整数");
+            // v2.26.0 审计轮补：上面三条只管「内置资源 + 必需键清单」，
+            // 管不到**迁移步骤本身**。把 step32ContestHistory(plugin, cfg) 从 run() 里删掉、
+            // 或把 CURRENT_VERSION 退回 22，上面全绿 —— 而老服主的 config.yml 永远补不上这个键。
+            require(com.forgemaster.config.ConfigMigrations.CURRENT_VERSION >= 23,
+                    "CURRENT_VERSION 退回到 " + com.forgemaster.config.ConfigMigrations.CURRENT_VERSION
+                            + "（本轮引入了 contest.history-keep，至少要 23）");
+            java.io.File pkgRoot = findSourcePackageRoot();
+            if (pkgRoot != null) {
+                String mig = nonCommentSource(new java.io.File(pkgRoot, "config/ConfigMigrations.java"));
+                if (mig != null && !mig.isEmpty()) {
+                    String runBody = methodBody(mig, "void run(");
+                    require(runBody != null, "找不到 ConfigMigrations.run() 方法体");
+                    require(hits(runBody, "step32ContestHistory(") == 1,
+                            "ConfigMigrations.run() 里没有（或重复）调用 step32ContestHistory —— "
+                                    + "老服主的 contest.history-keep 补不上");
+                }
+            }
+        });
+        add(g, "存档清单无遗漏：源码里每个存档写入点都在 SAVE_FILES 里", () -> {
+            // v2.26.0 审计轮的结论：旧的「备份清单覆盖全部存档文件」
+            // （SelfTestRegression231:194）是**单向子集检查** —— 它硬编码 18 个名字问
+            // 「清单里有没有」，从不问「仓库里还有没有存档没进清单」。
+            // 所以任何**新增**存档它都必然放行：这轮漏掉 contest-history / power-log /
+            // hall-legacy 三份，它一条都没反应。
+            // 这里补的是反方向：扫全仓源码里的 getDataFolder() 写入点，反查清单。
+            java.io.File pkgRoot = findSourcePackageRoot();
+            if (pkgRoot == null) {
+                return;
+            }
+            java.util.Set<String> declared = new java.util.HashSet<>(
+                    java.util.Arrays.asList(com.forgemaster.backup.BackupManager.SAVE_FILES));
+            // 允许不进清单的文件，每一个都要有理由 —— 不写理由 = 下次没人敢动
+            java.util.Map<String, String> exempt = new java.util.HashMap<>();
+            exempt.put("config.yml", "配置本体，不是玩家进度；回档不该退回服主的配置");
+            // 自检专用的临时存档：测完自己 delete()，不该进玩家进度备份。
+            // 三个都必须写理由 —— 下面有断言强制理由非空，防止 exempt 变成「贴个名字就放行」。
+            exempt.put("anvils-selftest.yml", "自检临时：砧位用例自建的存档，用例结束即删");
+            exempt.put("anvils-selftest-batch.yml", "自检临时：批量砧位用例，用例结束即删");
+            exempt.put("selftest-contest-history.yml", "自检临时：赛史用例专用文件，不碰真实 contest-history.yml");
+            java.util.Set<String> found = new java.util.TreeSet<>();
+            try (var walk = java.nio.file.Files.walk(pkgRoot.toPath())) {
+                for (java.nio.file.Path p : walk.filter(x -> x.toString().endsWith(".java")).toList()) {
+                    String src = nonCommentSource(p.toFile());
+                    // nonCommentSource 读不到时返回空串（永不返回 null），空串不能静默放行 ——
+                    // 否则一个读失败的文件就悄悄贡献 0 个写入点，这条钉子变成假的。
+                    if (src == null || src.isEmpty()) {
+                        require(false, "源码文件读不出内容，存档扫描不完整：" + p);
+                        return;
+                    }
+                    // 形式一：getDataFolder(), "xxx.yml"
+                    var m = java.util.regex.Pattern
+                            .compile("getDataFolder\\(\\),\\s*\"([A-Za-z0-9_.-]+\\.yml)\"")
+                            .matcher(src);
+                    while (m.find()) {
+                        found.add(m.group(1));
+                    }
+                    // 形式二：文件名放在常量里 —— getDataFolder(), FILE_NAME
+                    // 这是 hall-legacy.yml 的写法（SeasonLegacy.FILE_NAME），只认字面量的话
+                    // 恰好漏掉本钉子注释里点名的那第三份文件，等于留了个结构性盲区。
+                    var mc = java.util.regex.Pattern
+                            .compile("getDataFolder\\(\\),\\s*([A-Z_][A-Z0-9_]*)")
+                            .matcher(src);
+                    java.util.List<String> constNames = new java.util.ArrayList<>();
+                    while (mc.find()) {
+                        constNames.add(mc.group(1));
+                    }
+                    for (String cname : constNames) {
+                        // 在同文件里找 `static final String CNAME = "xxx.yml";`
+                        var md = java.util.regex.Pattern
+                                .compile("String\\s+" + java.util.regex.Pattern.quote(cname)
+                                        + "\\s*=\\s*\"([A-Za-z0-9_.-]+\\.yml)\"")
+                                .matcher(src);
+                        if (md.find()) {
+                            found.add(md.group(1));
+                        }
+                    }
+                }
+            } catch (java.io.IOException ex) {
+                require(false, "扫描源码目录失败: " + ex.getMessage());
+                return;
+            }
+            // exempt 里每个 key 必须带非空理由，否则「豁免」就成了「免检」
+            for (var e : exempt.entrySet()) {
+                require(e.getValue() != null && !e.getValue().isBlank(),
+                        "exempt 里的 " + e.getKey() + " 没写豁免理由（不许裸贴文件名放行）");
+            }
+            // 只报「源码里真会写到数据目录、但清单里没有」的
+            java.util.List<String> missing = new java.util.ArrayList<>();
+            for (String f : found) {
+                if (declared.contains(f) || exempt.containsKey(f)) {
+                    continue;
+                }
+                missing.add(f);
+            }
+            require(missing.isEmpty(),
+                    "这些存档文件有写入点但不在 SAVE_FILES 里，回档时既不备份也不恢复：" + missing
+                            + "（确实不该备份就加进 exempt 并写明理由）");
+            // 常量形式的反查必须真的生效：hall-legacy.yml 就是靠这条分支才被扫到的，
+            // 如果哪天常量解析坏了，上面 missing 会静默少一项（假绿），这里钉住它。
+            require(found.contains("hall-legacy.yml"),
+                    "扫描没认出 hall-legacy.yml（它用 SeasonLegacy.FILE_NAME 常量拼路径）"
+                            + "—— 常量形式解析坏了，清单漏项会被静默放过");
+            // hall-legacy.yml 是唯一「在清单里、但 flushAll / reloadAllSilently 都是 0」的项。
+            // 那是对的，但**只因为在它没有内存缓存**（每次 all()/ofSeason() 都直读盘）。
+            // 这个前提没有任何东西守着：哪天有人给 SeasonLegacy 加了字段缓存而忘了补 reload 钩子，
+            // 回档后 /hall legacy 会一直显示回档前的数据，而所有钉子全绿。
+            // 所以在这里把前提钉住 —— 一旦出现缓存字段，这条立刻红，逼人去看要不要补 reload。
+            String legacySrc = nonCommentSource(new java.io.File(pkgRoot, "season/SeasonLegacy.java"));
+            if (legacySrc != null && !legacySrc.isEmpty()) {
+                for (String cacheHint : new String[]{"private Map<Integer, Legacy> cache",
+                        "private final Map<Integer, Legacy> cache",
+                        "private List<Legacy> cache"}) {
+                    require(!legacySrc.contains(cacheHint),
+                            "SeasonLegacy 出现了内存缓存（" + cacheHint + "）—— "
+                                    + "那 BackupManager.flushAll/reloadAllSilently 必须补 hall-legacy.yml，"
+                                    + "否则回档后剑传承会一直是旧数据");
+                }
+            }
+        });
+        add(g, "回档也搬趋势快照与赛季归档（不能只搬 .yml 清单）", () -> {
+            // v2.26.0 的第三个真实缺口：backup/restore 原来只搬 SAVE_FILES 里的文件，
+            // 而趋势快照是数据根目录下的 metrics-<yyyyMMdd>.yml 散文件、
+            // 赛季归档在 seasons/ 目录 —— 两类都不在清单里，回档时完全不参与。
+            // 更要命的是原来 restore() 里写的是 `new File(dir, "metrics")` 整目录替换：
+            // 那个目录从来不存在（快照是散文件），所以这段是死代码，看着像做了其实没做。
+            java.io.File pkgRoot = findSourcePackageRoot();
+            if (pkgRoot == null) {
+                return;
+            }
+            String src = nonCommentSource(new java.io.File(pkgRoot, "backup/BackupManager.java"));
+            require(src != null, "找不到 BackupManager.java");
+            require(hits(src, "\"metrics-\"") >= 1 || src.contains("metrics-"),
+                    "BackupManager 里找不到趋势快照前缀（metrics-），快照不参与备份");
+            require(src.contains("SEASONS_DIR") && src.contains("\"seasons\""),
+                    "BackupManager 里找不到 seasons/ 归档目录，赛季最终名次不参与备份");
+            String backupBody = methodBody(src, "String backup(");
+            require(backupBody != null, "找不到 backup() 方法体");
+            require(backupBody.contains("metricsFiles("),
+                    "backup() 没搬趋势快照（metrics-*.yml 不在清单里，必须单独复制）");
+            require(backupBody.contains("SEASONS_DIR"),
+                    "backup() 没搬 seasons/ 归档目录");
+            String restoreBody = methodBody(src, "String restore(");
+            require(restoreBody != null, "找不到 restore() 方法体");
+            require(restoreBody.contains("backMetrics") || restoreBody.contains("metricsFiles("),
+                    "restore() 没恢复趋势快照 —— 回档后 /zhujian metrics 还是回档后的数");
+            require(restoreBody.contains("SEASONS_DIR"),
+                    "restore() 没恢复 seasons/ 归档目录");
+            // 必须钉住「不再用整目录 metrics」这个死代码写法
+            require(hits(restoreBody, "\"metrics\"") == 0,
+                    "restore() 里还在用 \"metrics\" 目录（那是死代码，快照是根目录散文件）");
+        });
+        add(g, "回档链路覆盖 v2.26.0 的两份新存档（contest-history / power-log）", () -> {
+            // 只把文件加进 SAVE_FILES 是不够的：回档覆盖后必须按盘重建内存态，
+            // 否则旧副本在下次写盘时把回档结果盖回去 —— v2.23.1 的 P0 同型。
+            // 这条钉子同时守三处：清单、flushAll、reloadAllSilently。
+            java.io.File pkgRoot = findSourcePackageRoot();
+            if (pkgRoot == null) {
+                return;
+            }
+            String src = nonCommentSource(new java.io.File(pkgRoot, "backup/BackupManager.java"));
+            require(src != null, "找不到 BackupManager.java");
+            for (String f : new String[]{"contest-history.yml", "power-log.yml"}) {
+                require(hits(src, "\"" + f + "\"") >= 3,
+                        f + " 在 BackupManager 里出现不足 3 处（清单 + flushAll + reload 各需一处）");
+            }
+            require(src.contains("historyStore().load()"),
+                    "回档后没重建大赛档案内存态（contest-history.yml 会被旧副本盖回去）");
+            // flushAll / reloadAllSilently 里两份新存档都被 swallow(stage, "文件名", ...) 包着，
+            // 所以按方法体分别核「这两个文件名各出现一次」—— 比数整文件的出现次数精确：
+            // 整文件只要清单 + 两处 swallow 够 3 次就算过，但漏掉 reload 那一条同样能凑够 3 次。
+            String flush = methodBody(src, "void flushAll(");
+            require(flush != null, "找不到 flushAll 方法体（改名了？）");
+            String reload = methodBody(src, "void reloadAllSilently(");
+            require(reload != null, "找不到 reloadAllSilently 方法体（改名了？）");
+            for (String f : new String[]{"contest-history.yml", "power-log.yml"}) {
+                // 用 >=1 而不是 ==1：这两段里加任何一句提到文件名的日志
+                // （`warning("写 contest-history.yml 失败")`）都会让计数变 2。
+                // 那种改动是对的，钉子不该判它红 —— 要守的是「这一段提到了并且真的动了它」，
+                // 不是「只准出现一次」。方向靠下面的 save()/load() 断言守。
+                require(hits(flush, "\"" + f + "\"") >= 1,
+                        "flushAll 没落 " + f + "（回档前盘面就不是真相）");
+                require(hits(reload, "\"" + f + "\"") >= 1,
+                        "reloadAllSilently 没重载 " + f + "（旧副本会盖回回档结果）");
+            }
+            // 重载必须是 load()，不是 save()：按盘重建，不能拿回档前的内存去写盘。
+            // 这里按「段落」而不是「整段文本里有没有 .load()」来判 —— reload 里
+            // storyCfg.load() 之类随便哪个都能满足 contains(".load()")，那个断言等于没写。
+            String reloadPower = sliceByMarker(reload, "\"power-log.yml\"");
+            require(reloadPower != null, "reloadAllSilently 里找不到 power-log.yml 那一段");
+            require(reloadPower.contains(".load()"),
+                    "power-log 的重载段没有调用 load()（按盘重建才是对的）");
+            // 堵住两种写法：powerLog().save() 与 store.save()（flushAll 里正是 store.save()）
+            require(hits(reloadPower, ".save()") == 0,
+                    "power-log 的重载段出现了 save()（会把回档前的内存写回去，比不重载更糟）");
+            String reloadHistory = sliceByMarker(reload, "\"contest-history.yml\"");
+            require(reloadHistory != null, "reloadAllSilently 里找不到 contest-history.yml 那一段");
+            require(reloadHistory.contains("historyStore().load()"),
+                    "contest-history 的重载不是 historyStore().load()（拿旧内存写盘比不重载更糟）");
+            require(hits(reloadHistory, ".save()") == 0,
+                    "contest-history 的重载段出现了 save()（会把回档前的内存写回去）");
+        });
+        add(g, "比试维度不许被活跃档案判据漏掉（v2.26.0 审计轮）", () -> {
+            // 真实缺陷：Rankings.active() 原来只看 forged / coins / reputation / streak。
+            // 一个只打过比试的号（duel 不收费、结算只 countDuel）会被判成「没有过数据」，
+            // 整条从 rank duel 榜上消失 —— 而 profile 里明明写着胜负。
+            // 这条直接跑行为，不扫源码：造一个只有 duel 数据的 Stats，问 active 认不认。
+            StatsStore.Stats duelOnly = new StatsStore.Stats();
+            duelOnly.name = "SelftestDuelOnly";
+            duelOnly.duelWins = 3;
+            duelOnly.duelLosses = 1;
+            require(com.forgemaster.ranking.Rankings.active(duelOnly),
+                    "只打过比试（3 胜 1 负）的档案被判成「没有过数据」→ rank duel 榜上看不到他");
+            // 反方向也要守：真空档案仍然不许进榜，否则榜单会被空号灌满
+            StatsStore.Stats empty = new StatsStore.Stats();
+            empty.name = "SelftestEmpty";
+            require(!com.forgemaster.ranking.Rankings.active(empty), "完全空白的档案不该进榜");
+            // 自检号永远不进榜
+            StatsStore.Stats st = new StatsStore.Stats();
+            st.name = "SelfTest";
+            st.forged = 99;
+            require(!com.forgemaster.ranking.Rankings.active(st), "自检数据不许进榜");
+        });
+        add(g, "赛季档案的键名不随 JVM locale 变（toLowerCase 必须带 ROOT）", () -> {
+            // 土耳其语环境下 "I".toLowerCase() 是 ı 而不是 i：COINS → "coıns"，
+            // 和历史归档里的 "coins" 变成两个键。同服读写一致所以当场不报错，
+            // 换服务器 / 换 locale 之后旧赛季档案就读不到了。
+            // Metric.tokens() 一直是 Locale.ROOT，SeasonManager 曾经没带 —— 这里钉住一致。
+            java.io.File pkgRoot = findSourcePackageRoot();
+            if (pkgRoot == null) {
+                return;
+            }
+            String src = nonCommentSource(new java.io.File(pkgRoot, "season/SeasonManager.java"));
+            require(src != null && !src.isEmpty(), "找不到 SeasonManager.java");
+            require(hits(src, ".toLowerCase()") == 0,
+                    "SeasonManager 里还有不带 Locale 的 toLowerCase()（历史键名会随 JVM locale 变）");
+            require(hits(src, "toLowerCase(java.util.Locale.ROOT)") >= 1,
+                    "SeasonManager 没在用 Locale.ROOT 折叠枚举名");
         });
         add(g, "金额格式化可读", () -> {
             String s = plugin.economy().format(200);

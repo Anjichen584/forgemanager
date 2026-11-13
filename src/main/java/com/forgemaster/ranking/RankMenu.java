@@ -25,8 +25,8 @@ public final class RankMenu {
     public static final int SIZE = 54;
     /** 榜单格子数（前 5 行） */
     public static final int LIST_SIZE = 45;
-    /** 维度切换按钮的槽位（底行 45~48 + 50，跳过 49 的关闭），顺序与 Metric 常量顺序一一对应 */
-    public static final int[] METRIC_SLOTS = {45, 46, 47, 48, 50};
+    /** 维度切换按钮的槽位（底行 45~48 + 50 + 51，跳过 49 的关闭），顺序与 Metric 常量顺序一一对应 */
+    public static final int[] METRIC_SLOTS = {45, 46, 47, 48, 50, 51};
     public static final int CLOSE_SLOT = 49;
     public static final int MY_SLOT = 53;
 

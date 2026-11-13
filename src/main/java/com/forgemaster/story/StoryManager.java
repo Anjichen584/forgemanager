@@ -85,13 +85,23 @@ public final class StoryManager {
             prog.set(path + ".chapter", e.getValue());
             prog.set(path + ".baseline", baseline.getOrDefault(e.getKey(), 0));
         }
+        // v2.26.0 审计轮修：这里原来是裸 prog.save(progressFile)，违反硬规则 1
+        // （新存档一律走 YamlIo）。后果不是理论上的：裸 save 直接覆盖目标文件，
+        // 写到一半崩服 → story-progress.yml 变成半截 YAML → 下次 loadConfiguration
+        // 静默返回空档 → 所有玩家剧情进度归零，而且它还在 SAVE_FILES 里，
+        // 连回档都会被这份空档盖掉。YamlIo 写唯一临时文件 + 原子改名，才能保证
+        // 「要么是旧的完整档，要么是新的完整档」。
         try {
             if (!plugin.getDataFolder().exists()) {
                 plugin.getDataFolder().mkdirs();
             }
-            prog.save(progressFile);
+            com.forgemaster.util.YamlIo.save(progressFile, prog);
         } catch (IOException ex) {
             plugin.getLogger().warning("剧情进度保存失败：" + ex.getMessage());
+        } catch (RuntimeException ex) {
+            // YamlIo.save 理论上还可能抛未预期运行时异常（SecurityException 等）。
+            // 定时任务里让它穿出去会直接取消后续调度 —— 剧情进度从此再也不落盘。
+            plugin.getLogger().warning("剧情进度保存失败（未预期异常）：" + ex);
         }
     }
 

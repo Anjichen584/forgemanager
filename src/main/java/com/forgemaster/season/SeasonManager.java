@@ -20,6 +20,9 @@ import java.util.List;
  *   <li>当前赛季状态存 plugins/ForgingMaster/season.yml（编号 + 开始时间）。</li>
  *   <li>到期（config season.duration-days）自动结算，或管理员 /zhujian season end 手动结算。</li>
  *   <li>结算 = 归档当季排行到 seasons/season-N.yml（一季一个文件）→ 重置剑币 / 声望 / 连锻 → 广播结果。</li>
+ *   <li>归档的六个维度<b>口径不同</b>：剑币 / 声望 / 连锻是本赛季（结算清零），
+ *       专精 / 强化 / 比试是生涯累计（结算不清零，见 {@link Metric#career()}）。
+ *       档案里靠 {@code calibers.*} 段声明口径，别让读档的人把生涯累计榜当成赛季成绩。</li>
  *   <li>结算末尾顺带做一次「剑传承」：全服最强的一把刻进 hall-legacy.yml（{@link SeasonLegacy}），
  *       失败只记一条 warning，不回滚结算。</li>
  *   <li>成就与图鉴不清，专精等级不清。</li>
@@ -160,9 +163,31 @@ public final class SeasonManager {
         yml.set("started-at", startedAt);
         yml.set("ended-at", now);
         yml.set("reason", reason);
+        // v2.26.0：口径声明。Metric.values() 里的六个维度并不是同一种东西 ——
+        // 剑币 / 声望 / 连锻是「本赛季」（resetSeasonal 会清），
+        // 专精 / 强化 / 比试是「生涯累计」（底层字段是玩家攒了很久的只涨不跌战绩，刻意不清）。
+        // 两者在这个文件里长得一模一样，只凭 rankings.<维度> 读档案的人会把
+        // 「第 N 季 比试榜」误读成「第 N 季打了多少场」。所以把口径写进档案本身：
+        // 数据说话，不依赖读档的人先看完 SeasonManager 的注释。
+        // 单独放在 calibers 段而不是塞进 rankings.<维度> 下，是为了不弄脏那一层
+        // 「键 = 名次」的结构（否则遍历子键解析名次的地方会撞上一个非数字键）。
         for (Metric m : Metric.values()) {
+            // v2.26.0 审计轮：这三处 toLowerCase() 必须带 Locale.ROOT。
+            // 不带的话走 JVM 默认 locale —— 土耳其语环境下 "I".toLowerCase() 得到的是
+            // 无点 ı 而不是 i，于是 COINS 会写成 "coıns"，跟历史归档里的 "coins" 是两个键。
+            // 同一个服内读写一致所以不会立刻报错，但**换服务器 / 换 locale 之后旧赛季档案就读不到了**。
+            // Metric.tokens() 那边已经是 Locale.ROOT，这里曾经不一致。
+            yml.set("calibers." + m.name().toLowerCase(java.util.Locale.ROOT) + ".career", m.career());
+            yml.set("calibers." + m.name().toLowerCase(java.util.Locale.ROOT) + ".label", m.label());
+        }
+        yml.set("calibers-note", "career=true 的维度是本文件写入时刻的生涯累计值（结算不清零，故相邻几季档案里的同一榜单会重复）；"
+                + "career=false 的才是本赛季成绩（结算已清零，下一季从零开始）。");
+        for (Metric m : Metric.values()) {
+            // 生涯维度归档的是「截至本季结算时的生涯值」：同一份榜单在连续几季档案里会重复出现，
+            // 那不是 bug —— 它记录的是那一刻的天花板。改动这一行为前先想清楚：
+            // 把这些字段清掉 = 玩家的历史最高强化 / 生涯胜场直接消失，是数据事故。
             for (Rankings.Row r : Rankings.top(store, m, ARCHIVE_TOP)) {
-                String base = "rankings." + m.name().toLowerCase() + "." + r.rank();
+                String base = "rankings." + m.name().toLowerCase(java.util.Locale.ROOT) + "." + r.rank();
                 yml.set(base + ".uuid", r.uuid().toString());
                 yml.set(base + ".name", r.name());
                 yml.set(base + ".value", r.value());

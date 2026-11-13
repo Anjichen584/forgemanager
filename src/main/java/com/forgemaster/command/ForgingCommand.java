@@ -112,7 +112,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             case "hall" -> hallShrine(sender, args);
             case "selftest" -> selftest(sender);
             // 战力评分（v2.23 切片 5）：手持剑的分数拆解 + 建议价
-            case "power", "zhanli" -> power(sender);
+            case "power", "zhanli" -> power(sender, args);
             // 属性修复（v2.23.1）：把被强化倍率滚雪球污染的存量物品收敛回配置值
             case "fixattrs", "xiufu" -> fixAttributes(sender, args);
             case "config", "peizhi" -> configCheck(sender, args);
@@ -451,6 +451,11 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             statsReputation(sender, args);
             return;
         }
+        // /zhujian stats of <玩家>（v2.26.0）：公开档案 —— 白名单字段人人可查，剑币等隐私不露
+        if (args.length >= 2 && isAny(args[1].toLowerCase(Locale.ROOT), "of", "gongkai", "公开")) {
+            statsOfPublic(sender, args);
+            return;
+        }
         OfflinePlayer target;
         if (args.length >= 2) {
             if (!sender.hasPermission("forgemaster.admin")) {
@@ -506,6 +511,92 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         com.forgemaster.ranking.ProfilePanel.show(plugin, sender, target.getUniqueId());
     }
 
+    /**
+     * {@code /zhujian stats of <玩家>}（v2.26.0）：公开档案 —— 白名单字段人人可查。
+     *
+     * <p>为什么单开一条而不是放开 456 行的管理员门槛：完整的 {@code /zhujian stats <玩家>}
+     * 末尾会带 {@link com.forgemaster.ranking.ProfilePanel}（剑币 / 连锻 streak 等隐私面），
+     * 那个面板不能对陌生人开放。这里是刻意收窄的白名单视图：只露排行榜本来就公示的
+     * 成长与荣誉字段，<b>不调 ProfilePanel、不读剑币</b> —— 自检有钉子盯着这一点。</p>
+     */
+    /**
+     * 档案是否「一片空白」（v2.26.0 /zhujian stats of 用）。
+     *
+     * <p>这条只为「公开查询不该给陌生人建档案」服务：{@code peek()} 已经保证不建档，
+     * 这里再判空是为了给玩家一句「查不到」而不是刷出满屏 0。</p>
+     *
+     * <p><b>口径是「宁可多看，不许漏判」</b>：漏判 = 真有数据的玩家被说成查不到（用户可见的错误），
+     * 多看 = 一个空档案被当成有档案（最多多刷两行 0）。所以只要<b>任一</b>字段非默认值就认为有档案，
+     * 包括 {@code coins}（管理员发币 / 成就奖励币）与 {@code achievements}
+     * （不锻剑也能拿成就）—— 这两条是最容易「有数据但 forged=0」的路径。</p>
+     */
+    private static boolean isEmptyStats(StatsStore.Stats st) {
+        return st.forged <= 0
+                && st.bestScore <= 0
+                && st.reputation <= 0
+                && st.duelWins <= 0
+                && st.duelLosses <= 0
+                && st.commissionsDone <= 0
+                && st.commissionsFailed <= 0
+                && st.salvaged <= 0
+                && st.repaired <= 0
+                && st.flawless <= 0
+                && st.spirits <= 0
+                && st.tombs <= 0
+                && st.achvPoints <= 0
+                && st.coins <= 0L
+                && st.bestStrengthen <= 0
+                // level 默认 1（见 Stats 字段初始化），所以「升过级」的判据是 > 1
+                && st.level <= 1
+                && st.exp <= 0
+                && st.codex.isEmpty()
+                && st.patterns.isEmpty()
+                && st.talents.isEmpty()
+                && st.achievements.isEmpty();
+    }
+
+    private void statsOfPublic(CommandSender sender, String[] args) {
+        if (args.length < 3) {
+            Msg.prefix(sender, "<red>用法：</red><white>/zhujian stats of <玩家></white>");
+            return;
+        }
+        OfflinePlayer target = Bukkit.getOfflinePlayer(args[2]);
+        // v2.26.0 修 P1：这里曾经用 stats().get(uuid)，而 get() 是 computeIfAbsent ——
+        // 陌生人只要 /zhujian stats of <随便一个名字> 就能往 data.yml 里灌一条空档案，
+        // 循环刷几百个名字 = 存档无限膨胀。公开查询必须走只读的 peek()（见 StatsStore:252 的注释），
+        // 没有就直说查不到，绝不为了打印而造档案。
+        StatsStore.Stats st = plugin.stats().peek(target.getUniqueId());
+        // v2.26.0 审计轮：判空条件原来只看了 7 个字段，漏掉一批「不锻剑也可能有值」的：
+        // coins / talents / bestStrengthen / achievements / achvPoints / spirits / tombs /
+        // patterns / salvaged / repaired / commissionsFailed / rankTier。其中 coins 与
+        // achievements 最容易命中（管理员发币、成就奖励币都会让 coins > 0 而 forged 仍为 0），
+        // 这类玩家会被误判成「查不到档案」。判空的目的只是「别为陌生人建档案」，
+        // 所以宁可多看几个字段 —— 漏判比多看更糟。
+        if (st == null || isEmptyStats(st)) {
+            Msg.prefix(sender, "<red>查不到 </red><white>" + args[2] + "</white><red> 的锻造档案。</red>"
+                    + " <dark_gray>（只有锻过剑的玩家才会上榜）</dark_gray>");
+            return;
+        }
+        Quality q = Quality.byName(st.bestQuality);
+        Msg.send(sender, "<dark_gray>──── <white>锻造档案（公开）</white> <dark_gray>────");
+        Msg.send(sender, "<gray>玩家: <white>" + (target.getName() == null ? "?" : target.getName()));
+        Msg.send(sender, "<gray>锻造次数: <white>" + st.forged
+                + "</white> <dark_gray>|</dark_gray> 最高评分: <white>" + Msg.fmt(st.bestScore, 1)
+                + "</white> <dark_gray>|</dark_gray> 最佳品质: " + (q == null ? "<gray>—" : q.colored()));
+        int need = StatsStore.expToNext(st.level);
+        Msg.send(sender, "<gold>专精: <white>Lv." + st.level + "</white> · 称号: <#ffd166>"
+                + StatsStore.titleOf(st.reputation) + "</#ffd166> <dark_gray>|</dark_gray> 声望 <white>"
+                + st.reputation + "</white>");
+        Msg.send(sender, "<gray>图鉴: <white>" + st.codex.size() + "</white> / "
+                + (plugin.materials().all().size() * Quality.values().length)
+                + " <gray>· 比试 <white>" + st.duelWins + "</white> 胜 <white>" + st.duelLosses + "</white> 负"
+                + " <gray>· 委托 <white>" + st.commissionsDone + "</white> 完成</gray>");
+        if (st.flawless > 0) {
+            Msg.send(sender, "<#ffd166>满分之作: <white>" + st.flawless + " 把");
+        }
+        Msg.send(sender, "<dark_gray>隐私字段（剑币 / 连锻 / 背包）只在本人与管理员视图里。</dark_gray>");
+    }
+
     // ------------------------------------------------------------ 档案面板 / 排行（A4）
 
     /** /zhujian profile [玩家]：档案面板（剑币 / 连锻 / 声望 / 成就） */
@@ -540,7 +631,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             }
             com.forgemaster.ranking.Metric m = com.forgemaster.ranking.Metric.parse(args[i]);
             if (m == null) {
-                Msg.prefix(sender, "<red>未知排行维度: " + args[i] + "</red><gray>（可选 coins / reputation / streak / level）</gray>");
+                Msg.prefix(sender, "<red>未知排行维度: " + args[i] + "</red><gray>（可选 coins / reputation / streak / level / strengthen / duel）</gray>");
                 return;
             }
             metric = m;
@@ -710,6 +801,12 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
     // ------------------------------------------------------------ 大赛
 
     private void contest(CommandSender sender, String[] args) {
+        // v2.26.0：history 是只读档案，不该被功能开关连坐 —— contest.enabled=false 只关了
+        // 「开赛」，历届赛果是已经发生过的事实，服主关掉大赛后照样该能查（也便于对账）。
+        if (args.length >= 2 && isAny(args[1].toLowerCase(Locale.ROOT), "history", "lishi", "dangan")) {
+            contestHistory(sender, args);
+            return;
+        }
         if (!plugin.settings().contestEnabled()) {
             Msg.prefix(sender, "<red>大赛功能没开。</red>");
             return;
@@ -757,6 +854,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
                 com.forgemaster.contests.ContestGui.open(plugin, p);
                 return;
             }
+            // history 已在方法入口分派（不受 contest.enabled 影响），这里不再重复判
         }
         Msg.prefix(sender, plugin.contests().statusLine());
         // 玩家直接敲 /zhujian contest 时，能开面板就直接开（控制台保持纯文本）
@@ -768,6 +866,54 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         if (asking != null && plugin.contests().running()) {
             Msg.prefix(sender, "<gray>指定剑胚：<white>" + asking.display()
                     + "</white>（选错会被拦下）");
+        }
+    }
+
+    /**
+     * /zhujian contest history [届次号] —— 历届赛果档案（v2.26.0）。
+     *
+     * <p>无参列最近 10 届（届次 / 冠军 / 分数）；带届次号看单届详情。
+     * 档案由 {@link com.forgemaster.contests.ContestManager#finish} 结算时归档，
+     * 这里只读，控制台也能看。</p>
+     */
+    private void contestHistory(CommandSender sender, String[] args) {
+        com.forgemaster.contests.ContestHistoryStore store = plugin.contests() == null
+                ? null : plugin.contests().historyStore();
+        if (store == null) {
+            Msg.prefix(sender, "<red>大赛还没初始化。</red>");
+            return;
+        }
+        if (args.length >= 3) {
+            var e = store.byCode(args[2]);
+            if (e == null) {
+                Msg.prefix(sender, "<red>档案里没有届次 <white>" + args[2]
+                        + "</white>（届次号就是当年广播里的「种子」6 位号）。</red>");
+                return;
+            }
+            Msg.send(sender, "<dark_gray>──── <#ffd166>大赛档案 · " + e.code + "</#ffd166> ────");
+            Msg.send(sender, "<gray>时间：<white>" + com.forgemaster.contests.ContestHistoryStore.fmtTime(e.at)
+                    + "</white> <dark_gray>│</dark_gray> <gray>剑胚：<white>" + e.material
+                    + "</white> <dark_gray>│</dark_gray> <gray>交剑 <white>" + e.players + "</white> 人");
+            Msg.send(sender, "<gray>冠军：<#ffd166><bold>" + e.winner + "</bold></#ffd166> <white>"
+                    + com.forgemaster.contests.ContestHistoryStore.fmtScore(e.winnerScore) + "</white> 分");
+            for (String line : e.top) {
+                Msg.send(sender, "<dark_gray>  " + line);
+            }
+            return;
+        }
+        var list = store.recent(10);
+        if (list.isEmpty()) {
+            Msg.prefix(sender, "<gray>还没有历届档案——第一场大赛结束后这里就有了。");
+            return;
+        }
+        Msg.send(sender, "<dark_gray>──── <#ffd166>大赛历届档案（最近 " + list.size() + " 届）</#ffd166> ────");
+        for (var e : list) {
+            Msg.send(sender, "<dark_gray>" + e.code + "</dark_gray> <gray>"
+                    + com.forgemaster.contests.ContestHistoryStore.fmtTime(e.at)
+                    + "</gray> <white>" + e.winner + "</white> <gray>"
+                    + com.forgemaster.contests.ContestHistoryStore.fmtScore(e.winnerScore)
+                    + " 分</gray> <dark_gray>(" + e.players + " 人 · /zhujian contest history "
+                    + e.code + ")</dark_gray>");
         }
     }
 
@@ -1356,8 +1502,37 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             case "join", "qian", "qiding" -> Msg.prefix(p, cm.join(p));
             case "quit", "tuichu" -> Msg.prefix(p, cm.quit(p));
             case "deposit", "gong", "jiao" -> Msg.prefix(p, cm.deposit(p));
+            // v2.26.0：聊天补领待选圣物（离线错过三选一面板的玩家）。只发圣物，
+            // 全程不碰剑币路径；幂等回执见 ContractManager#pickPendingByIndex。
+            case "pick", "xuan", "xuanze", "选" -> contractPick(p, cm, args);
             default -> com.forgemaster.gui.ContractMenu.openPanel(plugin, p);
         }
+    }
+
+    /** /zhujian contract pick <1|2|3> —— 巨龙的赏赐聊天补领；不带序号列候选 */
+    private void contractPick(Player p, com.forgemaster.contract.ContractManager cm, String[] args) {
+        var uid = p.getUniqueId();
+        if (args.length < 3) {
+            List<String> names = cm.pendingNames(uid);
+            if (names.isEmpty()) {
+                Msg.prefix(p, "<red>你现在没有待选的圣物（已经选过，或者还没交满贡）。</red>");
+                return;
+            }
+            Msg.prefix(p, "<gold>巨龙的赏赐还在等你挑：</gold>");
+            for (int i = 0; i < names.size(); i++) {
+                Msg.prefix(p, "<gray>" + (i + 1) + ". <white>" + names.get(i) + "</white>");
+            }
+            Msg.prefix(p, "<gray>用 <white>/" + label() + " contract pick <序号></white> 领取。");
+            return;
+        }
+        int index;
+        try {
+            index = Integer.parseInt(args[2]);
+        } catch (NumberFormatException e) {
+            Msg.prefix(p, "<red>序号要写数字，比如 <white>/" + label() + " contract pick 1</white>。</red>");
+            return;
+        }
+        Msg.prefix(p, cm.pickPendingByIndex(uid, index));
     }
 
     /**
@@ -1802,10 +1977,12 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             Msg.prefix(sender, "<green>已回档到 <white>" + args[1] + "</white>。</green>"
                     + " <gray>回档前的存档已自动备份为 <white>" + preId + "</white>。");
             // v2.23.1：restore 现在会 flush 全部 → 备份 → 覆盖 → 只重载（不 save），
-            // 17 份存档的内存态都已按文件重建。仍建议重启，因为铁砧会话与悬赏名单
-            // 没有公开 reload 入口，且个别模块的 5 秒冲刷可能与重载擦肩。
+            // SAVE_FILES 里的存档（当前 22 份，见 BackupManager）内存态都已按文件重建，
+            // 外加数据根目录的 metrics-*.yml 与 seasons/ 目录。
+            // 仍建议重启，因为个别模块的 5 秒冲刷可能与重载擦肩。
             Msg.prefix(sender, "<#ff9a3c>存档与内存缓存已同步重建（覆盖 "
-                    + com.forgemaster.backup.BackupManager.SAVE_FILES.length + " 份文件 + metrics/ 目录）。"
+                    + com.forgemaster.backup.BackupManager.SAVE_FILES.length
+                    + " 份文件 + 趋势快照 + 赛季归档）。"
                     + "建议尽快重启一次服务器，让铁砧砧位与悬赏名单也彻底归位。</#ff9a3c>");
         } catch (java.io.IOException ex) {
             Msg.prefix(sender, "<red>回档失败：" + ex.getMessage() + "</red>");
@@ -2150,7 +2327,16 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
      * <p>手里有什么就评什么，不看权限：这是玩家侧的自我认知工具，也是把
      * 「分数为什么这么高」讲清楚的地方（黑盒分数没人会信）。</p>
      */
-    private void power(CommandSender sender) {
+    private void power(CommandSender sender, String[] args) {
+        // v2.26.0：power compare <玩家> / power log —— 同一个数据源（PDC + 各服务读数），纯只读
+        if (args.length >= 2 && isAny(args[1].toLowerCase(Locale.ROOT), "compare", "duibi", "对比")) {
+            powerCompare(sender, args);
+            return;
+        }
+        if (args.length >= 2 && isAny(args[1].toLowerCase(Locale.ROOT), "log", "jilu", "记录")) {
+            powerLog(sender);
+            return;
+        }
         if (!(sender instanceof org.bukkit.entity.Player player)) {
             Msg.prefix(sender, "<red>只有玩家能用这个命令（要评手里的东西）。</red>");
             return;
@@ -2172,6 +2358,99 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             Msg.send(sender, "<gray>拍卖/订单推荐价约 <white>" + price + "</white> 剑币"
                     + " <dark_gray>（战力 × price-per-power，仅供参考）</dark_gray></gray>");
         }
+        // 记一条评分曲线（v2.26.0）：观测数据，落盘失败只提示、不回滚 —— 别照抄钱货那套
+        long scored = com.forgemaster.score.PowerScore.of(plugin, held);
+        if (scored > 0 && plugin.powerLog() != null) {
+            com.forgemaster.score.PowerLogStore.Entry en = new com.forgemaster.score.PowerLogStore.Entry();
+            en.at = System.currentTimeMillis();
+            en.power = scored;
+            var q = com.forgemaster.util.MaterialLookup.qualityOf(held);
+            en.quality = q == null ? "" : q.name();
+            var m = com.forgemaster.util.MaterialLookup.materialOf(plugin, held);
+            en.material = m == null ? "" : m.id();
+            var s = plugin.strengthen();
+            en.level = s == null ? 0 : Math.max(0, s.levelOf(held));
+            var evo = plugin.evolutions();
+            en.stage = evo == null ? 0 : Math.max(0, evo.stageOf(held));
+            if (!plugin.powerLog().append(player.getUniqueId(), en)) {
+                Msg.send(sender, "<dark_gray>（评分曲线这条没写进盘，只影响 power log 回看）</dark_gray>");
+            }
+        }
+    }
+
+    /**
+     * {@code /zhujian power compare <玩家>}（v2.26.0）：主手对主手，逐项拆解谁强在哪。
+     *
+     * <p>只比在线玩家：离线玩家的主手读不到。对方是管理员也照比 ——
+     * 比的是物品 PDC，不含任何隐私字段。</p>
+     */
+    private void powerCompare(CommandSender sender, String[] args) {
+        if (args.length < 3) {
+            Msg.prefix(sender, "<red>用法：</red><white>/zhujian power compare <玩家></white>");
+            return;
+        }
+        if (!(sender instanceof org.bukkit.entity.Player player)) {
+            Msg.prefix(sender, "<red>只有玩家能用这个命令（要拿自己的主手出来比）。</red>");
+            return;
+        }
+        org.bukkit.entity.Player target = org.bukkit.Bukkit.getPlayerExact(args[2]);
+        if (target == null) {
+            Msg.prefix(sender, "<red>" + args[2] + " 不在线，离线玩家的主手读不到。</red>");
+            return;
+        }
+        if (target.getUniqueId().equals(player.getUniqueId())) {
+            Msg.prefix(sender, "<red>跟自己比是平局，换个人。</red>");
+            return;
+        }
+        if (!plugin.settings().flag("power-score.enabled", true)) {
+            Msg.prefix(sender, "<yellow>战力评分已关闭。</yellow> <dark_gray>（config.yml → power-score.enabled）");
+            return;
+        }
+        for (String line : com.forgemaster.score.PowerScore.compare(plugin,
+                player.getInventory().getItemInMainHand(), target.getName(),
+                target.getInventory().getItemInMainHand())) {
+            Msg.send(sender, line);
+        }
+    }
+
+    /** {@code /zhujian power log}（v2.26.0）：回看自己最近的评分曲线 */
+    private void powerLog(CommandSender sender) {
+        if (!(sender instanceof org.bukkit.entity.Player player)) {
+            Msg.prefix(sender, "<red>只有玩家能用这个命令。</red>");
+            return;
+        }
+        if (plugin.powerLog() == null) {
+            Msg.prefix(sender, "<red>评分曲线模块没起来。</red>");
+            return;
+        }
+        java.util.List<com.forgemaster.score.PowerLogStore.Entry> list = plugin.powerLog().of(player.getUniqueId());
+        if (list.isEmpty()) {
+            Msg.prefix(sender, "<gray>还没有评分记录。拿一把锻造品跑一次 <white>/zhujian power</white> 就有了。</gray>");
+            return;
+        }
+        Msg.send(sender, "<dark_gray>──── <white>战力曲线</white>（最近 " + list.size() + " 次）<dark_gray>────");
+        for (com.forgemaster.score.PowerLogStore.Entry en : list) {
+            String time = java.time.Instant.ofEpochMilli(en.at)
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .format(java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm"));
+            StringBuilder row = new StringBuilder("<gray>").append(time).append("  <#ffd166>")
+                    .append(en.power).append("</#ffd166> <dark_gray>|</dark_gray> ");
+            // 盘上存的是稳定键（品质枚举名 / 材质 id），展示时才翻成中文：
+            // 存档里塞显示名会让「改 config 的材质名」把历史曲线变成一堆陌生词，
+            // 而键是稳定的。Quality.byName 同时认枚举名与显示名，老档两种都读得出。
+            if (!en.quality.isEmpty()) {
+                Quality lq = Quality.byName(en.quality);
+                row.append("<gray>品质 <white>").append(lq == null ? en.quality : lq.display()).append("</white> ");
+            }
+            if (!en.material.isEmpty()) {
+                var lm = com.forgemaster.util.MaterialLookup.resolve(plugin, en.material);
+                row.append("<gray>材质 <white>").append(lm == null ? en.material : lm.display()).append("</white> ");
+            }
+            row.append("<gray>强化 <white>+").append(en.level).append("</white> · 蜕变 <white>")
+                    .append(en.stage).append(" 阶");
+            Msg.send(sender, row.toString());
+        }
+        Msg.send(sender, "<dark_gray>拿更好的剑再来一次，曲线就会抬头。</dark_gray>");
     }
 
     /**
@@ -3199,12 +3478,12 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         addHelp(out, u + "stats [玩家]", "锻造档案 / 专精 / 收集度");
         addHelp(out, u + "profile [玩家]", "档案面板（剑币 / 连锻 / 声望 / 成就）");
         addHelp(out, u + "talent", "匠人天赋：每 5 级 1 点（add <id> · reset [confirm]）");
-        addHelp(out, u + "rank [coins|reputation|streak|level|strengthen] [text]", "排行榜 GUI（text 看文字版）");
+        addHelp(out, u + "rank [coins|reputation|streak|level|strengthen|duel] [text]", "排行榜 GUI（text 看文字版）");
         addHelp(out, u + "top [legacy]", "锻造名人堂（top legacy 看历代名剑）");
         addHelp(out, u + "achievements", "成就界面（已达成 / 未达成 / 进度）");
         addHelp(out, u + "title", "称号：解锁条件与佩戴");
         addHelp(out, u + "season", "当前赛季与结算倒计时");
-        addHelp(out, u + "power", "战力评分：手上这把的分数拆解与建议价");
+        addHelp(out, u + "power [compare <玩家> | log]", "战力评分：手上这把拆解与建议价 · compare 对比 · log 评分曲线");
         addHelp(out, u + "pass", "赛季通行证：进度与免费轨道奖励");
         addHelp(out, u + "redeem", "声望兑换所（info · coin <声望数> · charm <符id>）");
         addHelp(out, u + "anvil [all]", "砧位自查：列出你挂在铁砧上的剑与坐标（all 要管理员）");
@@ -3250,13 +3529,13 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         addHelp(out, u + "master", "师徒：master <玩家名> 邀徒 · leave 退出 · expel <徒弟> 逐出 · graduate 出师 · graduates 名录");
         addHelp(out, u + "accept", "收下拜师邀请");
         addHelp(out, u + "duel", "比试：duel <玩家> 发起 · accept / deny 应答");
-        addHelp(out, u + "contest", "锻造大赛：状态 · list 看榜 · watch 观战 · gui 面板");
+        addHelp(out, u + "contest", "锻造大赛：状态 · list 看榜 · watch 观战 · gui 面板 · history 历届档案");
 
         out.add(HELP_G_WORLD);
         addHelp(out, u + "spirit", "剑灵：info · feed 喂养 · name <剑名> · reroll 重抽 · show / hide");
         addHelp(out, u + "tomb", "剑冢：list · bury 埋剑 · take / challenge / info / remove <编号>");
         addHelp(out, u + "tombrun", "秘境：enter 进图 · status 看进度 · quit 退出");
-        addHelp(out, u + "contract", "龙税契约：不带参开面板 · join / quit / deposit");
+        addHelp(out, u + "contract", "龙税契约：不带参开面板 · join / quit / deposit · pick <1|2|3> 补领圣物");
         addHelp(out, u + "shangjin", "每日悬赏：不带参看货单 · claim <序号> 领赏");
         addHelp(out, u + "forge", "极限锻造：risk 预设下一把 · cancel 撤销");
         addHelp(out, u + "event", "世界事件：不带参看状态 · start [id] / stop（这两个要管理员）");
@@ -3276,10 +3555,13 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             addHelp(out, u + "money give|take <玩家> <数量>", "发 / 扣剑币（coin give|take 同义）");
         addHelp(out, u + "stats rep give|take <玩家> <数量>", "发 / 扣声望（扣不够整条不动；声望不是货币，不跟 coin-sinks 走）");
             addHelp(out, u + "reload", "重载配置");
-            addHelp(out, u + "selftest", "运行时自检：全量具名检查项逐条跑一遍（当前 514 项）");
+            // v2.26.0 修：这两行原来写死「当前 514 项」「18 份存档」，而实际已是 538 项 / 19 份 ——
+            // 写死数字等于给 help 埋一个必然过期的坑。改成不写数字 / 从常量取长度，永不漂移。
+            addHelp(out, u + "selftest", "运行时自检：全量具名检查项逐条跑一遍（项数以运行结果为准）");
 
             out.add(HELP_G_ADMIN_SAVE);
-            addHelp(out, u + "backup", "全服存档快照（18 份存档 + metrics 目录）");
+            addHelp(out, u + "backup", "全服存档快照（"
+                    + com.forgemaster.backup.BackupManager.SAVE_FILES.length + " 份存档 + 趋势快照 + 赛季归档）");
             addHelp(out, u + "restore <备份id>", "回档到某个备份（回档后要重启服务器，否则内存会把旧数据写回去）");
             addHelp(out, u + "config check [all]", "配置体检：盘上缺键 + 实际生效值");
             addHelp(out, u + "metrics", "经济看板：不带参实时报表 · trend [天数] · csv [天数] · sample 立刻采样 · gui 三页面板");
@@ -3804,6 +4086,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             case "config", "peizhi" -> tabConfig(args);
             case "fixattrs", "xiufu" -> tabFixAttrs(args);
             case "stats" -> tabStats(sender, args);
+            case "power", "zhanli" -> tabPower(sender, args);
             case "profile", "dangan" -> tabPlayerArg(sender, args);
             case "top" -> tabTop(args); // v2.25 修 P2："legacy" 是 top 的第 2 段参数，误放顶层分派只会补出未知子命令
             // ---- 无参子命令（再往下一层没有候选）----
@@ -3812,7 +4095,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
                  "board", "orders", "repair", "yanmo", "manual", "manuals", "jianpu",
                  "record", "dengji", "hammer", "chongchui", "tiechui", "title", "chenghao",
                  "shop", "shanghui", "blackmarket", "heishi", "signin", "qiandao",
-                 "env", "story", "power", "zhanli", "accept", "reload", "selftest",
+                 "env", "story", "accept", "reload", "selftest",
                  "backup", "beifen", "help", "achievements", "achv", "chengjiu" -> List.of();
             default -> List.of();
         };
@@ -4014,7 +4297,13 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
     private List<String> tabContract(String[] args) {
         if (args.length == 2) {
             return filter(List.of("join", "qian", "qiding", "quit", "tuichu",
-                    "deposit", "gong", "jiao"), args[1]);
+                    "deposit", "gong", "jiao", "pick", "xuan", "xuanze", "选"), args[1]);
+        }
+        if (args.length == 3) {
+            String sub = args[1].toLowerCase(Locale.ROOT);
+            if (sub.equals("pick") || sub.equals("xuan") || sub.equals("xuanze") || sub.equals("选")) {
+                return filter(List.of("1", "2", "3"), args[2]);
+            }
         }
         return List.of();
     }
@@ -4033,11 +4322,30 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
     private List<String> tabContest(CommandSender sender, String[] args) {
         if (args.length == 2) {
             List<String> subs = new ArrayList<>(List.of("list", "watch", "guanzhan", "kan",
-                    "gui", "panel", "mianban"));
+                    "gui", "panel", "mianban", "history", "lishi", "dangan"));
             if (sender.hasPermission("forgemaster.admin")) {
                 subs.add("start");
             }
             return filter(subs, args[1]);
+        }
+        if (args.length == 3) {
+            String sub = args[1].toLowerCase(Locale.ROOT);
+            if (sub.equals("history") || sub.equals("lishi") || sub.equals("dangan")) {
+                // 动态候选：在档的届次号；档案没起来时给空表而不是抛异常
+                try {
+                    var store = plugin.contests() == null ? null : plugin.contests().historyStore();
+                    if (store == null) {
+                        return List.of();
+                    }
+                    List<String> codes = new ArrayList<>();
+                    for (var e : store.recent(store.size())) {
+                        codes.add(e.code);
+                    }
+                    return filter(codes, args[2]);
+                } catch (RuntimeException ex) {
+                    return List.of();
+                }
+            }
         }
         return List.of();
     }
@@ -4360,18 +4668,29 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
      */
     private List<String> tabStats(CommandSender sender, String[] args) {
         if (!sender.hasPermission("forgemaster.admin")) {
+            // v2.26.0：公开档案对所有人开放 —— 非管理员只补全 of 和目标玩家名
+            if (args.length == 2) {
+                return filter(List.of("of"), args[1]);
+            }
+            if (args.length == 3 && isAny(args[1].toLowerCase(Locale.ROOT), "of", "gongkai", "公开")) {
+                return filter(players(), args[2]);
+            }
             return List.of();
         }
-        boolean rep = args.length >= 2 && isAny(args[1].toLowerCase(Locale.ROOT), "rep", "shengwang", "声望");
+        // 管理员分支也把 of 排进候选（rep 已有）
         if (args.length == 2) {
             List<String> out = new ArrayList<>(filter(players(), args[1]));
-            for (String c : filter(List.of("rep", "shengwang"), args[1])) {
+            for (String c : filter(List.of("rep", "shengwang", "of"), args[1])) {
                 if (!out.contains(c)) {
                     out.add(c);
                 }
             }
             return out;
         }
+        if (args.length == 3 && isAny(args[1].toLowerCase(Locale.ROOT), "of", "gongkai", "公开")) {
+            return filter(players(), args[2]);
+        }
+        boolean rep = args.length >= 2 && isAny(args[1].toLowerCase(Locale.ROOT), "rep", "shengwang", "声望");
         if (!rep) {
             return List.of();
         }
@@ -4383,6 +4702,17 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         }
         if (args.length == 5) {
             return filter(AMOUNTS, args[4]);
+        }
+        return List.of();
+    }
+
+    /** /zhujian power 的补全（v2.26.0）：compare <玩家> / log */
+    private List<String> tabPower(CommandSender sender, String[] args) {
+        if (args.length == 2) {
+            return filter(List.of("compare", "log"), args[1]);
+        }
+        if (args.length == 3 && isAny(args[1].toLowerCase(Locale.ROOT), "compare", "duibi", "对比")) {
+            return filter(players(), args[2]);
         }
         return List.of();
     }

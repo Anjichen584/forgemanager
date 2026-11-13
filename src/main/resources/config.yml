@@ -109,6 +109,9 @@ contest:
   interval-minutes: 30           # 每隔多少分钟自动开一场
   duration-seconds: 300          # 一场多久
   min-players: 1                 # 至少几个在线才开
+  # 历届赛果档案（v2.26.0）：/zhujian contest history 的数据源，只增不改，超出就从最老的裁掉
+  # 这里必须显式写出来 —— 只写在 Java 默认值里的话服主既看不见也改不动（改了下一次 reload 才生效）
+  history-keep: 20
   # 实时观战（v2.7）：面板行数、刷新间隔、是否显示已离开的人
   watch:
     rows: 6                      # clamp 3~6

@@ -428,11 +428,19 @@ public final class ContractManager {
         store.markDirty(); // 审计 #7：标脏交异步冲刷（settleDay 循环里不再逐人落盘）
         double pct = Math.max(0, Math.min(0.5, plugin.settings().num("contract.tax.break-coin-pct", 0.2)));
         long loss = 0;
+        boolean collected = false;
         if (plugin.stats() != null && pct > 0) {
             long coins = plugin.stats().coins(id);
             loss = Math.round(coins * pct);
             if (loss > 0) {
-                plugin.stats().takeCoins(id, loss, CoinReason.OTHER_OUT);
+                // v2.26.0 修 P2：返回值原来被忽略 —— 余额在 coins() 读取与 takeCoins 之间
+                // 变化（并发扣款 / 实际余额不足被拒）时罚金没收上来，广播却照样喊
+                // 「剑币少了 N」= 全服看到一条假账。现在按实际结果措辞，收缴失败留痕。
+                collected = plugin.stats().takeCoins(id, loss, CoinReason.OTHER_OUT);
+                if (!collected) {
+                    plugin.getLogger().warning("[龙税] 断约罚金未能收缴：目标 " + id
+                            + " 应缴 " + loss + "（余额在读取与扣款之间发生了变化，契约本身照常粉碎）");
+                }
             }
         }
         // v2.23.7 修 P2：主线程 getOfflinePlayer(uuid).getName() 对从未进服的
@@ -448,9 +456,12 @@ public final class ContractManager {
                 name = cached;
             }
         }
+        String taxEnd = (loss > 0 && !collected)
+                ? "罚金分文未能收缴——囊中早已空空。"
+                : "圣物被尽数夺走，剑币少了 " + loss + "。";
         Bukkit.broadcast(Msg.mm("<gradient:#ff3d6e:#ff7a3d><bold>巨龙的怒吼撕裂了夜空——</bold></gradient> "
                 + "<white>" + (name == null ? "一名铁匠" : name) + "</white> <red>交不上税，契约粉碎，"
-                + "圣物被尽数夺走，剑币少了 " + loss + "。</red>"));
+                + taxEnd + "</red>"));
         for (Player online : Bukkit.getOnlinePlayers()) {
             online.playSound(online.getLocation(), Sound.ENTITY_ENDER_DRAGON_DEATH, 0.7f, 0.8f);
         }
@@ -503,11 +514,52 @@ public final class ContractManager {
         if (def == null) {
             return null;
         }
-        r.relics.add(relicId);
+        // v2.26.0：先清再发（单次消费结构）。所有校验通过后才消费 pending，再入库圣物；
+        // 同一 pending 只可能被消费一次——第二个领奖入口（聊天 / GUI）撞到的必然是空
+        // pending，拿失败回执且零状态变化，重复发放在结构上被挡死。
         r.pickPending = "";
+        r.relics.add(relicId);
         store.markDirty(); // 审计 #7：标脏交异步冲刷
         return "<gradient:#ffd166:#ff7a3d>圣物到手：</gradient> <bold>" + def.name()
                 + "</bold> <dark_gray>——</dark_gray> " + def.desc();
+    }
+
+    /**
+     * v2.26.0：聊天补领（{@code /zhujian contract pick <1|2|3>}），给离线错过选界面的玩家用。
+     *
+     * <p>幂等红线：无 pending / 序号越界 / 候选已失效，都返回明确回执且<b>不产生任何状态变化</b>；
+     * 选中一次后 pending 已被 {@link #pickRelic} 的单次消费结构清空，重复 pick 只会拿到
+     * 「没有待选」的回执。只发圣物，全程不碰任何剑币路径。</p>
+     *
+     * @param index 候选序号，1 起
+     */
+    public String pickPendingByIndex(UUID id, int index) {
+        ContractStore.Run r = store.run(id);
+        if (r == null || r.pickPending == null || r.pickPending.isBlank()) {
+            return "<red>你现在没有待选的圣物（已经选过，或者还没交满贡）。</red>";
+        }
+        String[] ids = r.pickPending.split(",");
+        if (index < 1 || index > ids.length) {
+            return "<red>序号越界：这次只有 <white>" + ids.length + "</white> 个候选，"
+                    + "写 <white>1</white> 到 <white>" + ids.length + "</white>。</red>";
+        }
+        String ok = pickRelic(id, ids[index - 1]);
+        return ok != null ? ok
+                : "<red>第 " + index + " 号候选当前不可选（圣物配置可能被改），换个序号或用面板挑。</red>";
+    }
+
+    /** 待选圣物的名字列表（聊天展示用）；无 pending 返回空表 */
+    public List<String> pendingNames(UUID id) {
+        List<String> out = new ArrayList<>();
+        ContractStore.Run r = store.run(id);
+        if (r == null || r.pickPending == null || r.pickPending.isBlank()) {
+            return out;
+        }
+        for (String relicId : r.pickPending.split(",")) {
+            RelicPool.Def d = relics.get(relicId);
+            out.add(d == null ? relicId : d.name());
+        }
+        return out;
     }
 
     /** 圣物聚合加成：没在契 / 没圣物返回 ZERO */

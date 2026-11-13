@@ -14,6 +14,22 @@ import java.util.UUID;
  * 它的数值来自 {@link StrengthenSnapshot} 的<b>历史最高</b>，所以
  * {@link #value(StatsStore.Stats)} 对它恒返回 0，真实数值要走
  * {@link Rankings#valueOf(Metric, UUID, StatsStore.Stats)}。</p>
+ *
+ * <h2>口径（v2.26.0 补）：哪些维度是「本赛季」，哪些是「生涯累计」</h2>
+ * <pre>
+ * 维度        取值字段                        resetSeasonal 清？  口径
+ * COINS       coins                           清                  本赛季
+ * REPUTATION  reputation                      清                  本赛季
+ * STREAK      streak / streakAt / bestStreak  清                  本赛季
+ * LEVEL       level × 100000 + exp            不清                生涯累计
+ * STRENGTHEN  StrengthenSnapshot 历史最高      不清                生涯累计
+ * DUEL        duelWins / duelLosses           不清（刻意）        生涯累计
+ * </pre>
+ *
+ * <p>这张表不是装饰：{@code SeasonManager.end()} 把<b>每个</b>维度都写进赛季档案，
+ * 而「不清」的那三维度写进去的是当下的生涯累计榜 —— 读档案的人很容易把
+ * 「第 N 季 比试榜」误读成「第 N 季打了多少场」。口径由 {@link #career()} 显式给出，
+ * 归档时一并落盘，见 {@code SeasonManager#end(String)}。</p>
  */
 public enum Metric {
 
@@ -21,7 +37,10 @@ public enum Metric {
     REPUTATION("声望", Material.ENCHANTED_BOOK, "reputation", "shengwang"),
     STREAK("连锻", Material.BLAZE_POWDER, "streak", "lianduan"),
     LEVEL("专精", Material.EXPERIENCE_BOTTLE, "level", "zhuanjing"),
-    STRENGTHEN("强化", Material.NETHERITE_SWORD, "strengthen", "qianghua", "forge-level", "duanzao");
+    STRENGTHEN("强化", Material.NETHERITE_SWORD, "strengthen", "qianghua", "forge-level", "duanzao"),
+    // v2.26.0：比试维度 —— 数据是现成的（DuelManager 结算处 countDuel 落 StatsStore），
+    // 这里只补「看得见」：按胜场排，胜场同再比谁输得少（乘一百万隔离两个量纲）
+    DUEL("比试", Material.WOODEN_SWORD, "duel", "bishi");
 
     private final String label;
     private final Material icon;
@@ -46,6 +65,24 @@ public enum Metric {
         return this == STRENGTHEN;
     }
 
+    /**
+     * 这一维度是「生涯累计」还是「本赛季」（v2.26.0）。
+     *
+     * <p>为什么要有这个方法，而不是直接去改 {@code StatsStore#resetSeasonal()}：
+     * LEVEL / STRENGTHEN / DUEL 三个维度的底层字段（level、bestStrengthen、duelWins）
+     * 是<b>只涨不跌的生涯战绩</b> —— 专精等级、历史最高强化、比试胜负都是玩家攒了很久的东西。
+     * 赛季结算把它们清零 = 数据事故（玩家的历史最高强化和生涯胜场直接消失）。
+     * 所以「不清」是刻意的，问题只在于<b>归档文本没写清口径</b>：
+     * season-N.yml 里这三个榜与剑币/声望/连锻榜长得一模一样，读档案的人会把
+     * 「第 N 季 比试榜」当成「第 N 季的比试成绩」。这里把口径变成可读的代码，
+     * 让归档处有唯一的判定来源，不靠注释口口相传。</p>
+     *
+     * @return true = 生涯累计（赛季结算后不清零，归档进该季档案的是「截至该季结算时的生涯值」）
+     */
+    public boolean career() {
+        return this == LEVEL || this == STRENGTHEN || this == DUEL;
+    }
+
     /** 排序用的数值。连锻只计算仍在有效期内的链（超过静默期即视为断链）。 */
     public double value(StatsStore.Stats st) {
         return switch (this) {
@@ -57,6 +94,8 @@ public enum Metric {
             case LEVEL -> st.level * 100000.0 + st.exp;
             // 锻造等级没有历史存档：数值由 Rankings#valueOf 从历史最高取，这里只能是 0
             case STRENGTHEN -> 0;
+            // 比试：胜场为主键（乘一百万与负场量纲隔离），同胜场比谁输得少
+            case DUEL -> st.duelWins * 1_000_000.0 - st.duelLosses;
         };
     }
 
@@ -72,6 +111,7 @@ public enum Metric {
                 StrengthenSnapshot.Best b = StrengthenSnapshot.forStats(st);
                 yield b == null ? "未上榜（历史最高）" : "+" + b.level() + "/+" + b.cap() + "（历史最高）";
             }
+            case DUEL -> st.duelWins + " 胜 " + st.duelLosses + " 负";
         };
     }
 
@@ -102,7 +142,8 @@ public enum Metric {
     }
 
     /** 按名字 / 别名 / 中文名解析，找不到返回 null */
-    public static Metric parse(String raw) {        if (raw == null) {
+    public static Metric parse(String raw) {
+        if (raw == null) {
             return null;
         }
         String s = raw.trim();

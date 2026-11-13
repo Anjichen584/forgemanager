@@ -32,7 +32,14 @@ public final class Rankings {
         if ("SelfTest".equals(st.name)) {
             return false;
         }
-        return st.forged > 0 || st.coins > 0 || st.reputation > 0 || st.streak > 0;
+        // v2.26.0 审计轮补：原来只看 forged / coins / reputation / streak 四项，
+        // 漏了**本轮才上线的比试维度**。后果很具体：一个只打过比试、没锻造过、
+        // 手里没币、没声望、没连锻记录的号（duel 不收费，结算只 countDuel），
+        // 会被判成「没有过数据」而整条从 rank duel 榜上消失 —— 明明 profile 里
+        // 写着「3 胜 1 负」。这正是加 DUEL 维度时最该想到、却最容易漏的一处：
+        // 「活跃档案」的定义没跟着新维度一起长。
+        return st.forged > 0 || st.coins > 0 || st.reputation > 0 || st.streak > 0
+                || st.duelWins > 0 || st.duelLosses > 0;
     }
 
     /**

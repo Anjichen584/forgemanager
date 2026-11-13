@@ -70,16 +70,25 @@ public final class ContestManager {
     }
 
     public void shutdown() {
-        // v2.25 修 P2（审计轮2-4）：reload / 关服时若大赛进行中，先走完整结算
-        // （发声望 / 剑币 / 播报），否则交过剑的玩家分数凭空蒸发、BossBar 无声消失。
-        if (running) {
-            finish();
-        }
-        running = false;
-        stopTicker();
-        if (bar != null) {
-            bar.removeAll();
-            bar = null;
+        try {
+            // v2.25 修 P2（审计轮2-4）：reload / 关服时若大赛进行中，先走完整结算
+            // （发声望 / 剑币 / 播报），否则交过剑的玩家分数凭空蒸发、BossBar 无声消失。
+            if (running) {
+                finish();
+            }
+        } finally {
+            // finish() 会广播、发声望、查成就，任何一步抛异常都不能把下面这些留下没做完：
+            // ticker 不取消会在关服后继续跑，档案实例不置空则本次 reload 白费。
+            running = false;
+            stopTicker();
+            if (bar != null) {
+                bar.removeAll();
+                bar = null;
+            }
+            // 放在 finish 之后：archiveContest 需要旧实例把这一届落盘，先置空就把本届档案弄丢了。
+            // reloadAll() 是 shutdown → start，只有在 shutdown 这侧丢弃实例，服主改的
+            // contest.history-keep 才会被下一次 historyStore() 重新读取（见 reloadHistory 注释）。
+            reloadHistory();
         }
     }
 
@@ -267,8 +276,92 @@ public final class ContestManager {
         if (top.size() > 5) {
             Bukkit.broadcast(Msg.mm("<dark_gray>        ……另有 " + (top.size() - 5) + " 位参赛者"));
         }
+        archiveContest(top);
         scores.clear();
         names.clear();
+    }
+
+    // ------------------------------------------------------------ 历届档案（v2.26.0）
+
+    /** 惰性建档案：构造期 settings 未必就绪，结算 / 查询时才初始化（只初始化一次） */
+    private ContestHistoryStore historyStore;
+
+    /** 上次归档落盘失败、这一届只活在内存里（重建实例前必须先补写，否则这届静默蒸发） */
+    private boolean archivePending;
+
+    /** 历届赛果档案（/zhujian contest history 的数据源） */
+    public synchronized ContestHistoryStore historyStore() {
+        if (historyStore == null) {
+            historyStore = new ContestHistoryStore(plugin);
+            historyStore.load();
+        }
+        return historyStore;
+    }
+
+    /**
+     * 丢弃当前档案实例，下次 {@link #historyStore()} 按最新配置（{@code contest.history-keep}）重建并重新 load。
+     *
+     * <p>为什么 shutdown 必须置空而不是保留：{@code keep} 是构造期从 config 读死的 final 字段，
+     * 而 {@code reloadAll()} 走的是 {@code shutdown() → start()}，不重建实例 = 服主改完保留届数
+     * 永远不生效，直到重启服务器（与 v2.23.1 修的那批「周期只在构造期读一次」同型坑）。</p>
+     *
+     * <p>调用点必须在 {@code finish()} 之后：archiveContest 要用旧实例把这一届写进去。
+     * 置空前只在 {@code archivePending} 时补一次 save —— 已成功落盘的档案内容不会再变，
+     * 每次重载都整份重写是纯浪费（跟 record() 重复分支同一类毛病）。</p>
+     */
+    public synchronized void reloadHistory() {
+        if (historyStore == null) {
+            return; // 从没被用到过：没有内存态可丢，也不必碰磁盘
+        }
+        if (archivePending && !historyStore.save()) {
+            plugin.getLogger().warning("[大赛] 重载档案前补写 contest-history.yml 失败："
+                    + "内存里尚未落盘的赛果会随实例重建一起丢弃");
+        }
+        archivePending = false;
+        historyStore = null;
+    }
+
+    /**
+     * 结算归档：把本届赛果写进 {@link ContestHistoryStore}（只增不改，保留最近 N 届）。
+     *
+     * <p>只归档有人交剑的场次——冠军 / 分数是档案的核心字段，空场次归档只会刷屏。
+     * 落盘时机选「结算点直接 save 并判返回值」：赛果单次不可再生，异步冲刷的崩溃
+     * 窗口会永久丢一届；一场一次同步原子写代价可接受。写盘失败打 SEVERE 留痕，
+     * 内存里这届仍在，下一场结算会连同补写。</p>
+     */
+    private void archiveContest(List<Map.Entry<UUID, Double>> top) {
+        try {
+            ContestHistoryStore.Entry e = new ContestHistoryStore.Entry();
+            e.code = contestId == null ? "?" : contestId;
+            e.at = System.currentTimeMillis();
+            e.material = material == null ? "?" : material.display();
+            e.winner = names.getOrDefault(top.get(0).getKey(), "?");
+            e.winnerScore = top.get(0).getValue();
+            e.players = scores.size();
+            for (int i = 0; i < Math.min(5, top.size()); i++) {
+                e.top.add((i + 1) + ". " + names.getOrDefault(top.get(i).getKey(), "?")
+                        + ":" + ContestHistoryStore.fmtScore(top.get(i).getValue()));
+            }
+            // 先问一句在不在档：record() 的「已在档」分支是纯内存判断、不写盘，
+            // 只有真新增那次才是整份重建（save 覆盖全部条目 = 连带把之前落盘失败的也补上）。
+            // 实例只取一次：万一 reloadHistory() 在另一线程把字段置空，前后两次 historyStore()
+            // 会落到两个不同实例上，这份档案就写进了马上要被丢弃的那一份。
+            ContestHistoryStore store = historyStore();
+            boolean known = store.byCode(e.code) != null;
+            if (!store.record(e)) {
+                // 只有「本次新增写盘失败」会走到这里（已在档恒 true），
+                // 所以这条日志可以放心说「本届暂存内存」；置上标记让 reloadHistory 换实例前补写。
+                archivePending = true;
+                plugin.getLogger().severe("[大赛] 赛果归档落盘失败（contest-history.yml）：本届 "
+                        + e.code + " 暂存内存，下一场结算会连带补写");
+            } else if (!known) {
+                // 新增那次写盘成功 = 整份档案已完整落盘，之前积压的待补写也随之兑现
+                archivePending = false;
+            }
+        } catch (RuntimeException ex) {
+            // 归档失败绝不能打断发奖主流程
+            plugin.getLogger().warning("[大赛] 赛果归档异常：" + ex);
+        }
     }
 
     private String medal(int rank) {

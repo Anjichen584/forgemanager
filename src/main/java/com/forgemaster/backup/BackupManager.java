@@ -17,8 +17,8 @@ import java.util.List;
 /**
  * 存档备份 / 回档（E3）。
  *
- * <p>备份目录：plugins/ForgingMaster/backups/&lt;时间戳&gt;/，包含存在的存档文件：
- * data.yml、commissions.yml、manuals.yml、auction.yml、tombs.yml。</p>
+ * <p>备份目录：plugins/ForgingMaster/backups/&lt;时间戳&gt;/，包含 {@link #SAVE_FILES} 里
+ * 实际存在的存档文件（这份清单是唯一真相源，这里不再复述文件名 —— 复述过的那份永远会过期）。</p>
  *
  * <p>回档前会先自动备份一次当前存档（前缀 pre-restore-），方便反悔。</p>
  */
@@ -29,8 +29,16 @@ public final class BackupManager {
      *
      * <p><b>v2.23.1 修 P0：原来只有 10 份，漏了 8 份</b>。回档后会出现最迷惑的状态——
      * 「剑币回到 3 天前，但行会仓库还是现在的」「委托重置了，砧位上的剑还在」。
-     * 现在与代码实际落盘的 18 份文件一一对应：新增存档文件时必须同步加到这个数组，
-     * {@link #backup} 会把「漏列」以外的文件全部原样复制，所以这份清单是唯一的真相源。</p>
+     * 现在覆盖 22 份核心存档（经济 / 行会 / 委托 / 砧位 / 名人堂 / 剧情 / 赛季 / 通行证…）：
+     * 新增存档文件时必须同步加到这个数组 —— {@link #backup} 只复制清单内的文件，清单外的
+     * 一律不碰，所以这份数组是「什么会跟着回档一起退回」的唯一真相源。</p>
+     *
+     * <p><b>v2.26.0 补三份</b>（contest-history.yml / power-log.yml / hall-legacy.yml）：
+     * 只加清单是不够的，回档后还必须按盘重建前两份的内存态，见 {@link #flushAll} /
+     * {@link #reloadAllSilently}；hall-legacy.yml 没有内存缓存，只补清单即可。</p>
+     *
+     * <p>清单之外还有两类「不叫 .yml 的存档」，由 {@link #backup} 单独处理：
+     * 数据根目录的散装趋势快照 {@code metrics-<yyyyMMdd>.yml}，与 {@code seasons/} 归档目录。</p>
      */
     public static final String[] SAVE_FILES = {
             // 经济与主体数据
@@ -54,13 +62,82 @@ public final class BackupManager {
             "spectrum-data.yml",     // 剑谱/万象
             "daily-data.yml",        // 每日签到
             "bounty-data.yml",       // 悬赏已领名单（v2.23.1 新增的文件）
+            // v2.26.0 补：这两个文件都漏在清单外，回档时既不备份也不恢复
+            "contest-history.yml",   // 历届大赛赛果：单次不可再生，见下方注释
+            "power-log.yml",         // 战力评分曲线：观测数据，口径见下方注释
+            "hall-legacy.yml",       // 跨赛季剑传承：只增不删的永久记录，见下方注释
     };
 
-    /** 需要整目录备份的子目录（趋势快照是派生数据，回档时一并替换才自洽） */
-    private static final String METRICS_DIR = "metrics";
+    /*
+     * hall-legacy.yml 为什么也进备份（v2.26.0 审计轮补）：
+     * 它和 hall.yml / hall-strengthen.yml 是同一族（名人堂三份），前两份早在清单里，
+     * 唯独这一份从 v2.19 加入以来一直漏着 —— 结果回档时「名人堂名次回去了、每赛季那把名剑没回去」，
+     * 两张表当场对不上。它是 SeasonManager.end() 刻下的永久记录（同一赛季已刻过就不改写），
+     * 丢了没有任何补写路径，比 power-log 那种派生视图严重。
+     * 与 contest-history 不同的是：SeasonLegacy **没有内存缓存**，每次 all()/ofSeason() 都
+     * 直接 load() 磁盘，所以回档覆盖文件后不需要任何 reload 钩子，只补清单即可。
+     */
+
+    /*
+     * contest-history.yml 为什么必须进备份：它记的是「哪一届谁夺冠」，是单次不可再生事件。
+     * ContestHistoryStore 为了这件事专门放弃了异步冲刷（改成结算点同步原子写），代价已经付了；
+     * 如果它不在清单里，回档时这一份既不进 pre-restore 也不被覆盖 —— 管理员回档到三天前，
+     * 剑币、行会、委托全回去了，唯独赛史还停在今天，而「反悔」这条后路根本没有那三天的赛果。
+     * 只加清单还不够：ContestHistoryStore 是 ContestManager 的惰性单例，内存里握着旧条目，
+     * 下一次 record() 会整份回写把刚恢复的文件盖掉（与 v2.23.1 那个 P0 完全同型），
+     * 所以 flushAll / reloadAllSilently 必须同时补上。
+     *
+     * power-log.yml 为什么也进备份（自洽口径：跟着 data.yml 一起进退）：
+     * 它确实是观测数据、非账本（ForgingMasterPlugin:118），单份丢失可以接受 —— 但那说的是
+     * 「崩溃丢最近几条曲线点」。回档语境下不一样：战力曲线是用 data.yml 里的剑算出来的派生视图，
+     * 回档后 data.yml 回到三天前，若曲线不回退，/zhujian power 会显示「比存档里的剑更强」的
+     * 记录，两张表当场对不上，管理员无法判断回档到底生效了没有。既然它和 data.yml 是同一批
+     * 事实的两种视图，就一起进退；它的容量上限只有 12 点/人，进备份的代价可忽略。
+     */
+
+    /**
+     * 数据根目录下的「散装快照文件」前缀与后缀：{@code metrics-<yyyyMMdd>.yml}。
+     *
+     * <p><b>v2.26.0 修：原来这里写的是 {@code METRICS_DIR = "metrics"}，那是死代码。</b>
+     * 趋势快照从来不在 {@code metrics/} 子目录里 —— {@code MetricsService} 把
+     * {@code plugin.getDataFolder()} 直接传给 {@code MetricsHistory}，文件名是
+     * {@code MetricsHistory.PREFIX + yyyyMMdd + SUFFIX}，因此实际是数据根目录下的散文件
+     * （测试服实测：{@code plugins/ForgingMaster/metrics-20261111.yml}）。
+     * 于是 `isDirectory()` 恒为 false，那一段回档逻辑从来没执行过：
+     * 趋势快照既不备份也不恢复，回档后 /zhujian metrics 仍显示回档之后的数据。</p>
+     */
+    private static final String METRICS_PREFIX = "metrics-";
+
+    private static final String METRICS_SUFFIX = ".yml";
+
+    /**
+     * 需要整目录备份的子目录。
+     *
+     * <p>{@code seasons/} 存的是每赛季结算时导出的排行归档（{@code season-N.yml}）。
+     * 它是「那一季的最终名次」的唯一留档，凭 season.yml 里的当前季状态重建不出来；
+     * 与 hall-legacy.yml 同族（都是赛季系永久记录），此前同样漏在备份外。</p>
+     */
+    private static final String SEASONS_DIR = "seasons";
 
     private static final String DIR_NAME = "backups";
     private static final String PRE_RESTORE_PREFIX = "pre-restore-";
+
+    /** 数据根目录下所有 metrics-*.yml（趋势快照散文件） */
+    private static List<String> metricsFiles(File dataDir) {
+        List<String> out = new ArrayList<>();
+        File[] kids = dataDir.listFiles();
+        if (kids == null) {
+            return out;
+        }
+        for (File f : kids) {
+            String n = f.getName();
+            if (f.isFile() && n.startsWith(METRICS_PREFIX) && n.endsWith(METRICS_SUFFIX)) {
+                out.add(n);
+            }
+        }
+        java.util.Collections.sort(out);
+        return out;
+    }
 
     private final ForgingMasterPlugin plugin;
 
@@ -96,7 +173,10 @@ public final class BackupManager {
                 present.add(f);
             }
         }
-        if (present.isEmpty()) {
+        // v2.26.0：趋势快照是数据根目录下的散文件（metrics-<yyyyMMdd>.yml），不在 SAVE_FILES 里，
+        // 也不是子目录。此前「整个 metrics/ 目录备份」是死代码，等于快照完全不参与备份。
+        List<String> metrics = metricsFiles(dataDir);
+        if (present.isEmpty() && metrics.isEmpty()) {
             return null;
         }
         String id = prefix + stamp();
@@ -117,6 +197,16 @@ public final class BackupManager {
             for (String f : present) {
                 Files.copy(new File(dataDir, f).toPath(),
                         new File(tmp, f).toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+            // v2.26.0：趋势快照散文件一起进备份（与 restore 的恢复逻辑对称）
+            for (String f : metrics) {
+                Files.copy(new File(dataDir, f).toPath(),
+                        new File(tmp, f).toPath(), StandardCopyOption.REPLACE_EXISTING);
+            }
+            // v2.26.0：seasons/ 归档目录整目录复制（赛季最终名次唯一留档）
+            File seasonsDir = new File(dataDir, SEASONS_DIR);
+            if (seasonsDir.isDirectory()) {
+                copyDir(seasonsDir, new File(tmp, SEASONS_DIR));
             }
             if (!tmp.renameTo(target)) {
                 throw new IOException("备份目录改名失败（" + tmp.getName() + " -> " + target.getName() + "）");
@@ -171,6 +261,16 @@ public final class BackupManager {
                 out.add(f);
             }
         }
+        // v2.26.0 审计轮修：上面只列 SAVE_FILES，而 backup() 现在还搬趋势快照散文件
+        // 与 seasons/ 归档目录 —— 它们在备份里真实存在，却不显示。管理员看清单会以为
+        // 没备上，进而以为回档丢了快照。展示必须与实际一致，否则这份清单是在撒谎。
+        List<String> metrics = metricsFiles(dir);
+        if (!metrics.isEmpty()) {
+            out.addAll(metrics);
+        }
+        if (new File(dir, SEASONS_DIR).isDirectory()) {
+            out.add(SEASONS_DIR + "/");
+        }
         return out;
     }
 
@@ -213,6 +313,8 @@ public final class BackupManager {
         String preId = backup(PRE_RESTORE_PREFIX);
         // ③ 覆盖存档目录
         File dataDir = plugin.getDataFolder();
+        // 在 try 外声明：finally 之后还要用它判断「备份里到底有没有快照」并提示管理员
+        List<String> backMetrics = metricsFiles(dir);
         try {
             for (String f : SAVE_FILES) {
                 File src = new File(dir, f);
@@ -220,11 +322,20 @@ public final class BackupManager {
                     Files.copy(src.toPath(), new File(dataDir, f).toPath(), StandardCopyOption.REPLACE_EXISTING);
                 }
             }
-            // metrics/ 这类子目录：整目录替换（趋势快照是派生数据，一并回档才自洽）
-            File srcMetrics = new File(dir, METRICS_DIR);
-            if (srcMetrics.isDirectory()) {
-                File dstMetrics = new File(dataDir, METRICS_DIR);
-                copyDir(srcMetrics, dstMetrics);
+            // v2.26.0：趋势快照散文件（metrics-<yyyyMMdd>.yml）一并回档。
+            // 原来这里是 `new File(dir, "metrics")` 整目录替换 —— 那个目录从来不存在
+            // （快照是根目录散文件），所以这段是死代码，快照完全不参与回档。
+            // 现在的判据与 backup() 对称：备份目录里有哪些 metrics-*.yml 就恢复哪些；
+            // 备份里没有的日子不删（那几天可能在备份之后才采样，属于「保持现值」）。
+            // 用外面那个 backMetrics，别再调一次（两处结果必须一致才对称）
+            for (String f : backMetrics) {
+                Files.copy(new File(dir, f).toPath(), new File(dataDir, f).toPath(),
+                        StandardCopyOption.REPLACE_EXISTING);
+            }
+            // seasons/ 归档目录：整目录替换（赛季最终名次唯一留档）
+            File srcSeasons = new File(dir, SEASONS_DIR);
+            if (srcSeasons.isDirectory()) {
+                copyDir(srcSeasons, new File(dataDir, SEASONS_DIR));
             }
         } finally {
             // v2.25 修 P2：中途 IOException 时不能半途而废 —— flushAll 已跑、脏标记已清，
@@ -242,6 +353,9 @@ public final class BackupManager {
         if (!missing.isEmpty()) {
             plugin.getLogger().warning("[restore] 备份 " + id + " 缺这些现存文件（保持现值，数据可能混纪元）: "
                     + String.join(", ", missing));
+        }
+        if (backMetrics.isEmpty()) {
+            plugin.getLogger().warning("[restore] 备份 " + id + " 里没有 metrics-*.yml：趋势快照保持现值");
         }
         return preId == null ? "(无当前存档，未做前置备份)" : preId;
     }
@@ -274,6 +388,28 @@ public final class BackupManager {
         swallow(stage, "daily-data.yml", () -> plugin.dailyStore().save());
         swallow(stage, "season.yml", () -> plugin.seasons().save());
         swallow(stage, "hall-strengthen.yml", () -> plugin.hallOfFame().strengthen().save());
+        // v2.26.0：这两份都不走 markDirty + 异步冲刷，落盘时机各不相同，所以必须在这里显式落：
+        // ① contest-history 只在结算点写一次（赛果不可再生），没有定时器兜底；
+        // ② power-log 每次 append 就写（观测数据，同样没有定时器兜底）；
+        // ③ 两者被回档覆盖后，内存旧副本会让下一次 record()/append() 整份回写，静默吞掉回档结果。
+        // historyStore() 是惰性单例：这里若首次调用会连带 load 一次再 save，写出的内容与盘上
+        // 完全一致，对「回档前盘面 = 真相」这个前提没有影响，不额外做存在性判断。
+        swallow(stage, "contest-history.yml", () -> {
+            var manager = plugin.contests();
+            // 判空：构造期失败时 contests() 可能是 null，不能让一份档案把整条 flush 链带崩
+            if (manager != null && !manager.historyStore().save()) {
+                // save() 返回 false 不抛异常，swallow 抓不到 —— 而这份是单次不可再生的账本，
+                // 静默失败等于「回档前盘面 = 真相」这个前提悄悄不成立，必须留一行痕
+                plugin.getLogger().warning(stage + "写 contest-history.yml 返回失败："
+                        + "这一届赛果不在 pre-restore 备份里，且单次不可再生");
+            }
+        });
+        swallow(stage, "power-log.yml", () -> {
+            var store = plugin.powerLog();
+            if (store != null) {
+                store.save();
+            }
+        });
     }
 
     /**
@@ -309,6 +445,25 @@ public final class BackupManager {
             swallow("回档后", "anvils.yml", () -> plugin.anvilForge().loadFrom(anvilsFile));
         }
         swallow("回档后", "bounty-data.yml", () -> plugin.bounties().reload());
+        // v2.26.0：与 flushAll 同一批 —— 这两份被覆盖后必须按盘重建内存，否则旧副本会在
+        // 下一次 record()（结算点同步写）/ append()（每次评分都写）时整份回写，
+        // 把刚恢复的文件原样盖回去。这正是 v2.23.1 那个 P0 的同型，不能只加清单。
+        swallow("回档后", "contest-history.yml", () -> {
+            var manager = plugin.contests();
+            if (manager != null) {
+                // 回档后按盘重建；keep 配置由 ContestManager.reloadHistory() 在 reloadAll 链路处理，
+                // 这里是回档专用路径 —— 只按盘重建数据，不动保留届数（回档不该改配置语义）。
+                manager.historyStore().load();
+            }
+        });
+        // power-log 的 load() 会把 dirty 清掉，所以重载后不会留下「假脏」让下一次评分
+        // 立刻整份回写；这一点必须由 load() 保证，否则这里就是在制造脏标记。
+        swallow("回档后", "power-log.yml", () -> {
+            var store = plugin.powerLog();
+            if (store != null) {
+                store.load();
+            }
+        });
     }
 
     /** 单个模块的存/读失败只记一行日志，不中断整个回档 */
