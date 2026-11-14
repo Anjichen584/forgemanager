@@ -6351,10 +6351,11 @@ public final class SelfTestSuite {
                 plugin.getLogger().info("[selftest] 找不到源码树，跳过回档对齐钉子");
                 return;
             }
-            String restore = sourceMethodBody("backup/BackupManager.java", "private void restore(");
+            String restore = sourceMethodBody("backup/BackupManager.java", "public synchronized String restore(String id)");
             require(restore != null && restore.contains("keepNames.contains"),
                     "restore 必须清掉 seasons/ 里备份点没有的归档（季号退回后不许看到未来的档案）");
-            require(restore != null && restore.contains("plugin.metrics().reload()"),
+            String reload = sourceMethodBody("backup/BackupManager.java", "private void reloadAllSilently()");
+            require(reload != null && reload.contains("plugin.metrics().reload()"),
                     "reloadAllSilently 必须重建看板缓存（回档后 metrics 仍显示回档前趋势 = 视图与盘面分裂）");
             String start = sourceMethodBody("metrics/MetricsService.java", "public void start() {");
             require(start != null && start.contains("lastPruneDay = null"),
