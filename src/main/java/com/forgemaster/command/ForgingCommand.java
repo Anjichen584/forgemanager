@@ -1714,6 +1714,13 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
 
         if (sub.isEmpty() || "balance".equals(sub) || "bal".equals(sub)) {
             if (args.length >= 3) {
+                // v2.26.4（审计 #16）：查他人余额是隐私面——stats of 刻意不公开剑币，
+                // 这条侧门原来零权限（admin 判断只挡在 give/take 前面），任何玩家可查
+                // 任意在线玩家的两本账。与 stats/profile 的查他人口径对齐：要 admin。
+                if (!sender.hasPermission("forgemaster.admin")) {
+                    Msg.prefix(sender, "<red>只有管理员能查别人的余额，自己的直接不带名字查。</red>");
+                    return;
+                }
                 var target = Bukkit.getPlayerExact(args[2]);
                 if (target == null) {
                     Msg.prefix(sender, "<red>玩家不在线：" + args[2]);
@@ -3570,6 +3577,11 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         String op = args.length >= 3 ? args[2].toLowerCase(Locale.ROOT) : "";
         if (op.isEmpty() || "balance".equals(op) || "bal".equals(op)) {
             if (args.length >= 4) {
+                // v2.26.4（审计 #16）：同 money balance——查他人剑币要 admin
+                if (!sender.hasPermission("forgemaster.admin")) {
+                    Msg.prefix(sender, "<red>只有管理员能查别人的剑币，自己的直接不带名字查。</red>");
+                    return;
+                }
                 var target = Bukkit.getPlayerExact(args[3]);
                 if (target == null) {
                     Msg.prefix(sender, "<red>玩家不在线：" + args[3]);
@@ -4019,7 +4031,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             case "money", "coins", "qian", "coin" -> tabMoney(sender, args);
             case "grade", "cailiao" -> tabGrade(sender, args);
             // ---- 剑冢 ----
-            case "tomb", "jiantomb", "jianzhong" -> tabTomb(args);
+            case "tomb", "jiantomb", "jianzhong" -> tabTomb(sender, args);
             case "tombrun", "mijing" -> tabTombrun(args);
             // ---- 强化 / 蜕变 / 附魔 ----
             case "strengthen", "qianghua", "duanzao", "duanzaodengji" -> tabStrengthen(sender, args);
@@ -4032,18 +4044,18 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             case "contest", "dasai" -> tabContest(sender, args);
             case "season", "jijie" -> tabSeason(sender, args);
             case "rank", "paihang" -> tabRank(args);
-            // ---- 名人堂 / 殿堂 ----
-            case "halloffame" -> tabHallOfFame(args);
-            case "hall" -> tabHall(args);
+            // ---- 名人堂 / 殿堂（v2.26.4：二级 Tab 不再泄露管理动词）----
+            case "halloffame" -> sender.hasPermission("forgemaster.admin") ? tabHallOfFame(args) : List.of();
+            case "hall" -> sender.hasPermission("forgemaster.admin") ? tabHall(args) : List.of();
             // ---- 分解 / 符 / 临摹 / 备份 ----
             case "dissolve", "jiapo", "fenjie" -> tabDissolve(args);
             case "imprint", "cifu" -> tabImprint(args);
             case "copy", "linmo" -> tabCopy(args);
-            case "restore", "huandang" -> tabRestore(args);
+            case "restore", "huandang" -> sender.hasPermission("forgemaster.admin") ? tabRestore(args) : List.of();
             // ---- 比试 / 天赋 / 事件 / 市场 ----
             case "duel", "bishi" -> tabDuel(args);
             case "talent", "tianfu" -> tabTalent(args);
-            case "event", "shijian" -> tabEvent(args);
+            case "event", "shijian" -> tabEvent(sender, args);
             case "auction", "paimai" -> tabAuction(args);
             case "order", "dingdan" -> tabOrder(args);
             // ---- 社交 ----
@@ -4053,10 +4065,10 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             // 声望兑换所（v2.24 切片二）：分派表与 SUBCOMMANDS 同步，别名的下一层也要有候选
             case "redeem", "duihuan", "huan" -> tabRedeem(args);
             case "anvil", "tiean", "zhen" -> tabAnvil(sender, args);
-            // ---- 服主 ----
-            case "metrics", "jingji" -> tabMetrics(args);
-            case "config", "peizhi" -> tabConfig(args);
-            case "fixattrs", "xiufu" -> tabFixAttrs(args);
+            // ---- 服主（v2.26.4：二级 Tab 按 ADMIN_ONLY 过滤，与首层同口径）----
+            case "metrics", "jingji" -> sender.hasPermission("forgemaster.admin") ? tabMetrics(args) : List.of();
+            case "config", "peizhi" -> sender.hasPermission("forgemaster.admin") ? tabConfig(args) : List.of();
+            case "fixattrs", "xiufu" -> sender.hasPermission("forgemaster.admin") ? tabFixAttrs(args) : List.of();
             case "stats" -> tabStats(sender, args);
             case "power", "zhanli" -> tabPower(sender, args);
             case "profile", "dangan" -> tabPlayerArg(sender, args);
@@ -4202,17 +4214,24 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         return List.of();
     }
 
-    private List<String> tabTomb(String[] args) {
+    private List<String> tabTomb(CommandSender sender, String[] args) {
+        // v2.26.4：remove/delete/shandiao 是管理动词，只给有权限的人补
+        boolean admin = sender.hasPermission("forgemaster.admin");
         if (args.length == 2) {
             // 候选与 TombManager.command 的 case 一一对应（连中文别名一起给，别让玩家猜）
-            return filter(List.of("list", "gui", "bury", "埋", "take", "qu", "challenge", "tiaozhan",
-                    "info", "remove", "delete", "shandiao"), args[1]);
+            List<String> verbs = new ArrayList<>(List.of("list", "gui", "bury", "埋",
+                    "take", "qu", "challenge", "tiaozhan", "info"));
+            if (admin) {
+                verbs.addAll(List.of("remove", "delete", "shandiao"));
+            }
+            return filter(verbs, args[1]);
         }
         String sub = args[1].toLowerCase(Locale.ROOT);
         boolean wantsId = isAny(sub, "take", "qu", "challenge", "tiaozhan", "info",
                 "remove", "delete", "shandiao");
         if (args.length == 3 && wantsId) {
-            return filter(tombIds(), args[2]);
+            // v2.26.4：别人的剑冢 id 是隐私面，全量 id 只给 admin；玩家用 /zhujian tomb list 自己看
+            return filter(admin ? tombIds() : List.of(), args[2]);
         }
         return List.of();
     }
@@ -4463,12 +4482,13 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         return List.of();
     }
 
-    /** 世界事件：/zhujian event [status|start <id>|stop] */
-    private List<String> tabEvent(String[] args) {
+    /** 世界事件：/zhujian event [status|start <id>|stop]；start/stop 是管理动词（v2.26.4 只给 admin 补） */
+    private List<String> tabEvent(CommandSender sender, String[] args) {
+        boolean admin = sender.hasPermission("forgemaster.admin");
         if (args.length == 2) {
-            return filter(List.of("status", "start", "stop"), args[1]);
+            return filter(admin ? List.of("status", "start", "stop") : List.of("status"), args[1]);
         }
-        if (args.length == 3 && args[1].equalsIgnoreCase("start")) {
+        if (admin && args.length == 3 && args[1].equalsIgnoreCase("start")) {
             return filter(eventIds(), args[2]);
         }
         return List.of();

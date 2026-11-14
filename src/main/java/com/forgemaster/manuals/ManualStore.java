@@ -151,7 +151,8 @@ public final class ManualStore implements InventoryHolder {
         String quench = pdc.get(Keys.QUENCH, PersistentDataType.STRING);
         String csv = pdc.get(Keys.AFFIX_LIST, PersistentDataType.STRING);
 
-        String rawName = Msg.plain(meta.displayName());
+        // v2.26.4：剑谱名会回显进聊天并落盘，esc 防注入
+        String rawName = Msg.escText(Msg.plain(meta.displayName()));
         String name = rawName == null || rawName.isBlank() ? "无名之刃" : rawName;
         // 去掉品质前缀，只留剑名
         if (name.contains("·")) {

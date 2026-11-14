@@ -1,6 +1,7 @@
 package com.forgemaster.tombrun;
 
 import com.forgemaster.ForgingMasterPlugin;
+import com.forgemaster.econ.CoinReason;
 import com.forgemaster.tomb.TombChallenge;
 import com.forgemaster.tomb.TombManager;
 import com.forgemaster.util.Msg;
@@ -501,7 +502,9 @@ public final class TombRunService implements Listener {
         }
         long coins = rewardCoins();
         if (coins > 0) {
-            plugin.stats().addCoins(p.getUniqueId(), coins);
+            // v2.26.4（审计 #6）：通关奖金收口 Wallet——门票 (:169) 扣 Wallet，奖金原来
+            // 直发剑币账，同剑冢的跨账本形状；并补上缺失的 CoinReason（流水归 OTHER_IN）
+            plugin.wallet().give(p, coins, CoinReason.TOMB);
         }
         int pages = rewardPages();
         String pagesTxt = "<dark_gray>无</dark_gray>";

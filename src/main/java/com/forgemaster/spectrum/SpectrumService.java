@@ -168,8 +168,8 @@ public final class SpectrumService {
         plugin.getLogger().info("已载入名剑谱：" + entries.size() + " 条目 / " + data.size() + " 份领取记录");
     }
 
-    /** 整份重建落盘（StoryManager 风格），领取 / 登记计数后都会调 */
-    public void save() {
+    /** 整份重建落盘（StoryManager 风格），领取 / 登记计数后都会调；返回写盘成败 */
+    public boolean save() {
         YamlConfiguration yml = new YamlConfiguration();
         for (Map.Entry<UUID, PlayerData> e : data.entrySet()) {
             String path = "players." + e.getKey();
@@ -182,8 +182,11 @@ public final class SpectrumService {
                 plugin.getDataFolder().mkdirs();
             }
             com.forgemaster.util.YamlIo.save(file, yml);
+            return true;
         } catch (IOException ex) {
+            // v2.26.4：返回成败——claim 靠这个回滚「已领」，失败时不能假装成功
             plugin.getLogger().warning("名剑谱存档保存失败：" + ex.getMessage());
+            return false;
         }
     }
 
@@ -460,8 +463,15 @@ public final class SpectrumService {
             return false;
         }
         // v2.25 修 P1（审计轮2-1）：先落「已领」再发钱，与图鉴/悬赏/委托同一契约
+        // v2.26.4：save 必须真的成功——原来 save() 吞 IOException 只打 warning，
+        // 「已领」留在内存、盘上没有，写盘失败 + 重启 = 同一条奖励再领一次。
+        // 失败就回滚 claimed 并拒绝发放，玩家重试即可。
         data(uuid).claimed.add(e.id);
-        save();
+        if (!save()) {
+            data(uuid).claimed.remove(e.id);
+            Msg.prefix(player, "<red>领奖没有落盘成功（磁盘可能有问题），本次不发放——稍后再试。</red>");
+            return false;
+        }
         if (e.coins > 0) {
             plugin.stats().addCoins(uuid, e.coins, CoinReason.CODEX);
         }

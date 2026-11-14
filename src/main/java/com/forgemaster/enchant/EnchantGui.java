@@ -193,7 +193,9 @@ public final class EnchantGui {
         if (meta == null || meta.displayName() == null) {
             return item.getType().name();
         }
-        return Msg.plain(meta.displayName());
+        // v2.26.4：名字会被拼回 MiniMessage lore 重解析——改名物品（铁砧普通物品随便改）
+        // 可携带 <click:run_command> 注入看板的人。返回前统一转义。
+        return Msg.esc(Msg.plain(meta.displayName()));
     }
 
     private static String oreName(ItemStack ore) {

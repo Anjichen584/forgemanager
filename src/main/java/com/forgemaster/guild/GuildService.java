@@ -538,6 +538,13 @@ public final class GuildService {
             Msg.prefix(p, "<red>会名要 1~" + nameMaxChars() + " 个字。</red>");
             return;
         }
+        // v2.26.4：会名进全服广播 / 别人收到的私聊 / 全服可见的 GUI，字符白名单拦
+        // MiniMessage 标签与旧式颜色码——默认 8 字上限放不下 <click>，但服主把
+        // name-max-chars 调大就是全服伪系统消息入口，源头一次堵死
+        if (name.matches(".*[<>&§\\u202A-\\u202E\\u2066-\\u2069\\u200B-\\u200F\\p{Cntrl}].*")) {
+            Msg.prefix(p, "<red>会名不能包含 < > & § 或不可见字符。</red>");
+            return;
+        }
         for (Guild g : guilds.values()) {
             if (g.name.equalsIgnoreCase(name)) {
                 Msg.prefix(p, "<red>会名 <white>" + name + "</white> 已被占用，换一个。</red>");
@@ -771,7 +778,10 @@ public final class GuildService {
                 give += remainder; // 余数归会长
             }
             if (give > 0) {
-                stats().addCoins(id, give, CoinReason.REFUND);
+                // v2.26.4（审计 #7）：退款改走 Wallet.giveTo——存金库已收口（Wallet 扣，
+                // server 模式扣 Vault），解散平分原来直发剑币账：Vault 托管钱被销毁、
+                // 剑币侧凭空铸出等额。giveTo 支持离线成员，外部打款失败自动兜底剑币。
+                plugin.wallet().giveTo(id, nameOf(id), give, CoinReason.REFUND);
             }
             notifyOnline(id, "<red>" + reason + "</red><gray>金库平分，你分得 "
                     + CoinRules.fmt(give) + "。</gray>");
@@ -821,7 +831,9 @@ public final class GuildService {
             Msg.prefix(p, "<red>你的剑币不够 " + amount + "。</red>");
             return;
         }
-        g.treasury += amount;
+        // v2.26.4：饱和加法（同 StatsStore.addCoins），溢出变负会让解散平分出负份额
+        long sum = g.treasury + amount;
+        g.treasury = (sum < 0 && amount > 0) ? Long.MAX_VALUE : sum;
         dirty = true;
         if (!saveChecked()) {
             // 只有「真的没写下去」才回滚。saveChecked 在竞态（写成功但盘上可能不是最新）
@@ -1098,7 +1110,8 @@ public final class GuildService {
                 + Msg.fmt(bestScore, 0) + " 分 <dark_gray>·</dark_gray> 成员：" + names));
         long prize = weekFirstPrize();
         if (prize > 0 && best.owner != null) {
-            stats().addCoins(best.owner, prize, CoinReason.CONTEST);
+            // v2.26.4（审计 #9a）：会长可能离线，改走 Wallet.giveTo 收口
+            plugin.wallet().giveTo(best.owner, nameOf(best.owner), prize, CoinReason.CONTEST);
             notifyOnline(best.owner, "<#ffd166>你的行会拿了周赛第一，会长奖励 "
                     + CoinRules.fmt(prize) + " 已入账。</#ffd166>");
         }

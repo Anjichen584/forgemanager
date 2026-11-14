@@ -63,6 +63,35 @@ public final class Msg {
     }
 
     /**
+     * 玩家可控文本进 MiniMessage 模板前的统一转义（v2.26.4）。
+     *
+     * <p>为什么需要它：{@link #mm} 直接 deserialize，谁把玩家输入拼进模板谁就开了注入面——
+     * 改名物品的书名/矿名、行会名、剑名兜底，都能带 {@code <click:run_command:...>}、
+     * {@code <hover>} 甚至伪造系统消息。全仓只有一个调用点自己写过这份转义
+     * （ReforgeMenu.safe），其余全裸奔。规矩从此改成：<b>凡「玩家文本 → 模板拼接」必须先 esc</b>。</p>
+     *
+     * <p>转义成全角单书名号而不是删字符：保留玩家想表达的视觉形态，不产生歧义标签。</p>
+     */
+    public static String esc(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        return raw.replace("<", "‹").replace(">", "›");
+    }
+
+    /** 玩家可控文本的白名单级清洗：esc 之外再剥旧式颜色码与视觉重排/不可见字符 */
+    public static String escText(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String s = esc(raw)
+                .replace("&", "＆").replace("§", "＃")
+                // RTL 覆写 / 隔离符 / 零宽字符：纯视觉欺骗（lore 行文重排），无正当用途
+                .replaceAll("[\\u202A-\\u202E\\u2066-\\u2069\\u200B-\\u200F\\p{Cntrl}]", "");
+        return s;
+    }
+
+    /**
      * 生成一条进度条，用于温度 / 评分可视化。
      *
      * @param ratio      0.0 - 1.0

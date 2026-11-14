@@ -291,7 +291,8 @@ public final class StrengthenHall {
         if (meta == null || meta.displayName() == null) {
             return item.getType().name();
         }
-        String plain = Msg.plain(meta.displayName()).trim();
+        // v2.26.4：铭牌全服路人可见且落盘，esc 防改名物品的 MiniMessage 注入
+        String plain = Msg.escText(Msg.plain(meta.displayName()).trim());
         return plain.isEmpty() ? item.getType().name() : plain;
     }
 

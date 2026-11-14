@@ -50,7 +50,9 @@ public final class StatsStore {
         public int repaired;
 
         // v2.0
-        public long coins;
+        // v2.26.4：volatile——异步冲刷线程无锁直读本字段，x64 上 long 写虽通常原子
+        // 但无语言保证，一行换掉理论上的撕裂读
+        public volatile long coins;
         public int streak;
         public int bestStreak;
         public long streakAt;
@@ -428,7 +430,10 @@ public final class StatsStore {
     /** 加剑币并记流水理由，返回加后的余额 */
     public long addCoins(UUID uuid, long amount, com.forgemaster.econ.CoinReason reason) {
         Stats st = get(uuid);
-        st.coins = Math.max(0, st.coins + amount);
+        // v2.26.4：饱和加法——原来 Math.max(0, coins+amount) 在溢出为负时把余额清零
+        // （管理员 give 两次 Long.MAX 即可触发），现在饱和到 Long.MAX_VALUE
+        long sum = st.coins + amount;
+        st.coins = (sum < 0 && amount > 0) ? Long.MAX_VALUE : Math.max(0, sum);
         if (amount > 0) {
             com.forgemaster.econ.CoinReason r = reason == null
                     ? com.forgemaster.econ.CoinReason.OTHER_IN : reason;

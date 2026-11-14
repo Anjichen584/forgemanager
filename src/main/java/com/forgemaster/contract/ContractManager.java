@@ -182,6 +182,12 @@ public final class ContractManager {
                 // 而且游标已经落盘，重启也补不回来。
                 settleDay();
                 store.lastSettledFullDay(fullDay);
+                // v2.26.4 修复（审计 #12 结算重放）：结算本来只 markDirty 交 30 秒异步冲刷，
+                // 窗口内崩溃 → 盘上 day/pool/游标全是旧的，但赏金剑币在 StatsStore 里已单独
+                // 落盘 → 重启后 tick 重放整场结算，达标玩家奖金 + 圣物三选一各再领一次。
+                // 结算是每日一次的低频路径，这里同步落一次盘，把重放窗口从 30 秒压到零。
+                // save() 内部兜 IOException 并按 seq 语义清脏，失败时保持脏等冲刷重试。
+                store.save();
             } else if (tod == windowTime()) {
                 // 黄昏：提示所有在线在契玩家贡品窗口开了
                 for (Player p : Bukkit.getOnlinePlayers()) {
@@ -312,7 +318,9 @@ public final class ContractManager {
             base = bases.get(qIdx);
         }
         int level = pdc.getOrDefault(Keys.STRENGTHEN, PersistentDataType.INTEGER, 0);
-        double perLevel = plugin.settings().num("contract.value.per-strengthen-level", 0.15);
+        // v2.26.4（审计 #18）：perLevel 语义是「每级加成比例」，夹 [0,10]；负值会把
+        // 高品质剑估值塌成 1，超大值会把连乘链推向 Infinity
+        double perLevel = Math.max(0, Math.min(10, plugin.settings().num("contract.value.per-strengthen-level", 0.15)));
         double v = base * (1.0 + perLevel * level);
 
         int stage = pdc.getOrDefault(Keys.EVOLUTION, PersistentDataType.INTEGER, 0);
@@ -329,12 +337,21 @@ public final class ContractManager {
                 v *= form.valueMult();
             }
         }
+        // v2.26.4（审计 #18）：连乘链末端夹紧——NaN/Infinity 时 Math.round 会饱和成
+        // Long.MAX_VALUE，下游 pool 累加溢出变负。PowerScore.raw 对同类连乘已有
+        // MAX 夹紧 + isNaN/isInfinite 双守卫，这里补齐（估值上限 1 万亿，远超玩法上限）。
+        if (Double.isNaN(v) || Double.isInfinite(v)) {
+            v = 1.0e12;
+        }
+        v = Math.min(v, 1.0e12);
         return Math.max(1, Math.round(v));
     }
 
     /** 第 day 天的税额：基数 × 递增^（day-1） × 欠息 × 圣物折扣 */
     public long requirement(int day, int missed, RelicBonus rb) {
-        double base = plugin.settings().num("contract.tax.base", 200);
+        // v2.26.4（审计 #18c）：base 夹下界——配负数会被 Math.max(1,…) 静默塌成 1，
+        // 龙税经济静默失效且无任何日志；growth/missPenalty 已有各自的夹紧
+        double base = Math.max(1, plugin.settings().num("contract.tax.base", 200));
         double growth = Math.max(1.0, plugin.settings().num("contract.tax.growth", 1.30));
         double missPenalty = Math.max(0, plugin.settings().num("contract.tax.miss-penalty", 0.30));
         double v = base * Math.pow(growth, Math.max(0, day - 1)) * (1.0 + missPenalty * Math.max(0, missed));
@@ -361,7 +378,10 @@ public final class ContractManager {
         p.getWorld().spawnParticle(Particle.SOUL_FIRE_FLAME,
                 p.getLocation().add(0, 1.2, 0), 12, 0.3, 0.4, 0.3, 0.02);
         p.playSound(p.getLocation(), Sound.ENTITY_ENDER_DRAGON_GROWL, 0.4f, 1.4f);
-        r.pool += value;
+        // v2.26.4（审计 #18b）：饱和加法——Infinity 估值 round 成 Long.MAX 后再入贡
+        // 一件就会溢出变负池，玩家被误判破契。逐笔夹在估算端 + 这里双保险。
+        long sum = r.pool + value;
+        r.pool = (sum < 0 && value > 0) ? Long.MAX_VALUE : sum;
         store.markDirty(); // 审计 #7：入贡是高频动作，不再主线程同步落盘
         // v2.25.5 修（与 TombManager.bury 同型）：入贡是「吞」，主手已经 setItemInMainHand(null)，
         // 剑只活在内存里。ContractStore 的异步冲刷周期是 600 ticks = 30 秒 —— 这个窗口内
@@ -565,6 +585,10 @@ public final class ContractManager {
         r.pickPending = "";
         r.relics.add(relicId);
         store.markDirty(); // 审计 #7：标脏交异步冲刷
+        // v2.26.4 修复（审计 #13）：pending 消费是「先清再发」的单次消费结构，盘上必须
+        // 立刻同步——只标脏的话，30 秒窗口内崩溃，盘上 pending 还在、relics 没记上，
+        // 重启后同一 pending 可再 pick 一次（choose 型圣物可叠加）。
+        store.save();
         return "<gradient:#ffd166:#ff7a3d>圣物到手：</gradient> <bold>" + def.name()
                 + "</bold> <dark_gray>——</dark_gray> " + def.desc();
     }

@@ -337,7 +337,11 @@ public final class TombManager {
         double score = pdc.getOrDefault(Keys.SCORE, PersistentDataType.DOUBLE, 0.0);
         String swordName = plugin.spirit() == null ? "" : plugin.spirit().nameOf(hand);
         if (swordName.isBlank()) {
-            swordName = Msg.plain(meta.displayName());
+            // v2.26.4：兜底名会被落盘 tombs.yml 并给所有 GUI 查看者重解析，esc + 截断
+            swordName = Msg.escText(Msg.plain(meta.displayName()));
+            if (swordName.length() > 24) {
+                swordName = swordName.substring(0, 24);
+            }
         }
 
         ItemStack snapshot = hand.clone();
@@ -422,7 +426,11 @@ public final class TombManager {
 
         String swordName = plugin.spirit() == null ? "" : plugin.spirit().nameOf(item);
         if (swordName == null || swordName.isBlank()) {
-            swordName = Msg.plain(meta.displayName());
+            // v2.26.4：同埋剑兜底——esc + 截断后再落盘
+            swordName = Msg.escText(Msg.plain(meta.displayName()));
+            if (swordName.length() > 24) {
+                swordName = swordName.substring(0, 24);
+            }
         }
         if (swordName == null || swordName.isBlank()) {
             swordName = "无名之刃";
@@ -693,7 +701,10 @@ public final class TombManager {
         if (win) {
             t.wins++;
             long coins = challengeWinCoins();
-            plugin.stats().addCoins(player.getUniqueId(), coins, CoinReason.TOMB);
+            // v2.26.4（审计 #5）：奖金改走 Wallet 收口。挑战费 (:577) 扣的是 Wallet
+            // （coin-sinks=server 时扣 Vault），奖金原来直发剑币账——「扣 Vault 的钱、
+            // 赚凭空铸造的剑币」跨账本套利，与 OrderService v2.25.2 同型。
+            plugin.wallet().give(player, coins, CoinReason.TOMB);
             int rep = challengeWinRep();
             plugin.stats().addReputation(player.getUniqueId(), rep);
             player.playSound(player.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 0.9f, 1.2f);

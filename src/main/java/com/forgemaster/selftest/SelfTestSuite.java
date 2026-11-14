@@ -226,6 +226,28 @@ public final class SelfTestSuite {
      * 它是给「方法体内不许出现某调用」这类钉子用的，误切只会让钉子更严、不会假绿。
      * 找不到 marker 返回 null，调用方 require 报红。</p>
      */
+    /**
+     * 便捷版方法体切片（v2.26.4）：给「按 src 相对路径 + marker 钉形状」的静态钉子用。
+     * 读不到源码树 / 文件时返回 null，调用方自行决定跳过或 require 报红。
+     */
+    private static String sourceMethodBody(String relPath, String marker) {
+        java.io.File pkgRoot = findSourcePackageRoot();
+        if (pkgRoot == null) {
+            return null;
+        }
+        java.io.File src = new java.io.File(pkgRoot, relPath);
+        if (!src.isFile()) {
+            return null;
+        }
+        try {
+            String code = new String(java.nio.file.Files.readAllBytes(src.toPath()),
+                    java.nio.charset.StandardCharsets.UTF_8);
+            return methodBody(code, marker);
+        } catch (java.io.IOException ex) {
+            return null;
+        }
+    }
+
     private static String methodBody(String source, String marker) {
         if (source == null || marker == null) {
             return null;
@@ -6190,6 +6212,97 @@ public final class SelfTestSuite {
             } finally {
                 store.remove(u);
             }
+        });
+        add(g, "contract 落盘口径：结算与 pick 必须同步 save（v2.26.4 结算重放修复）", () -> {
+            // 结算/领圣物发的是「另一个存档」（StatsStore）里的钱，contract.yml 若只标脏
+            // 30 秒异步冲刷，窗口内崩溃 → 盘上旧档被重放，奖金+圣物重复发。低频路径
+            // 必须同步落盘。按方法体钉源码形状。
+            String body = sourceMethodBody("contract/ContractManager.java",
+                    "store.lastSettledFullDay(fullDay)");
+            require(body != null, "tickClock 的游标推进行切不出来");
+            require(body.contains("store.save()"),
+                    "结算后必须同步 store.save()（只 markDirty 会有 30 秒结算重放窗口）");
+            String pick = sourceMethodBody("contract/ContractManager.java",
+                    "public String pickRelic(UUID id, String relicId)");
+            require(pick != null && pick.contains("store.save()"),
+                    "pickRelic 消费 pending 后必须同步 save（否则崩溃后同一 pending 可再 pick）");
+        });
+        add(g, "领奖 saveChecked 契约：谱系/图鉴/行会委托落盘失败必须回滚已领（v2.26.4）", () -> {
+            String spec = sourceMethodBody("spectrum/SpectrumService.java",
+                    "public boolean claim(Player player, Entry e)");
+            require(spec != null && spec.contains("if (!save())"),
+                    "名剑谱 claim 必须判 save() 返回值（吞 IOException = 重启后可重领）");
+            require(spec.contains(".claimed.remove"), "save 失败必须回滚「已领」标记");
+            String codex = sourceMethodBody("codex/CodexService.java",
+                    "public long claim(PlayerView viewer, UUID id, String cat)");
+            require(codex != null && codex.contains("if (!save())"),
+                    "图鉴 claim 必须判 save() 返回值");
+            require(codex.contains(".claimed.remove"), "图鉴 save 失败必须回滚「已领」标记");
+            String quest = sourceMethodBody("guild/GuildQuests.java",
+                    "private void claim(Player p, GuildService.Guild g)");
+            require(quest != null && quest.contains("saveChecked()"),
+                    "行会委托领奖必须同步 saveChecked（5 秒冲刷窗口内崩溃全员可再领）");
+            require(quest.contains("claimed.remove"), "落盘失败必须回滚「已领」标记");
+        });
+        add(g, "奖励出口 Wallet 收口：七处奖金不许直连 stats().addCoins（v2.26.4）", () -> {
+            // coin-sinks=server 时 Wallet 扣 Vault 而奖金直发剑币账 = 凭空造币
+            // （OrderService v2.25.2 同型）。这七个出口必须走 Wallet（离线用 giveTo）。
+            String tomb = sourceMethodBody("tomb/TombManager.java", "plugin.stats().addCoins(player.getUniqueId(), coins");
+            require(tomb == null || !tomb.contains("stats().addCoins(player.getUniqueId(), coins, CoinReason.TOMB)"),
+                    "剑冢奖金必须走 wallet().give（扣费在 Wallet、发钱在剑币账 = 跨账本套利）");
+            require(sourceMethodBody("tomb/TombManager.java", "plugin.wallet().give(player, coins, CoinReason.TOMB)") != null,
+                    "剑冢复刻奖金要出现在 wallet().give 调用里");
+            require(sourceMethodBody("tombrun/TombRunService.java", "plugin.wallet().give(p, coins, CoinReason.TOMB)") != null,
+                    "秘境通关奖金必须收口 Wallet 且带 CoinReason.TOMB");
+            require(sourceMethodBody("pass/SeasonPassService.java", "plugin.wallet().give(player, r.coins, CoinReason.PASS)") != null,
+                    "通行证等级奖金必须收口 Wallet");
+            String guild = sourceMethodBody("guild/GuildService.java",
+                    "plugin.wallet().giveTo(id, nameOf(id), give, CoinReason.REFUND)");
+            require(guild != null, "行会解散退款必须走 wallet().giveTo（Vault 托管钱不许被销毁重铸成剑币）");
+            require(sourceMethodBody("guild/GuildService.java",
+                    "plugin.wallet().giveTo(best.owner, nameOf(best.owner), prize, CoinReason.CONTEST)") != null,
+                    "周赛会长奖励必须走 giveTo（会长可能离线）");
+            require(sourceMethodBody("contests/ContestManager.java",
+                    "plugin.wallet().giveTo(e.getKey(), name, coinGain, CoinReason.CONTEST)") != null,
+                    "大赛名次奖金必须走 giveTo");
+            require(sourceMethodBody("guild/GuildQuests.java",
+                    "plugin.wallet().give(p, reward, CoinReason.CONTEST)") != null,
+                    "行会委托奖金必须收口 Wallet");
+        });
+        add(g, "数值夹紧：估值链 isNaN/Infinity 守卫 + 余额饱和加法（v2.26.4）", () -> {
+            String appraise = sourceMethodBody("contract/ContractManager.java", "public long appraise(ItemStack item)");
+            require(appraise != null && appraise.contains("Double.isNaN") && appraise.contains("Double.isInfinite"),
+                    "估值连乘链必须有 NaN/Infinity 守卫（round 会把 Infinity 饱和成 Long.MAX）");
+            require(appraise.contains("Math.min(v, 1.0e12)"), "估值必须有总夹紧上限");
+            String store = sourceMethodBody("stats/StatsStore.java", "public long addCoins(UUID uuid, long amount, com.forgemaster.econ.CoinReason reason)");
+            require(store != null && store.contains("Long.MAX_VALUE"),
+                    "addCoins 必须饱和加法（原 Math.max(0, coins+amount) 溢出变负时会把余额清零）");
+            String field = sourceMethodBody("stats/StatsStore.java", "public volatile long coins;");
+            require(field != null, "coins 必须是 volatile（异步冲刷线程无锁直读）");
+        });
+        add(g, "注入面：玩家可控文本出口必须过 esc/escText（v2.26.4）", () -> {
+            String msg = sourceMethodBody("util/Msg.java", "public static String escText(String raw)");
+            require(msg != null, "Msg.escText 必须存在（玩家文本进 MiniMessage 模板的统一清洗口）");
+            require(msg.contains("u202E"), "escText 必须剥 RTL 覆写符（lore 视觉重排欺骗）");
+            require(sourceMethodBody("enchant/EnchantGui.java", "return Msg.esc(Msg.plain(meta.displayName()));") != null,
+                    "附魔台物品名必须过 Msg.esc 再拼回 lore（改名物品可携带 click:run_command）");
+            String guild = sourceMethodBody("guild/GuildService.java", "String name = rawName.trim();");
+            require(guild != null && guild.contains("u202A"),
+                    "行会名必须做字符白名单（进全服广播与 GUI，调大 name-max-chars 即注入面）");
+            String spirit = sourceMethodBody("spirit/SpiritManager.java", "private void rename(Player player, String raw)");
+            require(spirit != null && spirit.contains("u202A"), "剑名必须拒收 RTL/零宽/控制字符");
+        });
+        add(g, "命令面：查他人余额必须 admin，二级 Tab 管理动词按权限过滤（v2.26.4）", () -> {
+            String money = sourceMethodBody("command/ForgingCommand.java",
+                    "if (sub.isEmpty() || \"balance\".equals(sub) || \"bal\".equals(sub)) {");
+            require(money != null && money.contains("forgemaster.admin"),
+                    "money balance <玩家> 必须先过 admin 判断（隐私面：stats of 都不公开剑币）");
+            String tab = sourceMethodBody("command/ForgingCommand.java", "private List<String> tabTomb(CommandSender sender, String[] args)");
+            require(tab != null && tab.contains("forgemaster.admin"),
+                    "tabTomb 的管理动词（remove/delete/shandiao）必须按权限过滤");
+            String tabEvent = sourceMethodBody("command/ForgingCommand.java", "private List<String> tabEvent(CommandSender sender, String[] args)");
+            require(tabEvent != null && tabEvent.contains("forgemaster.admin"),
+                    "tabEvent 的 start/stop 必须按权限过滤");
         });
         add(g, "contest history：赛果归档往返 + 保留 N 届裁剪 + 同届幂等（v2.26.0）", () -> {
             // 用自检专用文件，不碰真实 contest-history.yml；finally 删档 = 净效果为零

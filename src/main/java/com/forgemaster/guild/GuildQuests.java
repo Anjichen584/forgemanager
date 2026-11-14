@@ -418,9 +418,19 @@ public final class GuildQuests {
             return;
         }
         dirty = true;
+        // v2.26.4：claimed 原来只标脏（5 秒异步冲刷），发钱即时——崩在冲刷前重启，
+        // claimed 回滚、全员可各再领一次。发钱前同步落盘；失败回滚「已领」并拒绝发放。
+        if (!plugin.guilds().saveChecked()) {
+            q.claimed.remove(p.getUniqueId().toString());
+            plugin.getLogger().warning("行会委托领奖落盘失败，已回滚「已领」标记并拒绝发放");
+            Msg.prefix(p, "<red>奖励没有落盘成功（磁盘可能有问题），本次不发放——稍后再试。</red>");
+            return;
+        }
         long reward = rewardOf(g);
         // 记 CONTEST 桶（协作竞赛类产出）；GUILD 桶是消耗向的，混进去会污染报表
-        plugin.stats().addCoins(p.getUniqueId(), reward, CoinReason.CONTEST);
+        // v2.26.4（审计 #9）：奖金改走 Wallet 收口——原来直连 stats().addCoins，
+        // coin-sinks=server 时与金库扣款（Wallet/Vault）两本账分裂
+        plugin.wallet().give(p, reward, CoinReason.CONTEST);
         p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_BELL, 0.9f, 1.4f);
         Msg.prefix(p, "<green>行会委托奖励已入账：<white>" + CoinRules.fmt(reward)
                 + "</white> 剑币（基础 × 人数系数）。</green>");

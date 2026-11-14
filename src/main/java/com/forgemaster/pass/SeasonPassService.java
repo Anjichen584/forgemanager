@@ -255,21 +255,33 @@ public final class SeasonPassService {
         }
     }
 
-    /** 付费轨取 long：规范键 → 兼容键 → 代码默认值（键不存在时才退下一级）。 */
+    /** 盘上有没有这个键：{@code cfg.contains()} 会顺着 jar 内 defaults 恒真（step29 同款坑），
+     *  服主「删键回默认」的语义必须判磁盘文件（见 ConfigMigrations.existsOnDisk）。 */
+    private static boolean keyOnDisk(ForgingMasterPlugin plugin, String path) {
+        YamlConfiguration disk = YamlConfiguration.loadConfiguration(
+                new java.io.File(plugin.getDataFolder(), "config.yml"));
+        return disk.contains(path);
+    }
+
+    /** 付费轨取 long：规范键 → 兼容键 → 代码默认值（键不存在时才退下一级）。
+     *  v2.26.4：存在性判定改走磁盘副本——原来 contains 对 jar 自带的规范键恒真，
+     *  服主只在旧键上配的价格被静默忽略。 */
     private long premiumLong(String leaf, long def) {
         String canonical = PREMIUM_PATH + "." + leaf;
-        if (plugin.getConfig().contains(canonical)) {
+        if (keyOnDisk(plugin, canonical)) {
             return plugin.getConfig().getLong(canonical, def);
         }
         return plugin.getConfig().getLong(PREMIUM_PATH_LEGACY + "." + leaf, def);
     }
 
-    /** 付费轨取段：规范键 → 兼容键 → null。 */
+    /** 付费轨取段：规范键 → 兼容键 → null。v2.26.4：存在性判定同 premiumLong 改走磁盘。 */
     private ConfigurationSection premiumSection(String leaf) {
-        ConfigurationSection sec = plugin.getConfig()
-                .getConfigurationSection(PREMIUM_PATH + "." + leaf);
-        if (sec != null) {
-            return sec;
+        if (keyOnDisk(plugin, PREMIUM_PATH + "." + leaf)) {
+            ConfigurationSection sec = plugin.getConfig()
+                    .getConfigurationSection(PREMIUM_PATH + "." + leaf);
+            if (sec != null) {
+                return sec;
+            }
         }
         return plugin.getConfig().getConfigurationSection(PREMIUM_PATH_LEGACY + "." + leaf);
     }
@@ -700,7 +712,9 @@ public final class SeasonPassService {
         }
         if (r.coins > 0) {
             // 通行证等级奖励：达成条件领奖，暂归「成就奖励」桶（要单列请加 PASS 类枚举，调用点不用返工）
-            plugin.stats().addCoins(player.getUniqueId(), r.coins, CoinReason.PASS);
+            // v2.26.4（审计 #8）：改走 Wallet 收口——付费轨解锁扣 Wallet（server 模式扣
+            // Vault），奖励原来直发剑币账，同一功能内跨账本兑换
+            plugin.wallet().give(player, r.coins, CoinReason.PASS);
             got.add(0, "剑币 <#ffd166>+" + r.coins + "</#ffd166>");
         }
         return got;

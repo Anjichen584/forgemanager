@@ -257,8 +257,10 @@ public final class ContestManager {
             int rep = place <= repByRank.length ? repByRank[place - 1] : 12;
             plugin.stats().addReputation(e.getKey(), rep);
             // v2.0 剑币：大赛名次给币
+            // v2.26.4（审计 #9b）：改走 Wallet.giveTo 收口——top5 可能离线，原来直发
+            // 剑币账，server 模式下与其他 Wallet 支出两本账分裂
             long coinGain = plugin.coinRules().contestReward(place);
-            plugin.stats().addCoins(e.getKey(), coinGain, CoinReason.CONTEST);
+            plugin.wallet().giveTo(e.getKey(), name, coinGain, CoinReason.CONTEST);
             // 声望、剑币和名次奖励结算后立即判定成就；check 同时刷新匠衔。
             if (plugin.achievements() != null) {
                 plugin.achievements().check(e.getKey(), "contest");

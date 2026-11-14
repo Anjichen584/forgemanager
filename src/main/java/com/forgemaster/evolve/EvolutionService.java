@@ -292,7 +292,9 @@ public final class EvolutionService {
             return;
         }
         String plain = Msg.plain(meta.displayName() == null ? Component.empty() : meta.displayName());
-        String base = stripTitles(plain);
+        // v2.26.4：base 会被拼回 MiniMessage 重写物品名——蜕变品名会被交易对手看到，
+        // esc 防改名输入的标签注入（当前锻造品名=配置生成，这是纵深，不是多余的）
+        String base = Msg.esc(stripTitles(plain));
         boolean fancy = stage.index() >= 4;
         String display = "<color:" + stage.color() + "><bold>"
                 + (fancy ? "✦ " : "") + "〔" + stage.title() + "〕" + base + (fancy ? " ✦" : "")

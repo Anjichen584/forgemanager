@@ -1137,6 +1137,12 @@ public final class SpiritManager implements Listener {
             Msg.prefix(player, "<red>剑名不能包含 < > & § 这些符号。</red>");
             return;
         }
+        // v2.26.4：RTL 覆写 / 隔离 / 零宽 / 控制字符——纯视觉欺骗（lore 行文重排），
+        // 无正当用途，与 <>&§ 同级拒收
+        if (raw.matches(".*[\\u202A-\\u202E\\u2066-\\u2069\\u200B-\\u200F\\p{Cntrl}].*")) {
+            Msg.prefix(player, "<red>剑名包含不可见的控制字符，换一个。</red>");
+            return;
+        }
         ItemMeta meta = hand.getItemMeta();
         if (meta == null) {
             return;

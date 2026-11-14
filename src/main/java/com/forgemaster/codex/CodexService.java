@@ -106,7 +106,7 @@ public final class CodexService {
         plugin.getLogger().info("已载入 " + recs.size() + " 份收藏图鉴");
     }
 
-    public void save() {
+    public boolean save() {
         YamlConfiguration yml = new YamlConfiguration();
         for (Map.Entry<UUID, Rec> e : recs.entrySet()) {
             String base = "players." + e.getKey();
@@ -118,8 +118,11 @@ public final class CodexService {
         }
         try {
             com.forgemaster.util.YamlIo.save(file, yml);
+            return true;
         } catch (IOException ex) {
+            // v2.26.4：返回成败——claim 靠这个回滚「已领」，失败时不能假装成功
             plugin.getLogger().warning("codex-data.yml 写入失败: " + ex.getMessage());
+            return false;
         }
     }
 
@@ -392,12 +395,21 @@ public final class CodexService {
         // v2.25 修 P1（审计轮2-1）：对齐「先落已领、再发钱」契约（悬赏/委托同款）。
         // 原来是 claimed 只进内存 → addCoins → 最后 save()，崩在中间重启后 claimed
         // 回滚到旧快照，同一分类可再领一次。现在两个标记先记、立即落盘，钱后发。
+        // v2.26.4：save() 原来吞 IOException 只打 warning——写盘失败时「已领」只在内存，
+        // 重启后可重领。失败就回滚 claimed 并拒绝发放（返回 0）。
         rec(id).claimed.add(cat);
         boolean allNow = allComplete(id) && !claimed(id, CAT_ALL);
         if (allNow) {
             rec(id).claimed.add(CAT_ALL);
         }
-        save();
+        if (!save()) {
+            rec(id).claimed.remove(cat);
+            if (allNow) {
+                rec(id).claimed.remove(CAT_ALL);
+            }
+            plugin.getLogger().severe("图鉴领奖落盘失败，已回滚「已领」标记并拒绝发放：cat=" + cat);
+            return 0;
+        }
         long paid = plugin.stats().addCoins(id, rewardOf(cat), CoinReason.CODEX);
         if (allNow) {
             paid += plugin.stats().addCoins(id, allReward(), CoinReason.CODEX);
