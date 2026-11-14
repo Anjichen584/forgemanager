@@ -6,7 +6,7 @@ Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「�
 - 目标 Java：**21+**
 - 构建产物：`target/ForgingMaster-2.26.7.jar`
 - 无第三方依赖，纯 Paper API + MiniMessage
-- `config-version`：**23**
+- `config-version`：**24**
 
 ---
 
@@ -36,7 +36,7 @@ Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「�
 
 | 版本 | 一句话 | 详情 |
 | --- | --- | --- |
-| **2.26.7** | **整模块移除：龙税契约（contract）**——用户裁定功能臃肿。删除：`/zhujian contract`（join/quit/deposit/pick）、午夜结算、圣物三选一、圣物加成（蜡线保连击/凤凰灰免碎/残誓加传承/铁砧加成——强化概率曲线回归无圣物基线）、图鉴圣物分类（六类→五类）、`%forgemaster_forbidden%` 占位符、contract.yml 备份项（22→21 份）、config.yml contract 段（迁移 step34 清理盘上残留，priv 迁移号顺延）。留存：剑型系统（valueMult 转纯展示口径）、剑魂传承、FortyForm。自检净减 9 钉（558→549，priv 552；见 AGENTS 规则 6 注记） | [十五·八](docs/history/v2.26.x.md) |
+| **2.26.7** | **整模块移除：龙税契约（contract）**——用户裁定功能臃肿。删除：`/zhujian contract`（join/quit/deposit/pick）、午夜结算、圣物三选一、圣物加成（蜡线保连击/凤凰灰免碎/残誓加传承/铁砧加成——强化概率曲线回归无圣物基线）、图鉴圣物分类（六类→五类）、`%forgemaster_forbidden%` 占位符、contract.yml 备份项（22→21 份）、config.yml contract 段（迁移 step33 清理盘上残留）。留存：剑型系统（valueMult 转纯展示口径）、剑魂传承。自检净减 10 钉（556→546，priv 549；见 AGENTS 规则 6 注记） | [十五·八](docs/history/v2.26.x.md) |
 | **2.26.6** | **第三路审计（剧情/事件/webhook、PAPI/GUI 渲染竞态）+ 碎剑唯一 id 落地**：`ITEM_UID` 键在 ItemFactory.build 收口写一次、`isSimilar` 自动变严、碎剑收剑按 uid 精确匹配（存量老物 strike 入口惰性补发，收剑找不到宁留不吞）；`TaskGuard` 收口 8 个裸奔 ticker（大赛/事件/赛季/名人堂/殿堂/剧情/行会周赛/附魔——抛一次异常就被 Bukkit 永久取消的老病根）；webhook 熔断 `==`→`>=` 可重臂 + reload 复位；PAPI `strengthen` NPE 消除、`title` 离线不再同步读 .dat；EnchantRouter 关闭归属校验先于退款、行会仓库面板绑定 viewer；EventManager 空投「区块卸载」不再当「已消失」；story 章节 type 白名单 + 未知 type 日志。钉子 +3 | [十五·七](docs/history/v2.26.x.md) |
 | **2.26.5** | **审计余项 + 自检口径换代**：蜕变 `cumulativeMult` 改 headMap 按真实阶乘乘（PDC 残留超大 stage 原来空转 2³¹ 次卡死主线程）；锻打速度乘区夹 0.1 下限（配置负值 → Infinity tick 敲打指针卡死）；附魔台扣费**前**先探随机池（注册表全空时原来扣完币矿才 return）；`stats <名>`/`profile` 改 peek（原来 admin 反复查随机名刷空档）；回档 `seasons/` 清掉备份点没有的归档（原来只增不删，季号退回能看到「未来」）；回档后看板缓存重建 + 裁剪游标重置；EnchantRouter 不再反向放行取消事件；强化殿堂物品名过 escText。钉子 +2。**自检装置换代**：旧 testserver 与 `_run_selftest_full.py` 已失效，改为真机 RCON + `-Dforgemaster.source-root`（已写入 start.bat） | [十五·六](docs/history/v2.26.x.md) |
 | **2.26.4** | **全仓审计轮（5 路扫描）收口 22 条**：P0——契约结算/pick 圣物改**同步落盘**（30 秒异步窗内崩溃会整场结算重放、奖金重复发）；谱系/图鉴/行会委托领奖改 saveChecked 契约（save 吞 IOException = 重启后可重领，失败回滚「已领」拒发）；P1——剑冢/秘境/通行证/行会解散/周赛/大赛/行会委托 **7 处奖金收口 Wallet**（原来扣 Vault 币、发剑币账，跨账本凭空造币，coin-sinks=server 时变现）；P3——`money balance <玩家>` 查他人要 admin（原来零权限泄两本账）、8 个二级 Tab 管理动词按权限过滤（restore 泄备份清单）、`coins` volatile + 三处**饱和加法**（Long.MAX 溢出把余额清零）、龙税估值连乘链 isNaN/Infinity 守卫 + 1e12 夹紧（原裸奔可溢出变负池误判破产）、premiumLong 的 contains 假绿改磁盘判定；注入面——新增 `Msg.esc/escText` 统一清洗口，附魔台物品名/剑冢兜底名/殿堂铭牌/剑谱名/蜕变品名 五处出口套用，行会名字符白名单，剑名拒收 RTL/零宽字符。自检钉子 +6 | [十五·五](docs/history/v2.26.x.md) |
