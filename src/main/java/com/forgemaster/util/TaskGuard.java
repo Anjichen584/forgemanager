@@ -12,6 +12,10 @@ package com.forgemaster.util;
  * <p>用法：把 {@code runTaskTimer(plugin, this::tick, ...)} 改成
  * {@code runTaskTimer(plugin, TaskGuard.guard("XxxManager.tick", this::tick), ...)}。
  * 语义：跳过本轮、下一轮重试——与 ContractManager.tickClock 的既有口径一致。</p>
+ *
+ * <p><b>约定：被 guard 的任务体必须可安全重入</b>——异常可能发生在任务中途，
+ * 下一轮会从头重跑。结算类任务体要保证归档/落盘是覆盖写、重跑不重复发放
+ * （参照 ContractStore 游标与 SeasonManager.end 的幂等口径）。</p>
  */
 public final class TaskGuard {
 

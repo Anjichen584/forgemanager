@@ -418,11 +418,11 @@ public final class GuildService {
         long checkHours = Math.max(1, plugin.settings().intOf("guild.week-check-hours", 1));
         weeklyTask = Bukkit.getScheduler().runTaskTimer(plugin, com.forgemaster.util.TaskGuard.guard("GuildService.weeklyCheck", this::weeklyCheck),
                 20L * 60, 20L * 60 * 60 * checkHours);
-        autosaveTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
+        autosaveTask = Bukkit.getScheduler().runTaskTimer(plugin, com.forgemaster.util.TaskGuard.guard("GuildService.autosave", () -> {
             if (dirty) {
                 save();
             }
-        }, 20L * 300, 20L * 300);
+        }), 20L * 300, 20L * 300);
         // v2.23：仓库物品 / 委托进度走 5 秒异步冲刷，主线程点击路径零同步 IO。
         // save() 全程 synchronized，与主线程的结构性 save 互斥
         flushTask = Bukkit.getScheduler().runTaskTimerAsynchronously(plugin, () -> {

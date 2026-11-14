@@ -6231,6 +6231,19 @@ public final class SelfTestSuite {
                 store.remove(u);
             }
         });
+        add(g, "v2.26.6 终审补：isSimilar 收剑点全仓唯一（removeFromInventory 内 ≤2 处）", () -> {
+            if (findSourcePackageRoot() == null) {
+                plugin.getLogger().info("[selftest] 找不到源码树，跳过 isSimilar 收剑唯一点钉子");
+                return;
+            }
+            String src = nonCommentSource(new java.io.File(findSourcePackageRoot(),
+                    "strengthen/StrengthenService.java"));
+            require(src != null, "读不到 StrengthenService.java");
+            int hits = (src.split("isSimilar", -1).length) - 1;
+            require(hits >= 1 && hits <= 2,
+                    "isSimilar 收剑点必须只存在于 removeFromInventory 内（主手+背包各一次，实际 " + hits
+                            + "——UID 匹配收紧后不许有人把模糊匹配扩散出去）");
+        });
         add(g, "v2.26.6 ITEM_UID：唯一性 + isSimilar 收紧 + 克隆保留 + ensureUid 语义", () -> {
             // 碎剑收剑按 uid 精确匹配的根基：uid 让 isSimilar 自动变严、clone 不丢、
             // ensureUid 只补缺失绝不覆盖。全自包含（手造 PDC，不依赖在线玩家）。

@@ -41,11 +41,11 @@ public final class Keys {
     public static NamespacedKey SPIRIT_MAX;
     /** 剑灵：名字 */
     public static NamespacedKey SPIRIT_NAME;
-    /** 赛季编号 */
     // ---- v2.26.6 锻造品唯一身份 ----
     /** 锻造品唯一身份（UUID 字符串，物品诞生时写一次，之后永不改写——只允许 ItemFactory 与 StrengthenService 出现） */
     public static NamespacedKey ITEM_UID;
 
+    /** 赛季编号 */
     public static NamespacedKey SEASON;
 
     // ---- v2.1 ----

@@ -84,8 +84,9 @@ public final class WebhookService {
     private final AtomicLong dropped = new AtomicLong();
     private final AtomicLong failed = new AtomicLong();
 
-    private int consecutiveFailures;
-    private long breakerOpenUntil;
+    // v2.26.6 终审补：worker 线程写、start/stop（主线程）也写——非 volatile 有撕裂与可见性风险
+    private volatile int consecutiveFailures;
+    private volatile long breakerOpenUntil;
 
     public WebhookService(ForgingMasterPlugin plugin) {
         this(plugin, null);
