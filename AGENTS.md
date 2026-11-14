@@ -66,9 +66,9 @@
 
 ```powershell
 & 'D:\apache-maven-3.8.8\bin\mvn.cmd' -B -q clean package          # 必须 exit 0
-# 自检（测试服，约 30 秒）
-cd D:\IDEA\mc-plugins\ForgingMaster\testserver
-& 'C:\Users\heiya\AppData\Local\Programs\Python\Python312\python.exe' _run_selftest_full.py
+# 自检（真机 RCON，约 40 秒；先起服：java -Dforgemaster.source-root=<仓库根> -jar paper.jar --nogui）
+# 测试服实际在 D:\game\1.21.10server（RCON 25575/bmtest123）；旧 testserver 路径与 _run_selftest_full.py 已失效
+# RCON 回包被截断时按行取「自检完成」汇总；失败项同步写 latest.log（grep '✗'）
 # 压测（17 阶段 32 并发，约 17 分钟；BOT_COUNT 可改）
 cd D:\IDEA\mc-plugins\ForgingMaster-Lore
 & 'C:\Users\heiya\AppData\Local\Programs\Python\Python312\python.exe' tools\guitest\run-stress.py
