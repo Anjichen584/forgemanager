@@ -4020,7 +4020,6 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             case "metrics", "jingji" -> sender.hasPermission("forgemaster.admin") ? tabMetrics(args) : List.of();
             case "config", "peizhi" -> sender.hasPermission("forgemaster.admin") ? tabConfig(args) : List.of();
             case "fixattrs", "xiufu" -> sender.hasPermission("forgemaster.admin") ? tabFixAttrs(args) : List.of();
- (v2.26.7 Tab 终审：36 helper 对账 7 处差异全修 + LATEST 记录)
             case "stats" -> tabStats(sender, args);
             case "power", "zhanli" -> tabPower(sender, args);
             case "profile", "dangan" -> tabPlayerArg(sender, args);
