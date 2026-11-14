@@ -42,6 +42,10 @@ public final class Keys {
     /** 剑灵：名字 */
     public static NamespacedKey SPIRIT_NAME;
     /** 赛季编号 */
+    // ---- v2.26.6 锻造品唯一身份 ----
+    /** 锻造品唯一身份（UUID 字符串，物品诞生时写一次，之后永不改写——只允许 ItemFactory 与 StrengthenService 出现） */
+    public static NamespacedKey ITEM_UID;
+
     public static NamespacedKey SEASON;
 
     // ---- v2.1 ----
@@ -262,6 +266,7 @@ public final class Keys {
         SPIRIT_MAX = new NamespacedKey(plugin, "spirit_max");
         SPIRIT_NAME = new NamespacedKey(plugin, "spirit_name");
         SEASON = new NamespacedKey(plugin, "season");
+        ITEM_UID = new NamespacedKey(plugin, "item_uid");
         ARMOR_SLOT = new NamespacedKey(plugin, "armor_slot");
         DAMAGE_REDUCE = new NamespacedKey(plugin, "damage_reduce");
         CHILL_TICKS = new NamespacedKey(plugin, "chill_ticks");

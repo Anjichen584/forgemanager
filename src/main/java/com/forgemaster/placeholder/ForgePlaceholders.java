@@ -263,15 +263,23 @@ public final class ForgePlaceholders {
             return "";
         }
         String key = params.trim().toLowerCase(Locale.ROOT);
+        // v2.26.6：插件未初始化/被卸载窗口内 stats() 可能为 null——原 case "strengthen" 裸调
+        // stats().bestStrengthenOf 会把 NPE 打进 PAPI 调用方（聊天/TAB 插件），统一安全取值
+        int bestStrengthen = plugin.stats() == null ? 0 : plugin.stats().bestStrengthenOf(uuid);
         // 只读查询：没有档案返回 null，不给陌生 UUID 建空档案（否则 data.yml 会被占位符查询撑爆）
         StatsStore.Stats st = plugin.stats() == null ? null : plugin.stats().peek(uuid);
         return switch (key) {
             case "coins" -> st == null ? "0" : String.valueOf(st.coins);                 // 当前剑币
             case "reputation" -> st == null ? "0" : String.valueOf(st.reputation);       // 声望
-            case "title" -> com.forgemaster.title.TitleService.renderTitle(plugin, uuid, st == null ? 0 : st.reputation); // 称号扩展 v2.19：先查佩戴（佩戴 > 声望），本行是称号渲染唯一插入点
+            case "title" -> // 称号扩展 v2.19：先查佩戴（佩戴 > 声望），本行是称号渲染唯一插入点。
+                // v2.26.6（审计 #3）：wornOf 对离线玩家会走 OfflinePlayer PDC = 同步读 .dat，
+                // 而 PAPI 占位符常被 TAB/异步聊天调——离线直接走声望称号回退，不碰磁盘。
+                (org.bukkit.Bukkit.getPlayer(uuid) != null
+                        ? com.forgemaster.title.TitleService.renderTitle(plugin, uuid, st == null ? 0 : st.reputation)
+                        : com.forgemaster.stats.StatsStore.titleOf(st == null ? 0 : st.reputation));
             case "top_quality" -> topQuality(st);                                        // 历史最高品质名
             case "top_score" -> st == null ? "0" : Msg.fmt(st.bestScore, 1);             // 历史最高分
-            case "strengthen" -> String.valueOf(plugin.stats().bestStrengthenOf(uuid));  // 历史最高强化等级
+            case "strengthen" -> String.valueOf(bestStrengthen);  // 历史最高强化等级（v2.26.6：安全取值，未初始化窗口内不 NPE）
             case "forge_count" -> st == null ? "0" : String.valueOf(st.forged);          // 累计锻造次数
             case "forbidden" -> forbidden(plugin, uuid);                                 // 在契状态
             default -> null;

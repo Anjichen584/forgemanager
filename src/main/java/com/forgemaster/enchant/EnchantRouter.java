@@ -127,6 +127,11 @@ public final class EnchantRouter implements Listener {
         if (!(event.getPlayer() instanceof Player player)) {
             return;
         }
+        // v2.26.6（审计 #6）：归属校验必须先于退款循环——原来在循环之后（且校验完直接
+        // return 是死代码），第三方经 invsee 类插件关别人台子会把书/矿拿走
+        if (!holder.player().equals(player.getUniqueId())) {
+            return;
+        }
         // 把三个自由格里的东西还给玩家，否则关界面即销毁
         for (int slot : EnchantGui.FREE_SLOTS) {
             ItemStack item = event.getInventory().getItem(slot);
@@ -138,9 +143,6 @@ public final class EnchantRouter implements Listener {
                 player.getWorld().dropItemNaturally(player.getLocation(), drop);
             }
             event.getInventory().setItem(slot, new ItemStack(Material.AIR));
-        }
-        if (!holder.player().equals(player.getUniqueId())) {
-            return;
         }
     }
 }

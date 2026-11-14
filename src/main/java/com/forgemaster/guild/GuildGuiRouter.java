@@ -144,6 +144,11 @@ public final class GuildGuiRouter implements Listener {
         if (!(event.getWhoClicked() instanceof Player player)) {
             return;
         }
+        // v2.26.6（审计 #7）：点击者必须是面板的 viewer——仓库的冲突回滚永远退给
+        // warehouse.viewer()，invsee 类插件点别人面板时物品会落到面板主人手上
+        if (!player.getUniqueId().equals(warehouse.viewer())) {
+            return;
+        }
         int raw = event.getRawSlot();
         int size = top.getSize();
 

@@ -1204,6 +1204,9 @@ public final class StrengthenService {
      */
     private StrikeResult strike0(Player player, ItemStack item,
                                  java.util.function.Consumer<ItemStack> onBroken) {
+        // v2.26.6：存量老物惰性补 uid——碎剑必先经过 strike，补发必然先于收剑。
+        // item 是主手 mirror 时 setItemMeta 直接写穿回槽（与 writeLevel 同一写入模型）。
+        plugin.items().ensureUid(item);
         if (!enabled()) {
             return refused(item, "<red>锻造等级功能已关闭。");
         }
@@ -1584,6 +1587,30 @@ public final class StrengthenService {
      * 不会进到这里；命令入口仍然按主手 → 背包的顺序找。</p>
      */
     private void removeFromInventory(Player player, ItemStack item) {
+        // v2.26.6（审计修复）：原来按 isSimilar 模糊匹配——两把 PDC 完全相同的剑
+        // （同配方同品质同评分，或 givefull 连发）会收走没碎的那把。现在 ITEM_UID
+        // 精确匹配；uid 匹配不上就 warning 留账，绝不清别的槽（宁可留一把也不吞剑）。
+        String uid = plugin.items().uidOf(item);
+        if (uid != null) {
+            ItemStack main = player.getInventory().getItemInMainHand();
+            if (!main.getType().isAir() && uid.equals(plugin.items().uidOf(main))) {
+                player.getInventory().setItemInMainHand(null);
+                return;
+            }
+            var inv = player.getInventory();
+            for (int i = 0; i < inv.getSize(); i++) {
+                ItemStack slot = inv.getItem(i);
+                if (slot != null && uid.equals(plugin.items().uidOf(slot))) {
+                    inv.setItem(i, null);
+                    return;
+                }
+            }
+            plugin.getLogger().warning("[strengthen] 碎剑 uid=" + uid
+                    + " 未在背包定位到，跳过收剑（剑还留在玩家身上，宁多不少）");
+            return;
+        }
+        // 兜底：无 uid 的存量老物（ensureUid 补发链断裂时才可达）。保留旧行为一次
+        // isSimilar——这里必须是全仓唯一允许 isSimilar 收剑的点，静态钉子钉住。
         ItemStack main = player.getInventory().getItemInMainHand();
         if (!main.getType().isAir() && main.isSimilar(item)) {
             player.getInventory().setItemInMainHand(null);

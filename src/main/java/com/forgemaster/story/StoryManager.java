@@ -58,6 +58,13 @@ public final class StoryManager {
             String type = String.valueOf(raw.get("type"));
             int goal = raw.get("goal") instanceof Number n ? n.intValue() : 1;
             String text = String.valueOf(raw.get("text"));
+            // v2.26.6（审计 #8）：type 拼错（如 foraged）的章 statOf 恒 0，玩家零提示
+            // 永久卡死在那章。载入时白名单校验，非法章节拒收 + 打日志。
+            if (!type.equals("commissions") && !type.equals("forged")) {
+                plugin.getLogger().warning("[story] 章节 " + id + " 的 type 是 \"" + type
+                        + "\"，不在 {commissions, forged} 里——该章永远无法推进，已跳过。请改 story.yml。");
+                continue;
+            }
             chapters.add(new Chapter(id, title, type, Math.max(1, goal), text));
         }
         chapterIndex.clear();
@@ -111,7 +118,7 @@ public final class StoryManager {
             return;
         }
         int interval = Math.max(1, storyCfg.getInt("check-interval-seconds", 10));
-        task = Bukkit.getScheduler().runTaskTimer(plugin, this::check, 20L, interval * 20L);
+        task = Bukkit.getScheduler().runTaskTimer(plugin, com.forgemaster.util.TaskGuard.guard("StoryManager.check", this::check), 20L, interval * 20L);
     }
 
     public void stop() {
@@ -203,7 +210,10 @@ public final class StoryManager {
         return switch (type) {
             case "commissions" -> st.commissionsDone;
             case "forged" -> st.forged;
-            default -> 0;
+            default -> {
+                plugin.getLogger().warning("[story] 未知章节 type \"" + type + "\"，按 0 统计（该章永远无法推进）");
+                yield 0;
+            }
         };
     }
 

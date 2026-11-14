@@ -247,7 +247,7 @@ public final class ForgingMasterPlugin extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new com.forgemaster.enchant.EnchantGuardListener(this), this);
         // 守夜（脱战回复）与望气（侦测）靠周期任务；40 tick = 2 秒一次。
         // 放这里而不是每个玩家一条链：玩家上下线不用管任务生命周期，也就不会有「退了还在跑」的链。
-        Bukkit.getScheduler().runTaskTimer(this, enchantListener::tick, 100L, 40L);
+        Bukkit.getScheduler().runTaskTimer(this, com.forgemaster.util.TaskGuard.guard("EnchantListener.tick", enchantListener::tick), 100L, 40L);
         webhook.start();
         // 剑冢秘境（tombrun）：依赖 tombs（残影档案复用）与 seasonPass（通关登记），构造即挂监听与心跳
         tombrun = new com.forgemaster.tombrun.TombRunService(this, tombs);

@@ -63,7 +63,7 @@ public final class EventManager {
             task.cancel();
         }
         parseSchedule();
-        task = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 20L, 20L);
+        task = Bukkit.getScheduler().runTaskTimer(plugin, com.forgemaster.util.TaskGuard.guard("EventManager.tick", this::tick), 20L, 20L);
     }
 
     /** 关服：取消调度，清掉残留空投物 */
@@ -311,7 +311,10 @@ public final class EventManager {
         while (it.hasNext()) {
             UUID u = it.next();
             Entity e = Bukkit.getEntity(u);
-            if (e == null || e.isDead()) {
+            // v2.26.6（审计 #2）：e == null 只说明区块卸载（实体还在存档里），
+            // 和 isDead 不是一回事——这里清了记录，shutdown 的 removeSpawned
+            // 就永远找不到它，空投物残留世界。只有确认死亡才清。
+            if (e != null && e.isDead()) {
                 it.remove();
                 spawnedAt.remove(u);
             }

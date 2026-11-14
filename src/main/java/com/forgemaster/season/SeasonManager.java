@@ -74,7 +74,7 @@ public final class SeasonManager {
             saveState();
         }
         shutdown();
-        taskId = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 20L * 60, 20L * 60).getTaskId();
+        taskId = Bukkit.getScheduler().runTaskTimer(plugin, com.forgemaster.util.TaskGuard.guard("SeasonManager.tick", this::tick), 20L * 60, 20L * 60).getTaskId();
     }
 
     /** v2.25：公开读档。回档（restore）后按盘上 season.yml 重建内存态。 */

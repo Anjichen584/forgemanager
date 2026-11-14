@@ -230,6 +230,24 @@ public final class SelfTestSuite {
      * 便捷版方法体切片（v2.26.4）：给「按 src 相对路径 + marker 钉形状」的静态钉子用。
      * 读不到源码树 / 文件时返回 null，调用方自行决定跳过或 require 报红。
      */
+    /** 整文件文本（v2.26.6）：给「这个文件里必须出现某调用」的钉子用；读不到返回 null */
+    private static String sourceFileText(String relPath) {
+        java.io.File pkgRoot = findSourcePackageRoot();
+        if (pkgRoot == null) {
+            return null;
+        }
+        java.io.File src = new java.io.File(pkgRoot, relPath);
+        if (!src.isFile()) {
+            return null;
+        }
+        try {
+            return new String(java.nio.file.Files.readAllBytes(src.toPath()),
+                    java.nio.charset.StandardCharsets.UTF_8);
+        } catch (java.io.IOException ex) {
+            return null;
+        }
+    }
+
     private static String sourceMethodBody(String relPath, String marker) {
         java.io.File pkgRoot = findSourcePackageRoot();
         if (pkgRoot == null) {
@@ -6212,6 +6230,83 @@ public final class SelfTestSuite {
             } finally {
                 store.remove(u);
             }
+        });
+        add(g, "v2.26.6 ITEM_UID：唯一性 + isSimilar 收紧 + 克隆保留 + ensureUid 语义", () -> {
+            // 碎剑收剑按 uid 精确匹配的根基：uid 让 isSimilar 自动变严、clone 不丢、
+            // ensureUid 只补缺失绝不覆盖。全自包含（手造 PDC，不依赖在线玩家）。
+            var uidKey = com.forgemaster.util.Keys.ITEM_UID;
+            require(uidKey != null, "ITEM_UID 键没注册");
+            org.bukkit.inventory.ItemStack a = new org.bukkit.inventory.ItemStack(org.bukkit.Material.IRON_SWORD);
+            var ma = a.getItemMeta();
+            ma.getPersistentDataContainer().set(com.forgemaster.util.Keys.FORGED, org.bukkit.persistence.PersistentDataType.BYTE, (byte) 1);
+            ma.getPersistentDataContainer().set(uidKey, org.bukkit.persistence.PersistentDataType.STRING, "uid-A");
+            a.setItemMeta(ma);
+            org.bukkit.inventory.ItemStack b = new org.bukkit.inventory.ItemStack(org.bukkit.Material.IRON_SWORD);
+            var mb = b.getItemMeta();
+            mb.getPersistentDataContainer().set(com.forgemaster.util.Keys.FORGED, org.bukkit.persistence.PersistentDataType.BYTE, (byte) 1);
+            mb.getPersistentDataContainer().set(uidKey, org.bukkit.persistence.PersistentDataType.STRING, "uid-B");
+            b.setItemMeta(mb);
+            require(!a.isSimilar(b), "uid 不同的两把剑 isSimilar 必须为 false（收剑模糊匹配的根因）");
+            require(plugin.items().uidOf(a).equals("uid-A"), "uidOf 读回失败");
+            org.bukkit.inventory.ItemStack copy = a.clone();
+            require(plugin.items().uidOf(copy).equals("uid-A"), "clone 必须保留 uid（Paper 实现细节变更会当场红）");
+            org.bukkit.inventory.ItemStack legacy = new org.bukkit.inventory.ItemStack(org.bukkit.Material.IRON_SWORD);
+            var ml = legacy.getItemMeta();
+            ml.getPersistentDataContainer().set(com.forgemaster.util.Keys.FORGED, org.bukkit.persistence.PersistentDataType.BYTE, (byte) 1);
+            legacy.setItemMeta(ml);
+            require(plugin.items().uidOf(legacy) == null, "无 uid 老物 uidOf 应返回 null");
+            require(plugin.items().ensureUid(legacy), "ensureUid 应给存量老物补 uid");
+            String filled = plugin.items().uidOf(legacy);
+            require(filled != null && !filled.isBlank(), "补发后 uid 非空");
+            require(!plugin.items().ensureUid(legacy), "ensureUid 幂等：已有 uid 不许改写");
+            require(plugin.items().uidOf(legacy).equals(filled), "第二次 ensureUid 不许换 uid");
+        });
+        add(g, "v2.26.6 任务守卫：八个周期任务入口全部挂 TaskGuard（静态形状钉）", () -> {
+            if (findSourcePackageRoot() == null) {
+                plugin.getLogger().info("[selftest] 找不到源码树，跳过任务守卫钉子");
+                return;
+            }
+            String[][] sites = {
+                {"contests/ContestManager.java", "ContestManager.tick"},
+                {"events/EventManager.java", "EventManager.tick"},
+                {"season/SeasonManager.java", "SeasonManager.tick"},
+                {"hall/HallOfFame.java", "HallOfFame.refresh"},
+                {"hall/HallShrine.java", "HallShrine.tick"},
+                {"story/StoryManager.java", "StoryManager.check"},
+                {"guild/GuildService.java", "GuildService.weeklyCheck"},
+                {"ForgingMasterPlugin.java", "EnchantListener.tick"},
+            };
+            for (String[] site : sites) {
+                String src = sourceFileText(site[0]);
+                require(src != null && src.contains("TaskGuard.guard(\"" + site[1] + "\""),
+                        "周期任务 " + site[1] + " 必须挂 TaskGuard（抛一次异常就被 Bukkit 永久取消）");
+            }
+        });
+        add(g, "v2.26.6 审计轮：Webhook 熔断可重臂 / pruneSpawned 区分卸载 / GUI 归属先于操作（静态形状钉）", () -> {
+            if (findSourcePackageRoot() == null) {
+                plugin.getLogger().info("[selftest] 找不到源码树，跳过 v2.26.6 审计轮钉子");
+                return;
+            }
+            String breaker = sourceMethodBody("webhook/WebhookService.java", "private void recordFailure(Throwable ex)");
+            require(breaker != null && breaker.contains(">= BREAKER_THRESHOLD"),
+                    "webhook 熔断必须是 >=（== 只触发一次，之后永不重臂）");
+            require(breaker.contains("consecutiveFailures = 0"), "熔断打开时必须清零计数以便重臂");
+            String start = sourceMethodBody("webhook/WebhookService.java", "public synchronized void start()");
+            require(start != null && start.contains("consecutiveFailures = 0"),
+                    "start() 必须复位熔断状态（reload 不许继承陈旧熔断）");
+            String prune = sourceMethodBody("events/EventManager.java", "private void pruneSpawned()");
+            require(prune != null && prune.contains("e != null && e.isDead()"),
+                    "pruneSpawned 必须区分「区块卸载」和「已死亡」（清了记录空投就永久残留）");
+            String onClose = sourceMethodBody("enchant/EnchantRouter.java", "public void onClose(");
+            require(onClose != null && onClose.indexOf("holder.player().equals") >= 0
+                    && onClose.indexOf("holder.player().equals") < onClose.indexOf("addItem"),
+                    "onClose 的归属校验必须先于退款循环");
+            String warehouse = sourceMethodBody("guild/GuildGuiRouter.java", "private void routeWarehouse(");
+            require(warehouse != null && warehouse.contains("warehouse.viewer()"),
+                    "routeWarehouse 必须校验点击者==面板 viewer");
+            String load = sourceMethodBody("story/StoryManager.java", "public void load()");
+            require(load != null && load.contains("commissions") && load.contains("forged"),
+                    "story 载入必须校验章节 type 白名单（拼错 type 的章零提示永久卡死）");
         });
         add(g, "contract 落盘口径：结算与 pick 必须同步 save（v2.26.4 结算重放修复）", () -> {
             // 结算/领圣物发的是「另一个存档」（StatsStore）里的钱，contract.yml 若只标脏

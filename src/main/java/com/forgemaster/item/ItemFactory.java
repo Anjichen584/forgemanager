@@ -269,6 +269,11 @@ public final class ItemFactory {
         }
 
         pdc.set(Keys.FORGED, PersistentDataType.BYTE, (byte) 1);
+        // v2.26.6：锻造品唯一身份。build 是全插件唯一写 FORGED 的生产点（正常锻造 /
+        // give / givefull / buildDirect 全汇到这里），uid 跟着 FORGED 落笔一次、永不改写。
+        // 有了它，两把 PDC 其余字段完全相同的剑 isSimilar 也会返回 false——
+        // StrengthenService 碎剑收剑按 uid 定位，不再收错。
+        pdc.set(Keys.ITEM_UID, PersistentDataType.STRING, java.util.UUID.randomUUID().toString());
         pdc.set(Keys.MATERIAL, PersistentDataType.STRING, mat.id());
         if (armor) {
             pdc.set(Keys.ARMOR_SLOT, PersistentDataType.STRING, mat.slot().name());
@@ -412,6 +417,41 @@ public final class ItemFactory {
     /** 管理命令 /give 用：直接按分数造一把，词条照样抽 */
     public ItemStack buildDirect(String forgerName, ForgeMaterial mat, Quality q, double score) {
         return buildDirect(forgerName, mat, q, score, null);
+    }
+
+    /** 锻造品唯一身份（无 uid 返回 null——存量老物在 strike 入口惰性补发） */
+    public String uidOf(org.bukkit.inventory.ItemStack item) {
+        if (item == null || item.getType().isAir()) {
+            return null;
+        }
+        var meta = item.getItemMeta();
+        if (meta == null || !meta.getPersistentDataContainer().has(Keys.ITEM_UID, org.bukkit.persistence.PersistentDataType.STRING)) {
+            return null;
+        }
+        return meta.getPersistentDataContainer().get(Keys.ITEM_UID, org.bukkit.persistence.PersistentDataType.STRING);
+    }
+
+    /**
+     * 存量老物惰性补 uid：FORGED 已有而 uid 缺失时补写。只补缺失，**绝不覆盖已有值**
+     * （与 seedSnapshot 的「系统/服主已写过的值不能盖」同一铁律）。返回是否动了 meta。
+     * 只许主线程调（PDC/meta 约定）。
+     */
+    public boolean ensureUid(org.bukkit.inventory.ItemStack item) {
+        if (item == null || item.getType().isAir() || !isForged(item)) {
+            return false;
+        }
+        var meta = item.getItemMeta();
+        if (meta == null) {
+            return false;
+        }
+        var pdc = meta.getPersistentDataContainer();
+        if (pdc.has(Keys.ITEM_UID, org.bukkit.persistence.PersistentDataType.STRING)) {
+            return false;
+        }
+        pdc.set(Keys.ITEM_UID, org.bukkit.persistence.PersistentDataType.STRING,
+                java.util.UUID.randomUUID().toString());
+        item.setItemMeta(meta);
+        return true;
     }
 
     public boolean isForged(org.bukkit.inventory.ItemStack item) {

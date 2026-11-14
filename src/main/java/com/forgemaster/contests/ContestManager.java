@@ -66,7 +66,7 @@ public final class ContestManager {
         long interval = Math.max(1, plugin.settings().contestIntervalMinutes()) * 60_000L;
         // 下次开赛：距上次整点间隔的下一个点
         nextAt = now + interval;
-        task = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 20L, 20L);
+        task = Bukkit.getScheduler().runTaskTimer(plugin, com.forgemaster.util.TaskGuard.guard("ContestManager.tick", this::tick), 20L, 20L);
     }
 
     public void shutdown() {

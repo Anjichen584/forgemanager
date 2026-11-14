@@ -84,7 +84,7 @@ public final class HallShrine {
             return;
         }
         long interval = Math.max(5, plugin.settings().intOf("hall.refresh-seconds", 30)) * 20L;
-        task = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 40L, interval);
+        task = Bukkit.getScheduler().runTaskTimer(plugin, com.forgemaster.util.TaskGuard.guard("HallShrine.tick", this::tick), 40L, interval);
     }
 
     /** 关服 / 重载：停任务并撤掉全部展示实体 */

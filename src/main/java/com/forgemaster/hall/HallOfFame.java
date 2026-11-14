@@ -88,7 +88,7 @@ public final class HallOfFame {
             return;
         }
         int interval = Math.max(1, plugin.getConfig().getInt("hall-of-fame.refresh-seconds", 300));
-        refreshTask = Bukkit.getScheduler().runTaskTimer(plugin, this::refresh,
+        refreshTask = Bukkit.getScheduler().runTaskTimer(plugin, com.forgemaster.util.TaskGuard.guard("HallOfFame.refresh", this::refresh),
                 20L, interval * 20L);
     }
 

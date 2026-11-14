@@ -107,7 +107,11 @@ public final class WebhookService {
         }
         int cap = clampQueue(plugin.settings().intOf("webhook.queue-size", 64));
         queue = new ArrayBlockingQueue<>(cap);
+        // v2.26.6（审计 #5）：reload 路径 start()→stop()→start() 会继承上一轮的
+        // 熔断状态——热重载后新 worker 带着旧 breakerOpenUntil 继续静默丢消息。
         running = true;
+        consecutiveFailures = 0;
+        breakerOpenUntil = 0;
         Thread t = new Thread(this::loop, "ForgingMaster-Webhook");
         t.setDaemon(true);
         worker = t;
@@ -287,10 +291,14 @@ public final class WebhookService {
     private void recordFailure(Throwable ex) {
         failed.incrementAndGet();
         consecutiveFailures++;
-        if (consecutiveFailures == BREAKER_THRESHOLD) {
+        // v2.26.6（审计 #1）：原来 `==` 只在恰好等于阈值时熔断一次——60 秒冷却后计数
+        // 继续涨到 6、7、8…，熔断从此永不重臂，每条消息照常打向死端点。改 >= 并在
+        // 熔断打开时把计数归零，让 60 秒后能再次熔断。
+        if (consecutiveFailures >= BREAKER_THRESHOLD) {
             breakerOpenUntil = System.currentTimeMillis() + BREAKER_OPEN_MS;
+            consecutiveFailures = 0;
             plugin.getLogger().fine("Webhook 连续失败 " + BREAKER_THRESHOLD
-                    + " 次，静默 60 秒后重试：" + ex);
+                    + " 次，熔断 60 秒（失败的这条已丢弃，不是延迟重试）：" + ex);
         } else {
             plugin.getLogger().fine("Webhook 发送失败（已忽略）：" + ex);
         }

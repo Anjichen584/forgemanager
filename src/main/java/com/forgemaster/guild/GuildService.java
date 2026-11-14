@@ -416,7 +416,7 @@ public final class GuildService {
     public void start() {
         stopTasks();
         long checkHours = Math.max(1, plugin.settings().intOf("guild.week-check-hours", 1));
-        weeklyTask = Bukkit.getScheduler().runTaskTimer(plugin, this::weeklyCheck,
+        weeklyTask = Bukkit.getScheduler().runTaskTimer(plugin, com.forgemaster.util.TaskGuard.guard("GuildService.weeklyCheck", this::weeklyCheck),
                 20L * 60, 20L * 60 * 60 * checkHours);
         autosaveTask = Bukkit.getScheduler().runTaskTimer(plugin, () -> {
             if (dirty) {
