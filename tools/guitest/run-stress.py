@@ -31,7 +31,7 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
-SERVER = os.environ.get("FM_SERVER", r"D:\game.21.10server")  # v2.26.5：旧 testserver 路径已失效
+SERVER = os.environ.get("FM_SERVER", "D:/game/1.21.10server")  # v2.26.5：旧 testserver 路径已失效（正斜杠 Windows 同样可用）
 LOG = os.path.join(SERVER, "_stress-server.log")
 PORT = 25565  # v2.26.5：随服务器实际位置更新
 RCON_PORT = 25575  # v2.26.5：随服务器实际位置更新
