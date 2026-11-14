@@ -167,7 +167,7 @@ class ConnPool {
   constructor (o) {
     this.host = o.host || '127.0.0.1'
     this.port = o.port || 25577
-    this.version = o.version || '1.21.11'
+    this.version = o.version || '1.21.10'  // v2.26.5：随服务器迁移
     this.onlineMode = !!o.onlineMode
     this.proxies = loadProxies(o.proxies).map(parseProxy).filter(Boolean)
     this.proxyIndex = 0

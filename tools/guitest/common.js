@@ -3,8 +3,8 @@ const mineflayer = require('mineflayer')
 const nbt = require('prismarine-nbt')
 
 const HOST = '127.0.0.1'
-const PORT = 25577
-const VERSION = '1.21.11'
+const PORT = 25565  // v2.26.5：随服务器迁移
+const VERSION = '1.21.10'  // v2.26.5：随服务器迁移（paper-1.21.10-130）
 const GLASS = /_stained_glass_pane$/
 
 const wait = ms => new Promise(r => setTimeout(r, ms))

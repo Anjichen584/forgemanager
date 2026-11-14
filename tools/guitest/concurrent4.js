@@ -16,10 +16,10 @@ const net = require('net')
 const { wait } = require('./common')
 
 const HOST = '127.0.0.1'
-const PORT = 25577
-const VERSION = '1.21.11'
-const RCON_PORT = 25599
-const RCON_PASS = 'testpass'
+const PORT = 25565  // v2.26.5：随服务器迁移
+const VERSION = '1.21.10'  // v2.26.5：随服务器迁移
+const RCON_PORT = 25575  // v2.26.5：随服务器迁移
+const RCON_PASS = 'bmtest123'  // v2.26.5：随服务器迁移
 const SERVER = process.env.FM_SERVER || 'D:\\IDEA\\mc-plugins\\ForgingMaster\\testserver'
 const LOG = path.join(SERVER, 'logs', 'latest.log')
 
