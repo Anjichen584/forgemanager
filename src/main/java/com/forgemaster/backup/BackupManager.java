@@ -29,7 +29,7 @@ public final class BackupManager {
      *
      * <p><b>v2.23.1 修 P0：原来只有 10 份，漏了 8 份</b>。回档后会出现最迷惑的状态——
      * 「剑币回到 3 天前，但行会仓库还是现在的」「委托重置了，砧位上的剑还在」。
-     * 现在覆盖 22 份核心存档（经济 / 行会 / 委托 / 砧位 / 名人堂 / 剧情 / 赛季 / 通行证…）：
+     * 现在覆盖 21 份核心存档（经济 / 行会 / 委托 / 砧位 / 名人堂 / 剧情 / 赛季 / 通行证…）：
      * 新增存档文件时必须同步加到这个数组 —— {@link #backup} 只复制清单内的文件，清单外的
      * 一律不碰，所以这份数组是「什么会跟着回档一起退回」的唯一真相源。</p>
      *
@@ -52,7 +52,6 @@ public final class BackupManager {
             "hall-strengthen.yml",   // 名人堂强化榜
             "story-progress.yml",    // 剧情进度
             "story.yml",             // 剧情状态（v2.23.1 补）
-            "contract.yml",          // 契约圣物
             // v2.23.1 补：这 8 份此前完全不在备份里
             "guild-data.yml",        // 行会 + 行会仓库 + 行会委托
             "orders.yml",            // 锻造订单
@@ -400,7 +399,6 @@ public final class BackupManager {
         // 但 flushAll 此前漏了它们 —— 内存还是回档前副本，30 秒一轮的异步
         // 脏冲刷（contract 同型）或下一次变更即整文件回写，把回档静默吞掉。
         // 与 v2.23.1 修过的「stats 被脏冲刷盖回」完全同型，这里是漏网模块。
-        swallow(stage, "contract.yml", () -> plugin.contractManager().store().save());
         swallow(stage, "manuals.yml", () -> plugin.manuals().save());
         // story.yml 是章节定义（config 驱动），运行时状态只有 progress 一份
         swallow(stage, "story-progress.yml", () -> plugin.story().save());
@@ -459,7 +457,6 @@ public final class BackupManager {
         swallow("回档后", "spectrum-data.yml", () -> plugin.spectrum().load());
         // v2.25 修 P1：与 flushAll 同一批漏网模块 —— 覆盖文件后必须按盘重建内存，
         // 否则旧副本在下次冲刷时把回档结果盖回去（manuals 是变更即全量写，最急）
-        swallow("回档后", "contract.yml", () -> plugin.contractManager().store().load());
         swallow("回档后", "manuals.yml", () -> plugin.manuals().load());
         swallow("回档后", "story-progress.yml", () -> plugin.story().load());
         swallow("回档后", "daily-data.yml", () -> plugin.dailyStore().load());

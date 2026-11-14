@@ -683,20 +683,20 @@ public final class StrengthenService {
      * @param cornerstone 基石护体生效中（不碎）
      */
     public double[] odds(int level, int combo, boolean noLossArmed, double kindleBonus,
-                         com.forgemaster.contract.RelicBonus rb,
+                         double relicSuccess, double relicGreat, double relicBreakMult,
                          boolean frenzy, boolean cornerstone) {
         int lv = Math.max(0, level);
         double chance = Math.min(1.0, successChance(lv) + Math.max(0, kindleBonus)
                 + Math.min(comboBonusMax(), Math.max(0, combo) * comboBonusPer())
-                + (frenzy ? frenzySuccessBonus() : 0) + rb.success());
+                + (frenzy ? frenzySuccessBonus() : 0) + relicSuccess);
         double greatP = Math.max(0, Math.min(0.5,
-                greatBase() + rb.great() + greatPerCombo() * Math.max(0, combo)));
+                greatBase() + relicGreat + greatPerCombo() * Math.max(0, combo)));
         if (noLossArmed) {
             // 无损连击强化：这一锤必成、不碎、不掉级；大成与成功分摊 100%
             double g = Math.min(greatP, 1.0);
             return new double[]{0, 0, 0, g, 1.0 - g};
         }
-        double breakCond = Math.max(0, Math.min(1.0, breakChance(lv) * rb.breakMult()));
+        double breakCond = Math.max(0, Math.min(1.0, breakChance(lv) * relicBreakMult));
         if (frenzy || cornerstone) {
             breakCond = 0;
         }
@@ -712,19 +712,19 @@ public final class StrengthenService {
 
     /** 当前物品的明牌抽票（读物品上的等级 / 连击 / 狂热） */
     public double[] oddsOf(ItemStack item, double kindleBonus) {
-        return oddsOf(item, kindleBonus, com.forgemaster.contract.RelicBonus.ZERO);
+        return oddsOf(item, kindleBonus, 0, 0, 1.0);
     }
 
     /** 同上，带圣物聚合加成（在线玩家的真实 odds 走这个） */
     public double[] oddsOf(ItemStack item, double kindleBonus,
-                           com.forgemaster.contract.RelicBonus rb) {
+                           double relicSuccess, double relicGreat, double relicBreakMult) {
         int level = Math.max(0, levelOf(item));
         int combo = comboOf(item);
         boolean frenzy = frenzyLeftOf(item) > 0;
         boolean noLoss = noLossComboActive(item);
         boolean cornerstone = !frenzy && !noLoss && combo >= breakShieldCombo()
-                && cornerUsedOf(item) < 1 + rb.cornerstoneExtra();
-        return odds(level, combo, noLoss, kindleBonus, rb, frenzy, cornerstone);
+                && cornerUsedOf(item) < 1;
+        return odds(level, combo, noLoss, kindleBonus, relicSuccess, relicGreat, relicBreakMult, frenzy, cornerstone);
     }
 
     /**
@@ -800,8 +800,7 @@ public final class StrengthenService {
                 coins += costOf(item, lv);
                 mats += materialAmountOf(item, lv);
                 hits++;
-                double[] odds = odds(lv, 0, false, 0,
-                        com.forgemaster.contract.RelicBonus.ZERO, false, false);
+                double[] odds = odds(lv, 0, false, 0, 0, 0, 1.0, false, false);
                 Tier t = tierOf(rng.nextDouble(), odds);
                 switch (t) {
                     case SUCCESS, NO_LOSS -> lv = Math.min(cap, lv + 1);
@@ -839,13 +838,9 @@ public final class StrengthenService {
         return o[0];
     }
 
-    /** 圣物聚合加成（对外只读入口：铁砧强化要用同一份） */
-    public com.forgemaster.contract.RelicBonus relicBonusOf(Player player) {
-        var cm = plugin.contractManager();
-        return cm == null ? com.forgemaster.contract.RelicBonus.ZERO
-                : cm.relicBonus(player.getUniqueId());
-    }
-
+    /** 剑魂传承：碎剑把 {@code floor(等级 × rate)} 记到玩家 PDC 上，
+     * 下一次 ForgeManager 结算新剑时由 {@link #applyInherit} 消费。
+     * （v2.26.7：残誓圣物的传承加成随龙税契约移除。） */
     /**
      * 剑魂传承：碎剑把 {@code floor(等级 × rate)} 记到玩家 PDC 上，
      * 下一次 ForgeManager 结算新剑时由 {@link #applyInherit} 消费。
@@ -853,10 +848,6 @@ public final class StrengthenService {
      */
     public void grantInherit(Player player, int brokenLevel) {
         double rate = inheritRate();
-        var cm = plugin.contractManager();
-        if (cm != null) {
-            rate += cm.relicBonus(player.getUniqueId()).inherit();
-        }
         if (rate <= 0 || brokenLevel <= 0) {
             return;
         }
@@ -1283,8 +1274,7 @@ public final class StrengthenService {
         int threshold = noLossComboThreshold();
         boolean noLoss = noLossComboActive(item);
         boolean frenzy = frenzyLeftOf(item) > 0;
-        // 圣物聚合加成（龙税周目）：没在契返回 ZERO，不改变任何曲线
-        com.forgemaster.contract.RelicBonus rb = relicBonusOf(player);
+        // v2.26.7：龙税圣物移除——frenzyExtra/comboKeep/phoenix 等圣物加成全部退场
         boolean furnaceReady = furnaceOf(item) >= furnaceNeed(level);
         // 赛季追赶：一次锻只在这里读一次，同一次锻里成功率不会被赛季状态中途改写
         double catchup = seasonCatchupBonus(level);
@@ -1295,9 +1285,9 @@ public final class StrengthenService {
                 && Charm.count(player, Charm.KINDLE) > 0;
         double kindleBonus = kindle ? Charm.kindleBonus(plugin) : 0;
         boolean cornerstone = !frenzy && !noLoss && combo >= breakShieldCombo()
-                && cornerUsedOf(item) < 1 + rb.cornerstoneExtra();
+                && cornerUsedOf(item) < 1;
         boolean armed = furnaceReady || noLoss;
-        double[] odds = odds(level, combo, armed, kindleBonus, rb, frenzy,
+        double[] odds = odds(level, combo, armed, kindleBonus, 0, 0, 1.0, frenzy,
                 !armed && cornerstone);
 
         // ---- 扣费（扣了就不再退，空锤也照吃）----
@@ -1345,7 +1335,7 @@ public final class StrengthenService {
             writeInt(item, Keys.CORNERSTONE_USED, cornerUsedOf(item) + 1);
         }
         // 每次落锤都算「打铁」：狂热进度照攒（圣物可加狂热次数上限）
-        tickFrenzy(item, frenzy, rb.frenzyExtra());
+        tickFrenzy(item, frenzy, 0);
 
         double roll = random.nextDouble();
         Tier tier;
@@ -1417,31 +1407,19 @@ public final class StrengthenService {
         // ---- 失败族（损伤 / 空锤 / 碎裂）----
         addInt(item, Keys.STRENGTHEN_FAILS, 1);
         int needPoints = furnaceNeed(level);
-        int furnaceNow = Math.min(needPoints, furnaceOf(item) + 1 + rb.furnacePerFail());
+        int furnaceNow = Math.min(needPoints, furnaceOf(item) + 1);
         writeInt(item, Keys.FURNACE, furnaceNow);
-        if (!rb.comboKeep()) {
+        if (true) {
             writeInt(item, Keys.STRENGTHEN_COMBO, 0);
         }
-        int comboNow = rb.comboKeep() ? combo : 0;
+        int comboNow = 0;
         String tail = "<dark_gray> · 炉火 " + furnaceNow + "/" + needPoints
                 + "<newline>" + oddsText + "<newline>"
-                + (rb.comboKeep() ? "连击被蜡线护住了。" : "连击断了。") + "</dark_gray>";
+                + "连击断了。" + "</dark_gray>";
 
         if (tier == Tier.BREAK) {
             // ---- 碎裂：凤凰灰（每日一次免碎）→ 护胚符 → 真碎 ----
             String head = "<red>碎裂！</red><dark_gray>（碎率 " + Msg.fmt(odds[0] * 100, 0) + "%）";
-            var cm = plugin.contractManager();
-            if (cm != null && rb.phoenix() && cm.canPhoenix(player.getUniqueId())) {
-                cm.markPhoenixUsed(player.getUniqueId());
-                int halved = level / 2;
-                writeLevel(item, halved, cap);
-                apply(item);
-                player.playSound(player.getLocation(), Sound.ENTITY_BLAZE_SHOOT, 1.0f, 0.8f);
-                return new StrikeResult(Tier.BREAK, level, halved, cap, comboNow, threshold,
-                        false, false, cost, matUsed,
-                        head + "<gradient:#ffd166:#ff7a3d>凤凰灰燃尽了——</gradient><gray>剑保住了，"
-                                + "强化级烧掉一半，掉到 <white>+" + halved + "</white>。</gray>" + tail);
-            }
             boolean hasTalisman = Charm.enabled(plugin, Charm.TALISMAN)
                     && Charm.count(player, Charm.TALISMAN) > 0;
             if (!hasTalisman) {

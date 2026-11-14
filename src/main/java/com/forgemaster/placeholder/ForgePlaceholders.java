@@ -35,9 +35,7 @@ import java.util.stream.Collectors;
  * 任何一步失败（没装 PAPI / 类不可见 / 服务器跑的是无编译器的 JRE）都只留一行日志、
  * 静默不启用，绝不影响插件其它功能。</p>
  *
- * <p><b>占位符与数据源</b>（数据一律读 {@link StatsStore} 已有字段，不做任何扫描；
- * 「forbidden」例外地走 {@code ContractManager#joined(UUID)} 的现成查询——那是
- * contract 模块自己落盘的契约状态，同样不新增扫描）：</p>
+ * <p><b>占位符与数据源</b>（数据一律读 {@link StatsStore} 已有字段，不做任何扫描）：</p>
  * <ul>
  *   <li>{@code coins}        —— {@code Stats.coins}（当前剑币余额）</li>
  *   <li>{@code reputation}   —— {@code Stats.reputation}（声望）</li>
@@ -46,7 +44,6 @@ import java.util.stream.Collectors;
  *   <li>{@code top_score}    —— {@code Stats.bestScore}（历史最高分）</li>
  *   <li>{@code strengthen}   —— {@link StatsStore#bestStrengthenOf(UUID)}（历史最高强化等级）</li>
  *   <li>{@code forge_count}  —— {@code Stats.forged}（累计锻造次数）</li>
- *   <li>{@code forbidden}    —— 契约状态：在契 true / 未在契 false（龙税周目未开启时恒 false）</li>
  * </ul>
  *
  * <p>查询用 {@link StatsStore#peek(UUID)}（不建空档案），玩家没档案时返回安全默认值，
@@ -190,7 +187,7 @@ public final class ForgePlaceholders {
         papiClass.getMethod("registerExpansion", type).invoke(null, expansion);
         registeredExpansion = expansion;
         plugin.getLogger().info("PlaceholderAPI 桥已挂载：%forgemaster_coins% / reputation / title / "
-                + "top_quality / top_score / strengthen / forge_count / forbidden 共 8 个占位符可用。");
+                + "top_quality / top_score / strengthen / forge_count 共 7 个占位符可用。");
     }
 
     private static List<File> classesPath(File... files) {
@@ -281,7 +278,6 @@ public final class ForgePlaceholders {
             case "top_score" -> st == null ? "0" : Msg.fmt(st.bestScore, 1);             // 历史最高分
             case "strengthen" -> String.valueOf(bestStrengthen);  // 历史最高强化等级（v2.26.6：安全取值，未初始化窗口内不 NPE）
             case "forge_count" -> st == null ? "0" : String.valueOf(st.forged);          // 累计锻造次数
-            case "forbidden" -> forbidden(plugin, uuid);                                 // 在契状态
             default -> null;
         };
     }
@@ -294,16 +290,4 @@ public final class ForgePlaceholders {
         return q == null ? st.bestQuality : q.display();
     }
 
-    /** 在契状态：龙税周目没开 = 恒 false；开了走 ContractManager 现成的 joined 查询（无扫描） */
-    private static String forbidden(ForgingMasterPlugin plugin, UUID uuid) {
-        try {
-            var cm = plugin.contractManager();
-            if (cm == null || !cm.active()) {
-                return "false";
-            }
-            return cm.joined(uuid) ? "true" : "false";
-        } catch (RuntimeException ex) {
-            return "false";
-        }
-    }
 }

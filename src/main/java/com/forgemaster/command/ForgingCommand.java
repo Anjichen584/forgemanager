@@ -101,7 +101,6 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             case "strengthen", "qianghua", "duanzao", "duanzaodengji" -> strengthen(sender, args);
             case "hammer", "chongchui", "tiechui" -> hammer(sender);
             case "evolve", "tuibian", "jinhua", "jieduan" -> evolve(sender, args);
-            case "contract", "longshui", "shui" -> contract(sender, args);
             case "shangjin", "bounty", "xuanshang" -> shangjin(sender, args);
             case "money", "coins", "qian", "coin" -> money(sender, args);
             case "env" -> env(sender);
@@ -1487,57 +1486,6 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
                 }
             }
         }
-    }
-
-    /**
-     * /zhujian contract —— 龙税周目：默认开面板；join / quit / deposit。
-     */
-    private void contract(CommandSender sender, String[] args) {
-        if (!(sender instanceof Player p)) {
-            Msg.prefix(sender, "<red>要在游戏里用。</red>");
-            return;
-        }
-        var cm = plugin.contractManager();
-        if (cm == null || !cm.active()) {
-            Msg.prefix(p, "<red>龙税契约未开启（config: contract.enabled）。</red>");
-            return;
-        }
-        String sub = args.length >= 2 ? args[1].toLowerCase(Locale.ROOT) : "";
-        switch (sub) {
-            case "join", "qian", "qiding" -> Msg.prefix(p, cm.join(p));
-            case "quit", "tuichu" -> Msg.prefix(p, cm.quit(p));
-            case "deposit", "gong", "jiao" -> Msg.prefix(p, cm.deposit(p));
-            // v2.26.0：聊天补领待选圣物（离线错过三选一面板的玩家）。只发圣物，
-            // 全程不碰剑币路径；幂等回执见 ContractManager#pickPendingByIndex。
-            case "pick", "xuan", "xuanze", "选" -> contractPick(p, cm, args);
-            default -> com.forgemaster.gui.ContractMenu.openPanel(plugin, p);
-        }
-    }
-
-    /** /zhujian contract pick <1|2|3> —— 巨龙的赏赐聊天补领；不带序号列候选 */
-    private void contractPick(Player p, com.forgemaster.contract.ContractManager cm, String[] args) {
-        var uid = p.getUniqueId();
-        if (args.length < 3) {
-            List<String> names = cm.pendingNames(uid);
-            if (names.isEmpty()) {
-                Msg.prefix(p, "<red>你现在没有待选的圣物（已经选过，或者还没交满贡）。</red>");
-                return;
-            }
-            Msg.prefix(p, "<gold>巨龙的赏赐还在等你挑：</gold>");
-            for (int i = 0; i < names.size(); i++) {
-                Msg.prefix(p, "<gray>" + (i + 1) + ". <white>" + names.get(i) + "</white>");
-            }
-            Msg.prefix(p, "<gray>用 <white>/" + label() + " contract pick <序号></white> 领取。");
-            return;
-        }
-        int index;
-        try {
-            index = Integer.parseInt(args[2]);
-        } catch (NumberFormatException e) {
-            Msg.prefix(p, "<red>序号要写数字，比如 <white>/" + label() + " contract pick 1</white>。</red>");
-            return;
-        }
-        Msg.prefix(p, cm.pickPendingByIndex(uid, index));
     }
 
     /**
@@ -3523,7 +3471,6 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         addHelp(out, u + "spirit", "剑灵：info · feed 喂养 · name <剑名> · reroll 重抽 · show / hide");
         addHelp(out, u + "tomb", "剑冢：list · bury 埋剑 · take / challenge / info / remove <编号>");
         addHelp(out, u + "tombrun", "秘境：enter 进图 · status 看进度 · quit 退出");
-        addHelp(out, u + "contract", "龙税契约：不带参开面板 · join / quit / deposit · pick <1|2|3> 补领圣物");
         addHelp(out, u + "shangjin", "每日悬赏：不带参看货单 · claim <序号> 看预览 · 再 claim <序号> confirm 才交剑");
         addHelp(out, u + "event", "世界事件：不带参看状态 · start [id] / stop（这两个要管理员）");
         addHelp(out, u + "help", "这张表");
@@ -3939,7 +3886,6 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             List.of("hammer", "chongchui", "tiechui"),
             List.of("evolve", "tuibian", "jinhua", "jieduan"),
             // ---- 契约 / 悬赏 / 货币 / 称号 ----
-            List.of("contract", "longshui", "shui"),
             List.of("shangjin", "bounty", "xuanshang"),
             List.of("money", "coins", "qian", "coin"),
             List.of("title", "chenghao"),
@@ -4045,7 +3991,6 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             case "enchant", "fumo", "fumoshuxiang" -> tabEnchant(args);
             case "ench", "fumotai", "yuangchuang" -> tabEnch(sender, args);
             // ---- 阵营 / 赛季 / 排行 / 大赛 ----
-            case "contract", "longshui", "shui" -> tabContract(args);
             case "shangjin", "bounty", "xuanshang" -> tabShangjin(args);
             case "contest", "dasai" -> tabContest(sender, args);
             case "season", "jijie" -> tabSeason(sender, args);
@@ -4291,19 +4236,6 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         return List.of();
     }
 
-    private List<String> tabContract(String[] args) {
-        if (args.length == 2) {
-            return filter(List.of("join", "qian", "qiding", "quit", "tuichu",
-                    "deposit", "gong", "jiao", "pick", "xuan", "xuanze", "选"), args[1]);
-        }
-        if (args.length == 3) {
-            String sub = args[1].toLowerCase(Locale.ROOT);
-            if (sub.equals("pick") || sub.equals("xuan") || sub.equals("xuanze") || sub.equals("选")) {
-                return filter(List.of("1", "2", "3"), args[2]);
-            }
-        }
-        return List.of();
-    }
 
     private List<String> tabShangjin(String[] args) {
         if (args.length == 2) {

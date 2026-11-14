@@ -1734,10 +1734,6 @@ public final class ForgeManager {
             Msg.prefix(p, "<gradient:#9f7aea:#4dc3ff>剑魂传承：</gradient> <gray>碎剑之魂注入新胚，"
                     + "这把剑天生 <white>+" + inherited + "</white>。</gray>");
         }
-        // 龙税契约 auto-join：锻了第一把剑就算入局
-        if (plugin.contractManager() != null) {
-            plugin.contractManager().autoJoin(p.getUniqueId());
-        }
         s.result(result);
         if (s.stage() != null && !s.stage().isClosed()) {
             s.stage().quench(picked, result);

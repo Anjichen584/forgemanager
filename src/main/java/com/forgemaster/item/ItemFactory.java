@@ -85,7 +85,7 @@ public final class ItemFactory {
         lore.add(line("<gray>" + (armor ? "装备" : "剑胚") + " <dark_gray>▸</dark_gray> " + mat.display()
                 + (s.grade() == null || s.grade() == com.forgemaster.material.MaterialGrade.COMMON
                 ? "" : " <dark_gray>│</dark_gray> " + s.grade().colored())));
-        // 剑型行（v2.14）：纯视觉 + 估值乘区展示；id 写 PDC 给龙税估值用
+        // 剑型行（v2.14）：纯视觉展示；id 写 PDC 供剑型系统识别
         if (plugin instanceof com.forgemaster.ForgingMasterPlugin fm
                 && fm.forms() != null && s.formId() != null) {
             var form = fm.forms().get(s.formId());

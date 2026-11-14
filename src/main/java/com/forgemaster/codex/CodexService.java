@@ -18,13 +18,13 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * 收藏图鉴（拓展第一档）：五类收藏进度 + 分类奖励 + 全收集称号。
  *
- * <p>存储走独立的 {@code codex-data.yml}（ContractStore 风格：构造加载、改动即存），
+ * <p>存储走独立的 {@code codex-data.yml}（构造加载、改动即存），
  * 而不是塞进 StatsStore 的 data.yml——StatsStore 的 load()/writePlayer() 是既有方法，
  * 图鉴条目自带「达成时间戳 + 已领奖状态」两组新维度，独立文件既不碰既有存档结构，
  * 也方便单独归档。</p>
  *
  * <p>收集判定优先复用已有记录：品质 / 评分 / 剑型主要从 {@code StatsStore} 的既有统计
- * 推导（byQuality / bestScore），圣物直接读 {@code ContractStore.Run.relics}；
+ * 推导（byQuality / bestScore）；
  * 词条种类与剑灵命名没有现成记录，靠三处「登记」调用写入：
  * 锻造结算（ForgeManager.settle）、词条重铸出词条（Reforge.reforge）、
  * 剑灵命名（SpiritManager.rename）。</p>
@@ -36,13 +36,12 @@ public final class CodexService {
     public static final String CAT_QUALITY = "quality";
     public static final String CAT_FORM = "form";
     public static final String CAT_SCORE = "score";
-    public static final String CAT_RELIC = "relic";
     public static final String CAT_AFFIX = "affix";
     public static final String CAT_SPIRIT = "spirit";
 
     /** 页签顺序，与 CodexGui 的页签槽位一一对应 */
     public static final List<String> CATEGORIES = List.of(
-            CAT_QUALITY, CAT_FORM, CAT_SCORE, CAT_RELIC, CAT_AFFIX, CAT_SPIRIT);
+            CAT_QUALITY, CAT_FORM, CAT_SCORE, CAT_AFFIX, CAT_SPIRIT);
 
     /** 评分里程碑（单把剑最高分），按 StatsStore.bestScore 判定 */
     public static final int[] SCORE_TIERS = {50, 65, 75, 85, 92, 97};
@@ -71,7 +70,7 @@ public final class CodexService {
         load();
     }
 
-    // ------------------------------------------------------------ 存取（ContractStore 风格：改动即存）
+    // ------------------------------------------------------------ 存取（改动即存）
 
     public void load() {
         recs.clear();
@@ -237,13 +236,6 @@ public final class CodexService {
         return at(id, CAT_SCORE + ":" + tier) > 0 || plugin.stats().get(id).bestScore >= tier;
     }
 
-    /** 圣物：直接读 ContractStore.Run.relics（已有记录，不需要登记） */
-    public boolean hasRelic(UUID id, String relicId) {
-        com.forgemaster.contract.ContractStore.Run run = plugin.contractManager() == null
-                ? null : plugin.contractManager().store().run(id);
-        return run != null && run.relics.contains(relicId);
-    }
-
     /** 词条种类：登记过（锻造结算 / 重铸时写入） */
     public boolean hasAffix(UUID id, String affixId) {
         return affixId != null
@@ -305,15 +297,6 @@ public final class CodexService {
                 }
                 yield n;
             }
-            case CAT_RELIC -> {
-                int n = 0;
-                for (com.forgemaster.contract.RelicPool.Def d : relics()) {
-                    if (hasRelic(id, d.id())) {
-                        n++;
-                    }
-                }
-                yield n;
-            }
             case CAT_AFFIX -> {
                 int n = 0;
                 for (Affix a : plugin.affixes().all()) {
@@ -334,7 +317,6 @@ public final class CodexService {
             case CAT_QUALITY -> Quality.values().length;
             case CAT_FORM -> Math.max(1, forms().size());
             case CAT_SCORE -> SCORE_TIERS.length;
-            case CAT_RELIC -> Math.max(1, relics().size());
             case CAT_AFFIX -> Math.max(1, plugin.affixes().all().size());
             case CAT_SPIRIT -> 1;
             default -> 0;
@@ -346,14 +328,6 @@ public final class CodexService {
             return List.of(com.forgemaster.form.SwordForm.defaults());
         }
         return plugin.forms().all();
-    }
-
-    private List<com.forgemaster.contract.RelicPool.Def> relics() {
-        if (plugin.contractManager() == null) {
-            return List.of(com.forgemaster.contract.RelicPool.defaults());
-        }
-        List<com.forgemaster.contract.RelicPool.Def> all = plugin.contractManager().relics().all();
-        return all.isEmpty() ? List.of(com.forgemaster.contract.RelicPool.defaults()) : all;
     }
 
     // ------------------------------------------------------------ 奖励

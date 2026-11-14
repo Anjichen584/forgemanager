@@ -88,21 +88,6 @@ public final class ForgeListener implements Listener {
             return;
         }
 
-        if (holder instanceof com.forgemaster.gui.ContractHolder contractHolder) {
-            // 龙税契约界面：贡品面板 / 圣物三选一
-            event.setCancelled(true);
-            if (!(event.getWhoClicked() instanceof Player player)) {
-                return;
-            }
-            if (event.getClickedInventory() == null || !event.getClickedInventory().equals(top)) {
-                return;
-            }
-            if (!player.getUniqueId().equals(contractHolder.player())) {
-                return;
-            }
-            com.forgemaster.gui.ContractMenu.click(plugin, player, contractHolder, event.getRawSlot());
-            return;
-        }
 
         if (holder instanceof com.forgemaster.evolve.EvolutionHolder evoHolder) {
             // 蜕变界面：只有打开者本人能点，路由给 EvolutionMenu
@@ -388,7 +373,7 @@ public final class ForgeListener implements Listener {
      * 插件自绘界面一律不接受玩家拖入 / 拖出物品。
      *
      * <p>v2.23.1 修 P1（审计 22）：原来只拦了 9 个 holder，漏了
-     * {@code ContractHolder}（龙税契约）、{@code EvolutionHolder}（蜕变）、
+     * {@code EvolutionHolder}（蜕变）、
      * {@code EnvPanel.EnvPanelHolder}（环境面板）。往这三种界面里拖动，
      * 物品落在自绘格子里，界面一关随清空一起蒸发（物品丢失）。
      * {@code onClick} 早就有这三个分支，唯独拖动这条路漏写。</p>
@@ -397,7 +382,6 @@ public final class ForgeListener implements Listener {
      * 且界面本身不放玩家物品的 holder 全部在此拦下：</p>
      * <ol>
      *   <li>{@code ForgeHolder} 锻造台</li>
-     *   <li>{@code ContractHolder} 龙税契约</li>
      *   <li>{@code EvolutionHolder} 蜕变</li>
      *   <li>{@code EnvPanel.EnvPanelHolder} 环境面板（只读）</li>
      *   <li>{@code ManualStore} 剑谱商店</li>
@@ -415,7 +399,6 @@ public final class ForgeListener implements Listener {
     public void onDrag(InventoryDragEvent event) {
         InventoryHolder holder = event.getView().getTopInventory().getHolder();
         if (holder instanceof ForgeHolder
-                || holder instanceof com.forgemaster.gui.ContractHolder
                 || holder instanceof com.forgemaster.evolve.EvolutionHolder
                 || holder instanceof com.forgemaster.env.EnvPanel.EnvPanelHolder
                 || holder instanceof com.forgemaster.manuals.ManualStore

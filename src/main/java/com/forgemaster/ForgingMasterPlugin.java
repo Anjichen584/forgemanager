@@ -46,8 +46,6 @@ public final class ForgingMasterPlugin extends JavaPlugin {
     private ItemFactory items;
     private com.forgemaster.strengthen.StrengthenService strengthen;
     private com.forgemaster.evolve.EvolutionService evolutions;
-    private com.forgemaster.contract.ContractRegistry contract;
-    private com.forgemaster.contract.ContractManager contractManager;
     private com.forgemaster.form.FormRegistry forms;
     private com.forgemaster.bounty.BountyManager bounties;
     private com.forgemaster.proficiency.ProficiencyService proficiency;
@@ -168,11 +166,7 @@ public final class ForgingMasterPlugin extends JavaPlugin {
         strengthen = new com.forgemaster.strengthen.StrengthenService(this);
         evolutions = new com.forgemaster.evolve.EvolutionService(this,
                 new com.forgemaster.evolve.EvolutionRegistry(settings), strengthen);
-        contract = new com.forgemaster.contract.ContractRegistry(this);
         forms = new com.forgemaster.form.FormRegistry(settings);
-        contractManager = new com.forgemaster.contract.ContractManager(this,
-                new com.forgemaster.contract.ContractStore(this),
-                new com.forgemaster.contract.RelicPool(settings));
         bounties = new com.forgemaster.bounty.BountyManager(this);
         proficiency = new com.forgemaster.proficiency.ProficiencyService(this);
         affixSets = new com.forgemaster.affix.AffixSetService(this);
@@ -282,9 +276,6 @@ public final class ForgingMasterPlugin extends JavaPlugin {
         shop = new ShopManager(this);
         events = new EventManager(this);
         events.start();
-        if (contractManager != null) {
-            contractManager.start();
-        }
         Bukkit.getPluginManager().registerEvents(new ShopListener(this), this);
         Bukkit.getPluginManager().registerEvents(new ForgeListener(this), this);
         Bukkit.getPluginManager().registerEvents(new CombatListener(this), this);
@@ -772,9 +763,6 @@ public final class ForgingMasterPlugin extends JavaPlugin {
         } catch (RuntimeException ex) {
             getLogger().warning("复位行会界面路由失败: " + ex.getMessage());
         }
-        if (contractManager != null) {
-            contractManager.stop();
-        }
         if (relicSets != null) {
             // 套装效果 2.0：停用时把所有在线玩家的套装修正还原（transient 不落盘的兜底）
             relicSets.stripAll();
@@ -793,15 +781,8 @@ public final class ForgingMasterPlugin extends JavaPlugin {
         if (evolutions != null) {
             evolutions.registry().load();
         }
-        if (contract != null) {
-            contract.reload();
-        }
         if (forms != null) {
             forms.load(settings);
-        }
-        if (contractManager != null) {
-            contractManager.relics().load(settings);
-            contractManager.start();
         }
         if (economy != null) {
             economy.init();
@@ -1033,12 +1014,6 @@ public final class ForgingMasterPlugin extends JavaPlugin {
         return evolutions;
     }
 
-    /** 龙税契约接口（暂定，未接入玩法）：预留 ForgeTax 循环的扩展点 */
-    public com.forgemaster.contract.ContractRegistry contract() {
-        return contract;
-    }
-
-    /** 龙税周目（v2.14）：时钟 / 入贡 / 结算 / 圣物 */
     /** v2.25：每日签到存档访问器（回档 flush/reload 用，此前无出口） */
     public com.forgemaster.blackmarket.DailyStore dailyStore() {
         return dailyStore;
@@ -1047,10 +1022,6 @@ public final class ForgingMasterPlugin extends JavaPlugin {
     /** v2.26.0：战力评分曲线访问器（power log） */
     public com.forgemaster.score.PowerLogStore powerLog() {
         return powerLogStore;
-    }
-
-    public com.forgemaster.contract.ContractManager contractManager() {
-        return contractManager;
     }
 
     /** 剑型注册表（v2.14）：估值乘区与外观 */

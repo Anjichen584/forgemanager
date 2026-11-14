@@ -1048,39 +1048,6 @@ phases.spiritReroll = async (bots) => {
   }
 }
 
-// ⑥.9 龙税契约：同 tick 三连 join —— 只许进一次，重复 join 不许重复收钱
-phases.contract = async (bots) => {
-  const area = '龙税契约'
-  await rc('gamerule keepInventory true')
-  for (const bot of bots) {
-    await rc(`zhujian give ${bot.username} iron COMMON 40`)
-    await wait(400)
-    await setCoins(bot.username, 50000)
-    // 先退出，保证起点干净（可能上一轮残留）
-    bot.chat('/zhujian contract quit')
-    await settle(bot, 500)
-    take(bot)
-    const before = await coins(bot.username)
-    if (before === null) { warn(area, bot.username, '读不到剑币'); continue }
-    burst(bot, ['/zhujian contract join', '/zhujian contract join', '/zhujian contract join'])
-    await settle(bot, 2200)
-    const text = take(bot).join(' | ')
-    if (/未开启|没有开启/.test(text)) { warn(area, bot.username, '契约功能没开'); continue }
-    // 实际文案是「契约已签。」—— 第一版正则漏了它，白报了 32 条 WARN。
-    // v2.26.3 起 quit 不删档：quit→join 走「复活继承」路径回「契约已续」
-    // （圣物不重发，防 quit 刷圣物），这也是正确起点，别当「没签上」。
-    const joined = /契约已签|已签约|已生效/.test(text)
-    const revived = /契约已续|重新接纳/.test(text)
-    const after = await coins(bot.username)
-    if (after === null) { warn(area, bot.username, '读不到剑币'); continue }
-    const joinHits = (text.match(/契约已签/g) || []).length
-    const reviveHits = (text.match(/契约已续/g) || []).length
-    if (after < 0) fail(area, bot.username + ' 余额为负', String(after))
-    else if (!joined && !revived) warn(area, bot.username + ' 没签上', text.slice(0, 160))
-    else pass(area, bot.username + ' 重复 join 不重复收钱',
-        `首签 ${joinHits} / 续签 ${reviveHits} 次，币 ${before} → ${after}（差值 ${before - after}）`)
-  }
-}
 
 // ⑥.10 赛季通行证：全体同时开面板 + 领奖 GUI 点击驱动（v2.26.1 装置升级：LATEST 下一轮 #2）
 //

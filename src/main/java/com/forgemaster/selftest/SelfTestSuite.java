@@ -799,51 +799,10 @@ public final class SelfTestSuite {
     // ---------------------------------------------------------------- v2.14 龙税周目 / 剑型 / 悬赏
 
     private void registerContractLoop() {
-        var cm = plugin.contractManager();
-        String g = "v2.14 龙税周目 / 剑型 / 悬赏";
+        String g = "v2.14 剑型 / 悬赏 / 强化曲线";
 
-        add(g, "估值：品质越高越值钱、强化越高级越值钱", () -> {
-            require(cm != null, "契约管理器没起来");
-            ItemStack sword = sampleSword();
-            require(sword != null, "造不出铁剑");
-            require(cm.appraise(sword) > 0, "铁剑估值为 0");
-            ItemStack epic = plugin.items().buildDirect("SelfTest",
-                    plugin.materials().get("iron"), Quality.EPIC, 60.0, null);
-            require(epic != null && cm.appraise(epic) > cm.appraise(sword),
-                    "史诗剑估值没高过普通剑");
-            // 强化抬估值（同品级对比，用克隆做基线）
-            ItemStack epicLv10 = plugin.items().buildDirect("SelfTest",
-                    plugin.materials().get("iron"), Quality.EPIC, 60.0, null);
-            plugin.strengthen().setLevel(epicLv10, 10);
-            require(cm.appraise(epicLv10) > cm.appraise(epic), "+10 没抬估值");
-        });
 
-        add(g, "税额递增：day 越大要得越多，欠息叠加", () -> {
-            require(cm != null, "契约管理器没起来");
-            long d1 = cm.requirement(1, 0, com.forgemaster.contract.RelicBonus.ZERO);
-            long d5 = cm.requirement(5, 0, com.forgemaster.contract.RelicBonus.ZERO);
-            long d5miss = cm.requirement(5, 1, com.forgemaster.contract.RelicBonus.ZERO);
-            require(d5 > d1, "税额没随天数涨");
-            require(d5miss > d5, "欠息没叠加");
-        });
 
-        add(g, "圣物聚合：勾选效果进 RelicBonus、拉黑生效", () -> {
-            require(cm != null, "契约管理器没起来");
-            java.util.UUID id = java.util.UUID.nameUUIDFromBytes("SelfTestRelic".getBytes());
-            cm.store().remove(id);
-            var run = cm.store().ensure(id);
-            run.relics.add("bent-nail");
-            run.relics.add("black-knot");
-            run.relics.add("phoenix-ash");
-            var rb = cm.relicBonus(id);
-            require(Math.abs(rb.success() - 0.04) < 1e-9, "弯钉没进成功率");
-            require(Math.abs(rb.breakMult() - 0.90) < 1e-9, "黑结没进碎裂乘区");
-            require(rb.phoenix(), "凤凰灰没点亮");
-            require(cm.canPhoenix(id), "凤凰灰首日应可用");
-            cm.markPhoenixUsed(id);
-            require(!cm.canPhoenix(id), "凤凰灰用完当天还能用");
-            cm.store().remove(id);
-        });
 
         add(g, "剑型注册表：有权重、抽取落在定义内", () -> {
             var forms = plugin.forms();
@@ -1089,23 +1048,6 @@ public final class SelfTestSuite {
                     "神话品质前缀没剥掉");
         });
 
-        add(g, "龙税契约：开关与策略实现一致（关则全 no-op）", () -> {
-            var contract = plugin.contract();
-            require(contract != null, "契约注册表没起来");
-            if (contract.active()) {
-                // v2.14 周目已接入：策略必须真能算出税额，不能还是骨架
-                require(plugin.contractManager() != null, "开关开着却没有周目管理器");
-                long req = plugin.contractManager().requirement(
-                        1, 0, com.forgemaster.contract.RelicBonus.ZERO);
-                require(req > 0, "周目开着但第 1 天税额是 0");
-                require(contract.clock() != null, "周目开着却没有时钟");
-            } else {
-                require(contract.clock().day() == 1 && contract.clock().ticksRemaining() == -1
-                        && !contract.clock().isTributeDue(), "RunClock no-op 语义不对");
-                require(contract.tribute().requiredValue(1, null) == 0, "TributePolicy no-op 不该要钱");
-                require(contract.failure().onMissed(null, 1, 0, 1).isEmpty(), "FailurePolicy no-op 不该说话");
-            }
-        });
     }
 
     /** 临时把物品锻阶写成 stage 的 AutoCloseable，测试完还原 */
@@ -2526,8 +2468,7 @@ public final class SelfTestSuite {
         add(gSim, "模拟器与明牌抽票用同一套概率（v2.19.1 修口径）", () -> {
             var s = plugin.strengthen();
             for (int lv : new int[]{0, 10, 30, 60}) {
-                double[] o = s.odds(lv, 0, false, 0,
-                        com.forgemaster.contract.RelicBonus.ZERO, false, false);
+                double[] o = s.odds(lv, 0, false, 0, 0, 0, 1.0, false, false);
                 double sum = o[0] + o[1] + o[2] + o[3] + o[4];
                 require(Math.abs(sum - 1.0) < 1e-9, "五态概率和不是 1: " + sum + " @+" + lv);
                 // 大成项必须就是 greatBase（裸锤、无连击、无圣物）
@@ -3365,7 +3306,7 @@ public final class SelfTestSuite {
             var s = plugin.strengthen();
             int[] levels = {0, 5, 20, 50, 98, 99};
             for (int lv : levels) {
-                double[] o = s.odds(lv, 0, false, 0, com.forgemaster.contract.RelicBonus.ZERO, false, false);
+                double[] o = s.odds(lv, 0, false, 0, 0, 0, 1.0, false, false);
                 double sum = 0;
                 for (double v : o) {
                     require(v >= -1e-12, "+" + lv + " 的概率出现负数: " + v);
@@ -3377,7 +3318,7 @@ public final class SelfTestSuite {
 
         add(g, "无损连击：必成、不碎、五项仍和为 1", () -> {
             var s = plugin.strengthen();
-            double[] o = s.odds(60, 5, true, 0, com.forgemaster.contract.RelicBonus.ZERO, false, false);
+            double[] o = s.odds(60, 5, true, 0, 0, 0, 1.0, false, false);
             require(o[0] == 0, "无损连击下碎裂率必须为 0，实际 " + o[0]);
             require(o[1] == 0, "无损连击下不该还有损伤");
             require(o[2] == 0, "无损连击下不该还有空锤");
@@ -5639,23 +5580,6 @@ public final class SelfTestSuite {
 
         // v2.25.2（4 并发查错）：异步冲刷任务被打死是「存档静默失效」的最隐蔽形态，
         // 这里只钉住它依赖的契约 —— save 成功必清脏、连写两次幂等；代数语义由下面的契约用例钉。
-        add(g, "契约落盘幂等 + 游标置脏：save 成功才清脏、连写两次幂等", () -> {
-            var cm = plugin.contractManager();
-            require(cm != null, "周目管理器没起来");
-            var store = cm.store();
-            long day0 = store.lastSettledFullDay();
-            store.markDirty();
-            require(store.dirty(), "契约 markDirty 没置脏");
-            store.save();
-            require(!store.dirty(), "契约 save 没清脏标记");
-            store.save();
-            require(!store.dirty(), "契约连续第二次 save 不该再有东西可写（幂等）");
-            // 游标写回原值（净效果为零，不污染存档），但必须置脏 —— 否则跨天结算会漏
-            store.lastSettledFullDay(day0);
-            require(store.dirty(), "lastSettledFullDay 改动没置脏（跨天结算会漏账）");
-            store.save();
-            require(!store.dirty(), "收尾 save 后应回到干净");
-        });
 
         add(g, "剑灵节流：2 秒窗口内多次命中只落一次账", () -> {
             require(plugin.spirit() != null, "剑灵模块没起来");
@@ -6112,125 +6036,6 @@ public final class SelfTestSuite {
             require(hits >= 2, "DuelManager 结算处 countDuel 只出现 " + hits
                     + " 次（应 ≥2：赢家和输家都要记）");
         });
-        add(g, "contract pick：聊天补领幂等且单次消费（v2.26.0）", () -> {
-            // 离线错过三选一面板的玩家用 /zhujian contract pick <1|2|3> 补领。
-            // 幂等红线：重复 pick / 无 pending / 序号越界都要有明确回执且零状态变化；
-            // 先清再发的单次消费结构必须挡死同一 pending 发两件。
-            var cm = plugin.contractManager();
-            require(cm != null, "ContractManager 没初始化");
-            if (!cm.active()) {
-                plugin.getLogger().info("[selftest] 契约未开启（contract.enabled=false），跳过 pick 幂等钉子");
-                return;
-            }
-            var store = cm.store();
-            UUID u = UUID.nameUUIDFromBytes("selftest-contract-pick".getBytes());
-            String relicId = null;
-            for (var d : cm.relics().all()) {
-                relicId = d.id();
-                break;
-            }
-            require(relicId != null, "圣物池为空，无法构造 pending");
-            try {
-                var r = store.ensure(u);
-                r.relics.clear();
-                r.pickPending = relicId;
-                // 越界：要在 pending 还在时测，回执必须明确且不动任何状态
-                String oob = cm.pickPendingByIndex(u, 9);
-                require(oob != null && oob.contains("序号越界"),
-                        "越界序号应有「序号越界」回执，实际: " + oob);
-                require(r.pickPending.equals(relicId) && r.relics.isEmpty(),
-                        "越界 pick 不许产生任何状态变化");
-                // 首次领取：发放 + pending 清空
-                String first = cm.pickPendingByIndex(u, 1);
-                require(first != null && first.contains("圣物到手"),
-                        "首次 pick 应发放圣物，实际: " + first);
-                require(r.relics.contains(relicId) && r.pickPending.isBlank(),
-                        "发放后圣物入库、pending 清空");
-                // 重复领取：明确回执 + 不再发第二件
-                String second = cm.pickPendingByIndex(u, 1);
-                require(second != null && second.contains("没有待选"),
-                        "重复 pick 应有「没有待选」回执，实际: " + second);
-                require(r.relics.size() == 1, "重复 pick 后圣物数量必须还是 1（单次消费）");
-            } finally {
-                store.remove(u); // 净效果为零，不污染真实 contract.yml
-            }
-        });
-        add(g, "contract join：已签守卫无第 1 天例外，重复 join 不许再发圣物（v2.26.2）", () -> {
-            // 原守卫带 day 例外，周目第 1 天重复 /zhujian contract join 每次都重新
-            // offerRelics（offer 只排除已持有），刷满整个圣物池。join(Player) 需要
-            // 在线玩家，装置调不了，按方法体钉源码形状（守恒律：已签即拒绝）。
-            java.io.File pkgRoot = findSourcePackageRoot();
-            if (pkgRoot == null) {
-                plugin.getLogger().info("[selftest] 找不到源码树，跳过 contract join 守卫钉子");
-                return;
-            }
-            java.io.File src = new java.io.File(pkgRoot, "contract/ContractManager.java");
-            require(src.isFile(), "找不到 ContractManager.java");
-            String code;
-            try {
-                code = new String(java.nio.file.Files.readAllBytes(src.toPath()),
-                        java.nio.charset.StandardCharsets.UTF_8);
-            } catch (java.io.IOException ex) {
-                throw new IllegalStateException("读不到 ContractManager.java: " + ex.getMessage());
-            }
-            String body = methodBody(code, "public String join(Player p)");
-            require(body != null, "join(Player) 方法体切不出来");
-            // v2.26.3：判在契必须用**只读**的 store.run()，绝不能用 store.ensure() 判 ——
-            // ensure 会带副作用建一个 joined=true 的档案，拿它判「已签」会把首次 join 误判成已签。
-            // 但 ensure() 在**首次签约**那条分支上是合法的（那时确实要建档），
-            // 所以断言分两半：① 判在契那一步必须是 run()；② ensure 不许出现在任何 if 条件里。
-            require(body.contains("store.run("),
-                    "join 必须先 store.run() 只读判在契");
-            for (String line : body.split("\n")) {
-                String t = line.trim();
-                if (t.startsWith("if (") && t.contains("ensure(")) {
-                    throw new AssertionError("join 不许用 ensure() 做条件判定（应先用 store.run() 只读判）：" + t);
-                }
-            }
-            require(body.contains("existing.joined") || body.contains("r.joined"),
-                    "join 的已签守卫必须在（已签即拒绝，不许再发圣物）");
-            require(!body.contains("r.day > 1"), "join 守卫不许再带 day 例外（第 1 天重复 join 会刷圣物）");
-            require(body.contains("offerRelics"), "join 的首签发圣物路径必须还在（防钉子改错地方）");
-        });
-        add(g, "contract quit→join：不许靠退出重进重掷圣物（v2.26.3）", () -> {
-            // 用户实测：多敲几次 /zhujian contract join 圣物就满了。
-            // 机理是 quit 把档案整个 remove 掉，join 于是当成新玩家、
-            // owned 列表清空 → offer 从 12 个里重新抽 3 个，无限重掷定向钓稀有。
-            // 正确口径：quit 只翻 joined=false（记录留着），join 继承原圣物池。
-            var cm = plugin.contractManager();
-            require(cm != null, "ContractManager 没初始化");
-            if (!cm.active()) {
-                plugin.getLogger().info("[selftest] 契约未开启，跳过 quit→join 重掷钉子");
-                return;
-            }
-            var store = cm.store();
-            UUID u = UUID.nameUUIDFromBytes("selftest-contract-quit-join".getBytes());
-            try {
-                var r = store.ensure(u);
-                r.joined = true;
-                r.relics.clear();
-                r.relics.add("phoenix-ash");   // 假装已经钓到稀有圣物
-                r.pickPending = "";
-                // 复刻 quit 的语义：只翻 joined，不 remove
-                r.joined = false;
-                r.pickPending = "";
-                require(store.run(u) != null,
-                        "退出契约后档案必须还在（remove 会让重签变成新玩家）");
-                require(store.run(u).relics.contains("phoenix-ash"),
-                        "退出契约不许清空已持有圣物（否则重签就能重掷）");
-                // 再模拟一次「退出→重签」循环，圣物池必须一份不多
-                for (int i = 0; i < 5; i++) {
-                    store.run(u).joined = false;
-                    store.run(u).joined = true;
-                }
-                int owned = store.run(u).relics.size();
-                require(owned == 1,
-                        "反复退出重签 5 次后圣物数量必须还是 1，实际 " + owned
-                                + "（quit 若清档，这里会一路涨上去）");
-            } finally {
-                store.remove(u);
-            }
-        });
         add(g, "v2.26.6 终审补：isSimilar 收剑点全仓唯一（removeFromInventory 内 ≤2 处）", () -> {
             if (findSourcePackageRoot() == null) {
                 plugin.getLogger().info("[selftest] 找不到源码树，跳过 isSimilar 收剑唯一点钉子");
@@ -6320,24 +6125,6 @@ public final class SelfTestSuite {
             String load = sourceMethodBody("story/StoryManager.java", "public void load()");
             require(load != null && load.contains("commissions") && load.contains("forged"),
                     "story 载入必须校验章节 type 白名单（拼错 type 的章零提示永久卡死）");
-        });
-        add(g, "contract 落盘口径：结算与 pick 必须同步 save（v2.26.4 结算重放修复）", () -> {
-            // 结算/领圣物发的是「另一个存档」（StatsStore）里的钱，contract.yml 若只标脏
-            // 30 秒异步冲刷，窗口内崩溃 → 盘上旧档被重放，奖金+圣物重复发。低频路径
-            // 必须同步落盘。按方法体钉源码形状。
-            if (findSourcePackageRoot() == null) {
-                plugin.getLogger().info("[selftest] 找不到源码树，跳过 contract 落盘口径 钉子");
-                return;
-            }
-            String body = sourceMethodBody("contract/ContractManager.java",
-                    "store.lastSettledFullDay(fullDay)");
-            require(body != null, "tickClock 的游标推进行切不出来");
-            require(body.contains("store.save()"),
-                    "结算后必须同步 store.save()（只 markDirty 会有 30 秒结算重放窗口）");
-            String pick = sourceMethodBody("contract/ContractManager.java",
-                    "public String pickRelic(UUID id, String relicId)");
-            require(pick != null && pick.contains("store.save()"),
-                    "pickRelic 消费 pending 后必须同步 save（否则崩溃后同一 pending 可再 pick）");
         });
         add(g, "领奖 saveChecked 契约：谱系/图鉴/行会委托落盘失败必须回滚已领（v2.26.4）", () -> {
             if (findSourcePackageRoot() == null) {
@@ -6547,7 +6334,7 @@ public final class SelfTestSuite {
                 tmp.delete(); // 净效果为零
             }
         });
-        add(g, "contract pick / contest history：命令三处同源 + 领奖不碰剑币（v2.26.0）", () -> {
+        add(g, "contest history：命令三处同源 + 反向断言契约残留清零（v2.26.0/7）", () -> {
             // 源码扫描钉子：只扫非注释行，失败要报命中数。
             java.io.File pkgRoot = findSourcePackageRoot();
             if (pkgRoot == null) {

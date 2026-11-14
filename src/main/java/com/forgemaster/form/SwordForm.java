@@ -8,7 +8,7 @@ package com.forgemaster.form;
  * @param display   显示名（影太刀 / 重剑…）
  * @param color     Lore 颜色（MiniMessage hex）
  * @param weight    抽取权重
- * @param valueMult 龙税估值乘区
+ * @param valueMult 稀有度乘区（v2.26.7 起仅作展示口径，龙税估值随契约移除）
  */
 public record SwordForm(String id, String display, String color, int weight, double valueMult) {
 

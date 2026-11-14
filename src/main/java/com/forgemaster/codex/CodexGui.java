@@ -204,7 +204,6 @@ public final class CodexGui {
             case CodexService.CAT_QUALITY -> "品质收藏";
             case CodexService.CAT_FORM -> "剑型收藏";
             case CodexService.CAT_SCORE -> "评分里程碑";
-            case CodexService.CAT_RELIC -> "圣物收藏";
             case CodexService.CAT_AFFIX -> "词条种类";
             case CodexService.CAT_SPIRIT -> "剑灵命名";
             default -> cat;
@@ -217,7 +216,6 @@ public final class CodexGui {
             case CodexService.CAT_QUALITY -> Material.EMERALD;
             case CodexService.CAT_FORM -> Material.IRON_SWORD;
             case CodexService.CAT_SCORE -> Material.GOLD_INGOT;
-            case CodexService.CAT_RELIC -> Material.TOTEM_OF_UNDYING;
             case CodexService.CAT_AFFIX -> Material.ENCHANTED_BOOK;
             case CodexService.CAT_SPIRIT -> Material.NAME_TAG;
             default -> Material.PAPER;
@@ -236,7 +234,6 @@ public final class CodexGui {
             case CodexService.CAT_QUALITY -> qualityEntries(service, id);
             case CodexService.CAT_FORM -> formEntries(plugin, service, id);
             case CodexService.CAT_SCORE -> scoreEntries(service, id);
-            case CodexService.CAT_RELIC -> relicEntries(plugin, service, id);
             case CodexService.CAT_AFFIX -> affixEntries(plugin, service, id);
             case CodexService.CAT_SPIRIT -> spiritEntries(service, id);
             default -> List.of();
@@ -301,27 +298,6 @@ public final class CodexGui {
         return out;
     }
 
-    private static List<ItemStack> relicEntries(ForgingMasterPlugin plugin, CodexService service, UUID id) {
-        List<ItemStack> out = new ArrayList<>();
-        for (com.forgemaster.contract.RelicPool.Def d : relicsList(plugin)) {
-            boolean got = service.hasRelic(id, d.id());
-            StringBuilder stars = new StringBuilder();
-            for (int i = 0; i < Math.max(1, Math.min(5, d.rarity())); i++) {
-                stars.append("★");
-            }
-            out.add(ForgeMenu.icon(relicIcon(d.rarity()),
-                    got ? "<#ffb84d>" + d.name() + " <dark_gray>· 圣物" : "<dark_gray>？？？ 剪影",
-                    got ? List.of(
-                            "<gray>圣物: <white>" + d.name(),
-                            "<gray>稀有度: <#ffd166>" + stars,
-                            "<gray>效果: " + d.desc())
-                            : List.of(
-                            "<gray>线索: 在龙税周目里抽到圣物「<white>" + d.name() + "</white>」",
-                            "<gray>稀有度: <dark_gray>" + stars)));
-        }
-        return out;
-    }
-
     private static List<ItemStack> affixEntries(ForgingMasterPlugin plugin, CodexService service, UUID id) {
         List<ItemStack> out = new ArrayList<>();
         for (Affix a : plugin.affixes().all()) {
@@ -367,14 +343,6 @@ public final class CodexGui {
         return plugin.forms().all();
     }
 
-    private static java.util.List<com.forgemaster.contract.RelicPool.Def> relicsList(ForgingMasterPlugin plugin) {
-        if (plugin.contractManager() == null) {
-            return List.of(com.forgemaster.contract.RelicPool.defaults());
-        }
-        List<com.forgemaster.contract.RelicPool.Def> all = plugin.contractManager().relics().all();
-        return all.isEmpty() ? List.of(com.forgemaster.contract.RelicPool.defaults()) : all;
-    }
-
     private static Material formIcon(String formId) {
         return switch (formId) {
             case "plain" -> Material.WOODEN_SWORD;
@@ -383,16 +351,6 @@ public final class CodexGui {
             case "famed" -> Material.GOLDEN_SWORD;
             case "moon" -> Material.DIAMOND_SWORD;
             default -> Material.IRON_SWORD;
-        };
-    }
-
-    private static Material relicIcon(int rarity) {
-        return switch (Math.max(1, Math.min(5, rarity))) {
-            case 5 -> Material.ENCHANTED_GOLDEN_APPLE;
-            case 4 -> Material.GOLDEN_APPLE;
-            case 3 -> Material.EMERALD;
-            case 2 -> Material.GOLD_INGOT;
-            default -> Material.IRON_INGOT;
         };
     }
 }

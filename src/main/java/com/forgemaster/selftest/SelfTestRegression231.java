@@ -201,7 +201,7 @@ public final class SelfTestRegression231 {
                     "pass-data.yml", "codex-data.yml", "spectrum-data.yml", "daily-data.yml",
                     "bounty-data.yml", "commissions.yml", "tombs.yml", "season.yml",
                     "hall.yml", "hall-strengthen.yml", "story.yml", "story-progress.yml",
-                    "contract.yml"}) {
+                    }) {
                 require(files.contains(must), "备份清单漏了 " + must + "（回档后会出现半新半旧）");
             }
             // 清单本身不能有重复项（否则备份/校验会做两次无用功）
