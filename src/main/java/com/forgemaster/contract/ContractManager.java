@@ -202,31 +202,69 @@ public final class ContractManager {
 
     // v2.26.2 修复：原来已签守卫是 `r.joined && r.day > 1`，周目第 1 天重复 join 会
     // 绕过判定再发一轮圣物三选一（offer 只排除已持有），刷满圣物池。改为只要已签就拒绝。
+    //
+    // v2.26.3 修复（用户实测反馈：`/zhujian contract join` 多敲几次圣物就满了）：
+    // 上面那条只堵住了「已签再 join」，**没堵 quit→join**，而且还有第二道口子：
+    // `store.ensure()` 在找不到档案时会**直接建一个 joined = true 的 Run**，
+    // 于是第一次 join 就误判成「已签」、什么都不发（功能像是坏的），
+    // 而玩家一旦 quit（remove 掉档案）再 join，ensure 又建一份新档案、
+    // owned 列表清空 → offer 从 12 个圣物里重新抽 3 个。
+    // 反复 quit→join 等于无限重掷，定向钓凤凰灰这种稀有圣物，几轮就能拿满。
+    //
+    // 正确口径有三条，必须一起成立：
+    //   ① 用 `store.run()`（只读）判在契，绝不用 `ensure()` 判 —— ensure 会带副作用建档；
+    //   ② quit 不再是「清档」，而是「标为已退出」，让档案留在盘上；
+    //   ③ join 时若档案标记为已退出，**继承原有圣物池**，不重新发三选一。
+    // 这样「退契」只是退出循环（圣物失效），不是「清空重抽」。
     public String join(Player p) {
         if (!active()) {
             return "<red>龙税契约未开启。";
         }
-        ContractStore.Run r = store.ensure(p.getUniqueId());
-        if (r.joined) {
-            return "<gray>你已经在契约中了——今天要交 <white>" + requirement(r.day, r.missed, relicBonus(p.getUniqueId()))
+        UUID id = p.getUniqueId();
+        ContractStore.Run existing = store.run(id);
+        if (existing != null && existing.joined) {
+            return "<gray>你已经在契约中了——今天要交 <white>"
+                    + requirement(existing.day, existing.missed, relicBonus(id))
                     + "</white> 估值。";
         }
+        // 已退出过的旧档：原样复活，圣物与周目进度都保留，不再发三选一
+        if (existing != null && !existing.joined) {
+            existing.joined = true;
+            store.markDirty();
+            Msg.prefix(p, "<gradient:#ff3d6e:#b06bff><bold>巨龙重新接纳了你——</bold></gradient>");
+            return "<gray>契约已续。今晚龙要 <white>"
+                    + requirement(existing.day, existing.missed, relicBonus(id))
+                    + "</white> 估值。圣物依旧在你手上。";
+        }
+        ContractStore.Run r = store.ensure(id);
         r.joined = true;
         store.markDirty(); // 审计 #7：改动即存改为标脏，30 秒异步冲刷
-        // 开局三选一（ForgeTax day1 starter gift 的移植）
-        offerRelics(p.getUniqueId());
+        // 只有**首次**签约才发开局三选一（上面两条分支已把「重签」拦掉）
+        offerRelics(id);
         Msg.prefix(p, "<gradient:#ff3d6e:#b06bff><bold>巨龙的低语在你耳边响起——</bold></gradient>");
-        return "<gray>契约已签。今晚龙要 <white>" + requirement(r.day, 0, relicBonus(p.getUniqueId()))
+        return "<gray>契约已签。今晚龙要 <white>" + requirement(r.day, 0, relicBonus(id))
                 + "</white> 估值，黄昏后 <white>/zhujian contract</white> 打开贡品窗口交剑。";
     }
 
+    /**
+     * 退出契约。
+     *
+     * <p>v2.26.3：**不再 remove 档案**。原来清档会让 {@link #join} 认不出「这个人来过」，
+     * 重新签约时圣物池从空开始、又发一轮三选一 —— 反复退出重进等于免费重掷稀有圣物。
+     * 现在只翻 {@code joined = false}：圣物按 {@link #relicBonus} 的 `!r.joined` 分支失效，
+     * 但记录留在盘上，重签时继承，重掷的口子就没了。</p>
+     */
     public String quit(Player p) {
         ContractStore.Run r = store.run(p.getUniqueId());
         if (r == null || !r.joined) {
             return "<red>你还没签契约。";
         }
-        store.remove(p.getUniqueId());
-        return "<gray>契约撕毁。巨龙记住了这件事——本局圣物全部作废。";
+        r.joined = false;
+        // 未领的三选一同时作废：否则退出后还能 pick，等于白拿一个圣物
+        r.pickPending = "";
+        store.markDirty();
+        return "<gray>契约撕毁。巨龙记住了这件事——圣物在你手上只能沉睡，"
+                + "重新签约可以唤回它们（进度不会重置）。";
     }
 
     /** ForgeManager 结算时静默拉入（auto-join 开着才生效） */
@@ -505,6 +543,11 @@ public final class ContractManager {
     public String pickRelic(UUID id, String relicId) {
         ContractStore.Run r = store.run(id);
         if (r == null || r.pickPending == null || r.pickPending.isBlank()) {
+            return null;
+        }
+        // v2.26.3：退出契约的人不许领待选圣物。quit 已经把 pickPending 清空，
+        // 这里是第二道防线 —— 将来若有人改 quit 忘了清，也不会变成「退出后还能白拿」。
+        if (!r.joined) {
             return null;
         }
         List<String> pending = new ArrayList<>(List.of(r.pickPending.split(",")));

@@ -495,6 +495,13 @@ public final class ForgeListener implements Listener {
         if (!plugin.settings().anvilShortcut()) {
             return;
         }
+        // v2.26.3（审计报告）：必须只认主手。
+        // PlayerInteractEvent 对一次右键会**分别**派发主手和副手两次（getHand 不同），
+        // 原来没过滤 → 每次潜行右键铁砧，主手取消一次、副手再走一遍，
+        // 等于开两次面板（取完剑立刻又弹出菜单，手感像卡了）。
+        if (event.getHand() != org.bukkit.inventory.EquipmentSlot.HAND) {
+            return;
+        }
         if (event.getAction() != Action.RIGHT_CLICK_BLOCK || !event.getPlayer().isSneaking()) {
             return;
         }

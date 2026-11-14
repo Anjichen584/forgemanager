@@ -302,6 +302,21 @@ public final class SelfTestSuite {
      * 其次是 pom 版本号与运行时一致的，都没有就返回 null（跳过静态部分）。</p>
      */
     static java.io.File findSourcePackageRoot() {
+        // v2.26.3：显式指定优先。这条是「静态检查钉子集体假绿」的根因修复——
+        // 以前只靠「从服务器工作目录向上找 6 层 + 兄弟目录」猜源码树，
+        // 一旦测试服搬出仓库父目录（例如 D:\game\1.21.10server 与仓库不同盘符树），
+        // 就永远找不到，而每条钉子的写法都是「找不到就 return」→ **全部静默变绿**。
+        // 实测有 22 处静态钉子在那种部署下一条都没跑过。
+        //   启动参数：-Dforgemaster.source-root=D:\IDEA\mc-plugins\ForgingMaster-Lore
+        String explicit = System.getProperty("forgemaster.source-root");
+        if (explicit != null && !explicit.isBlank()) {
+            java.io.File hit = packageRootUnder(new java.io.File(explicit));
+            if (hit != null) {
+                return hit;
+            }
+            org.bukkit.Bukkit.getLogger().warning("[selftest] -Dforgemaster.source-root 指向的目录下没有 "
+                    + "src/main/java/com/forgemaster（值=" + explicit + "），回退到自动探测");
+        }
         java.util.LinkedHashSet<java.io.File> candidates = new java.util.LinkedHashSet<>();
         java.io.File dir = new java.io.File(".").getAbsoluteFile();
         for (int up = 0; up < 6 && dir != null; up++) {
@@ -341,8 +356,19 @@ public final class SelfTestSuite {
                 best = c;
             }
         }
+        if (best == null && !warnedNoSourceRoot) {
+            warnedNoSourceRoot = true;
+            // 用 WARNING 而不是 INFO：这条一旦出现，说明**所有静态检查钉子都没在守**，
+            // 而它们的断言形状是「找不到就 return」，界面上照样一片绿。
+            org.bukkit.Bukkit.getLogger().warning("[selftest] 找不到源码树 —— 本轮所有"
+                    + "「按源码形状断言」的钉子是**跳过**状态（不是通过）。"
+                    + "要让它们真正执行：启动加 -Dforgemaster.source-root=<仓库根>");
+        }
         return best;
     }
+
+    /** 「找不到源码树」只警告一次，别刷满日志 */
+    private static boolean warnedNoSourceRoot;
 
     private static String pluginVersionOfThisClass() {
         try {
@@ -6109,9 +6135,61 @@ public final class SelfTestSuite {
             }
             String body = methodBody(code, "public String join(Player p)");
             require(body != null, "join(Player) 方法体切不出来");
-            require(body.contains("if (r.joined)"), "join 的已签守卫必须是 if (r.joined)：已签即拒绝");
+            // v2.26.3：判在契必须用**只读**的 store.run()，绝不能用 store.ensure() 判 ——
+            // ensure 会带副作用建一个 joined=true 的档案，拿它判「已签」会把首次 join 误判成已签。
+            // 但 ensure() 在**首次签约**那条分支上是合法的（那时确实要建档），
+            // 所以断言分两半：① 判在契那一步必须是 run()；② ensure 不许出现在任何 if 条件里。
+            require(body.contains("store.run("),
+                    "join 必须先 store.run() 只读判在契");
+            for (String line : body.split("\n")) {
+                String t = line.trim();
+                if (t.startsWith("if (") && t.contains("ensure(")) {
+                    throw new AssertionError("join 不许用 ensure() 做条件判定（应先用 store.run() 只读判）：" + t);
+                }
+            }
+            require(body.contains("existing.joined") || body.contains("r.joined"),
+                    "join 的已签守卫必须在（已签即拒绝，不许再发圣物）");
             require(!body.contains("r.day > 1"), "join 守卫不许再带 day 例外（第 1 天重复 join 会刷圣物）");
             require(body.contains("offerRelics"), "join 的首签发圣物路径必须还在（防钉子改错地方）");
+        });
+        add(g, "contract quit→join：不许靠退出重进重掷圣物（v2.26.3）", () -> {
+            // 用户实测：多敲几次 /zhujian contract join 圣物就满了。
+            // 机理是 quit 把档案整个 remove 掉，join 于是当成新玩家、
+            // owned 列表清空 → offer 从 12 个里重新抽 3 个，无限重掷定向钓稀有。
+            // 正确口径：quit 只翻 joined=false（记录留着），join 继承原圣物池。
+            var cm = plugin.contractManager();
+            require(cm != null, "ContractManager 没初始化");
+            if (!cm.active()) {
+                plugin.getLogger().info("[selftest] 契约未开启，跳过 quit→join 重掷钉子");
+                return;
+            }
+            var store = cm.store();
+            UUID u = UUID.nameUUIDFromBytes("selftest-contract-quit-join".getBytes());
+            try {
+                var r = store.ensure(u);
+                r.joined = true;
+                r.relics.clear();
+                r.relics.add("phoenix-ash");   // 假装已经钓到稀有圣物
+                r.pickPending = "";
+                // 复刻 quit 的语义：只翻 joined，不 remove
+                r.joined = false;
+                r.pickPending = "";
+                require(store.run(u) != null,
+                        "退出契约后档案必须还在（remove 会让重签变成新玩家）");
+                require(store.run(u).relics.contains("phoenix-ash"),
+                        "退出契约不许清空已持有圣物（否则重签就能重掷）");
+                // 再模拟一次「退出→重签」循环，圣物池必须一份不多
+                for (int i = 0; i < 5; i++) {
+                    store.run(u).joined = false;
+                    store.run(u).joined = true;
+                }
+                int owned = store.run(u).relics.size();
+                require(owned == 1,
+                        "反复退出重签 5 次后圣物数量必须还是 1，实际 " + owned
+                                + "（quit 若清档，这里会一路涨上去）");
+            } finally {
+                store.remove(u);
+            }
         });
         add(g, "contest history：赛果归档往返 + 保留 N 届裁剪 + 同届幂等（v2.26.0）", () -> {
             // 用自检专用文件，不碰真实 contest-history.yml；finally 删档 = 净效果为零
@@ -7610,6 +7688,57 @@ public final class SelfTestSuite {
             } finally {
                 inv.setContents(backup);
             }
+        });
+        add(g, "附魔台不许整摞吞书（书格 3 本，点一次只该少 1 本）（v2.26.3）", () -> {
+            // 审计报告：书格放 2 本以上相同附魔书，点附魔只结算 1 本，
+            // 但 BOOK_SLOT 被整格清成 AIR —— 其余凭空消失。
+            // 这里直接钉「按件递减」这个方法必须存在且被调用，而不是钉 GUI 渲染。
+            java.io.File pkgRoot = findSourcePackageRoot();
+            if (pkgRoot == null) {
+                plugin.getLogger().info("[selftest] 找不到源码树，跳过吞书钉子");
+                return;
+            }
+            java.io.File src = new java.io.File(pkgRoot, "enchant/EnchantService.java");
+            require(src.isFile(), "找不到 EnchantService.java");
+            String code;
+            try {
+                code = new String(java.nio.file.Files.readAllBytes(src.toPath()),
+                        java.nio.charset.StandardCharsets.UTF_8);
+            } catch (java.io.IOException ex) {
+                throw new IllegalStateException("读不到 EnchantService.java: " + ex.getMessage());
+            }
+            String body = methodBody(code, "public boolean apply(Player player, Inventory gui)");
+            require(body != null, "apply 方法体切不出来");
+            require(body.contains("consumeOneBook"),
+                    "apply 必须走 consumeOneBook 按件递减（整格清 AIR 会吞掉整摞书）");
+            require(!body.contains("EnchantGui.BOOK_SLOT, new ItemStack(Material.AIR)"),
+                    "apply 不许直接把书格整格清成 AIR");
+            // 递减实现本身：必须读 getAmount 再减一
+            String helper = methodBody(code, "private void consumeOneBook(Inventory gui, ItemStack book)");
+            require(helper != null, "consumeOneBook 方法体切不出来");
+            require(helper.contains("getAmount() - 1"), "consumeOneBook 必须按件递减");
+        });
+        add(g, "潜行右键铁砧只认主手（副手那次不许再开一遍面板）（v2.26.3）", () -> {
+            // PlayerInteractEvent 对一次右键会分别派发主手/副手两次；
+            // 不过滤 getHand 就会开两次面板（取完剑立刻又弹出菜单）。
+            java.io.File pkgRoot = findSourcePackageRoot();
+            if (pkgRoot == null) {
+                plugin.getLogger().info("[selftest] 找不到源码树，跳过右键手位钉子");
+                return;
+            }
+            java.io.File src = new java.io.File(pkgRoot, "listener/ForgeListener.java");
+            require(src.isFile(), "找不到 ForgeListener.java");
+            String code;
+            try {
+                code = new String(java.nio.file.Files.readAllBytes(src.toPath()),
+                        java.nio.charset.StandardCharsets.UTF_8);
+            } catch (java.io.IOException ex) {
+                throw new IllegalStateException("读不到 ForgeListener.java: " + ex.getMessage());
+            }
+            String body = methodBody(code, "public void onInteract(PlayerInteractEvent event)");
+            require(body != null, "ForgeListener.onInteract 方法体切不出来");
+            require(body.contains("EquipmentSlot.HAND"),
+                    "潜行右键铁砧必须只认 EquipmentSlot.HAND（否则副手那次会再开一遍面板）");
         });
         add(g, "碎剑留档可被挑战（设计如此：残影按碎在 +N 加强）", () -> {
             // levelOf 用 brokenAt 抬等级，只有挑战路径会调到它；

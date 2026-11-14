@@ -237,7 +237,12 @@ public final class EnchantService {
         }
 
         // 书被消耗（台子上那本），产物放成品格
-        gui.setItem(EnchantGui.BOOK_SLOT, new ItemStack(Material.AIR));
+        //
+        // v2.26.3 修复（审计报告：附魔台 GUI 整叠吞书）：
+        // 原来无条件 `gui.setItem(BOOK_SLOT, AIR)` —— 书格里放了几本，
+        // 点一次就整格清空，只消耗「一本」的代价却吞掉整摞。
+        // 现在按件递减：还剩就保留剩余数量，只扣掉本次真正消耗的那 1 本。
+        consumeOneBook(gui, book);
         gui.setItem(EnchantGui.RESULT_SLOT, result);
         player.playSound(player.getLocation(),
                 org.bukkit.Sound.BLOCK_ENCHANTMENT_TABLE_USE, 1.0f, 1.4f);
@@ -258,6 +263,29 @@ public final class EnchantService {
             cap = Math.min(def.maxLevel(), 3);
         }
         return cap <= 1 ? 1 : ThreadLocalRandom.current().nextInt(1, cap + 1);
+    }
+
+    /**
+     * 从书格消耗**一本**书，剩下的原样留在格子里。
+     *
+     * <p>以前这里是 {@code gui.setItem(BOOK_SLOT, new ItemStack(AIR))}：
+     * 书格放了 2 本以上，点一次附魔只结算一本，但整格被清成空气 ——
+     * 多余的附魔书凭空消失。按件递减才是「消耗一本」的正确语义。</p>
+     */
+    private void consumeOneBook(Inventory gui, ItemStack book) {
+        if (book == null || book.getType().isAir()) {
+            gui.setItem(EnchantGui.BOOK_SLOT, new ItemStack(Material.AIR));
+            return;
+        }
+        int left = book.getAmount() - 1;
+        if (left <= 0) {
+            gui.setItem(EnchantGui.BOOK_SLOT, new ItemStack(Material.AIR));
+            return;
+        }
+        // 复制一份再改数量：直接改传入引用会连带污染调用方手里那个 ItemStack
+        ItemStack remain = book.clone();
+        remain.setAmount(left);
+        gui.setItem(EnchantGui.BOOK_SLOT, remain);
     }
 
     private void consumeOre(Inventory gui, int amount) {

@@ -60,6 +60,11 @@ def main() -> int:
     ap.add_argument("--password", default="testpass")
     ap.add_argument("--keep", action="store_true", help="跑完不关服")
     ap.add_argument("--skip-deploy", action="store_true", help="不动 plugins，直接启动")
+    # v2.26.3：静态检查钉子靠「源码树」做断言，找不到就 return（= 静默变绿）。
+    # 测试服一旦搬出仓库父目录（例如 D:\game\... 与仓库不同树），那些钉子
+    # 一条都不会执行，界面上却照样全绿。所以这里**默认把仓库根传进去**。
+    ap.add_argument("--source-root", default=REPO,
+                    help="仓库根目录，供 -Dforgemaster.source-root 使用（默认本仓库）")
     args = ap.parse_args()
 
     server = args.server
@@ -87,8 +92,13 @@ def main() -> int:
         os.remove(log_path)
     log_f = open(log_path, "wb")
     proc = subprocess.Popen(
-        ["java", "-Xmx2G", "-jar", "paper.jar", "nogui"],
+        ["java", "-Xmx2G",
+         # 让「按源码形状断言」的钉子真正找到源码树。缺了它，那些钉子
+         # 全是「找不到就 return」的静默跳过 —— 看着绿，其实没守。
+         f"-Dforgemaster.source-root={os.path.abspath(args.source_root)}",
+         "-jar", "paper.jar", "nogui"],
         cwd=server, stdout=log_f, stderr=subprocess.STDOUT)
+    print(f"[selftest] 源码树：{os.path.abspath(args.source_root)}")
     print(f"[selftest] 服务器启动中（pid {proc.pid}），日志 {log_path}")
 
     start = time.time()

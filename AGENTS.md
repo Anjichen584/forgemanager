@@ -37,10 +37,17 @@
 3. **加功能前先搜现有命令面**（`SUBCOMMANDS` + `helpLines()`）。差点加过 `/zhujian top rep`，而 `rank reputation` 早就有了。
 4. **管理命令进 `ADMIN_ONLY`，并且 handler 内部自判 `forgemaster.admin`**。只靠 Tab 隐藏不算。
 5. **锻造系手续费永远是剑币**（`stats().takeCoins`）：强化 / 进化 / 铭刻 / 词条剥离。不是漏改 Wallet。
-6. **自检项数只许增不许减**（当前 **539**）。删钉子等于删安全网。
+6. **自检项数只许增不许减**（当前 **544**）。删钉子等于删安全网。
    - 唯一例外是**整功能移除**：v2.26.1 删掉极限锻造与剑灵显形两个模块，连带删了
      11 条只测它们的钉子（550→539）。这种情况要在这条规则下面写一行说明，
      不能悄悄改数字 —— 否则下一个人分不清「删功能」和「删安全网」。
+   - **v2.26.3 补一条比数字更重要的规矩**：静态检查钉子必须**真的执行**。
+     `findSourcePackageRoot()` 找不到源码树时直接 `return`，而 22 条「按源码形状断言」
+     的钉子都写成 `if (pkgRoot == null) return;` —— 测试服一旦搬出仓库父目录
+     （`D:\game\1.21.10server` 与仓库不同盘符树），这些钉子**一条都不跑，界面照样全绿**。
+     这是「派了人查、跑了自检、还是漏」的真正原因。
+     现在：`-Dforgemaster.source-root=<仓库根>` 优先于自动探测，找不到时打 WARNING；
+     `tools/selftest.py` 默认带上这个参数。**看到「找不到源码树」= 那批钉子是跳过，不是通过。**
 7. **并发压测默认 32 个 bot**（`BOT_COUNT` 可改；测试服 `max-players=48`）。
    实测结论：**连接层不是瓶颈** —— 5/6/8/12/24/32 全部 0 次握手节流，32 个上线 58s、存活 32/32。
    唯一硬墙是 `max-players`；`server_full` 是它满了，**不是 429，别重试**（重试只会埋掉真原因）。
@@ -87,7 +94,7 @@ cd D:\IDEA\mc-plugins\ForgingMaster-Lore
 | `docs/history/*.md` | foreman | informative | 逐版本叙事（查「以前修过没」「数值为什么这么定」）：v2.10.x / v2.18-2.21 / v2.23.x / v2.24.x / v2.25.x / v2.26.x |
 | `docs/dev/*.md` | foreman | normative | 构建与测试服操作：build |
 | `audit/*.md` | auditor | informative | 历史审计报告 22 份，按文件名挑着读 |
-| `docs/handoff/archive/` | foreman | archive | 每轮交付报告归档（只增不改）：v2.25.7 / v2.25.8 / v2.25.9 / v2.26.0 / v2.26.1 |
+| `docs/handoff/archive/` | foreman | archive | 每轮交付报告归档（只增不改）：v2.25.8 / v2.25.9 / v2.26.0 / v2.26.1 / v2.26.2 |
 <!-- agents:index:end -->
 
 ## 六、为什么这么设计

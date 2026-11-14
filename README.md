@@ -1,10 +1,10 @@
-# 铸剑大师 · ForgingMaster v2.26.2
+# 铸剑大师 · ForgingMaster v2.26.3
 
 Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「烧红 → 敲打 → 叠钢 → 开刃 → 抛光 → 嵌银丝 → 淬火」的手感搬进 MC，
 锻完之后还有委托、比试、耐久、剑币经济、师徒、成就、段位、剑灵、剑冢、世界事件、剧情、名人堂、商会、拍卖行、排行与赛季。
 
 - 目标 Java：**21+**
-- 构建产物：`target/ForgingMaster-2.26.2.jar`
+- 构建产物：`target/ForgingMaster-2.26.3.jar`
 - 无第三方依赖，纯 Paper API + MiniMessage
 - `config-version`：**23**
 
@@ -36,6 +36,7 @@ Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「�
 
 | 版本 | 一句话 | 详情 |
 | --- | --- | --- |
+| **2.26.3** | **契约刷满真因 + 自检系统性假绿**：`contract join` 刷满不是「重复 join」而是 `quit` 把档案整个 remove（重签时 `owned` 清空 → 重抽 3 个圣物，反复退出重进即可定向钓凤凰灰）；现 `quit` 只翻 `joined=false`，重签继承圣物池。另修附魔台整叠吞书（书格放 N 本点一次全清）、潜行右键铁砧主副手各开一次面板。**最要紧的是自检**：`findSourcePackageRoot()` 找不到源码树就 `return`，22 条静态钉子在新测试服（不同盘符树）下一条都没跑，界面照样 539/539 全绿 —— 加 `-Dforgemaster.source-root` 后才真正执行 |
 | **2.26.2** | **两条「刷物品 / 刷资源」堵口**：附魔上书防复制（`applyBook` 原来无条件写回主手，主手书+副手剑右键一次白丢一本书还多出一把剑——量产复制；现按「主手是否还拿书」写回原手，监听器成功后才扣书）；contract join 重复领圣物（已签守卫原来带 day 例外，周目第 1 天重复输入每次重发一轮三选一，刷满圣物池；改已签即拒绝）。自检钉子 +2（计数守恒 + 守卫形状）（自检项数 539→541，自检装置本轮未跑：旧 testserver 路径已不存在） | [十五·三](docs/history/v2.26.x.md) |
 | **2.26.1** | **三件「不可逆操作」与「回档链路」收口**：悬赏领赏改**两段式确认**（原来一步收剑、不可撤销，玩家整理背包时手滑就丢主属性最好的剑；现照 `spirit reroll` 的写法预览 + `confirm`，并用「品质+强化+锻阶+剑名+灵性」指纹把确认绑到预览那把剑上，退服即清）；`bounty-data.yml` 补 `flush`（原是全仓唯一「有 reload 无 flush」的项，回档后内存旧 `claimed` 会整份回写、静默吞掉回档）；`HallShrine` 补 `reloadOrigin`（`origin` 是字段缓存，回档换了 `hall.yml` 它不知道，殿堂原点停在旧坐标直到重启）。`metrics-export-*.csv` 与 `papi-cache/` 查证后确认**不该进备份**（可再生 / 是缓存），改为写清原因。**另按用户要求整模块移除极限锻造（`forge risk`）与剑身环绕（`spirit show\|hide`）**——两者都来自 `5c9b40e`「v2.23.1 查错+收敛」，非本轮所加；连带清掉整条碎剑率统计链路（`breaks` 唯一数据源就是炸剑，留着是永远 0 的假指标）、`risk-made`/`risk-lost` 称号维度、两个 PDC 键（自检 539/539，550→539 是随功能删钉） | [十五·二](docs/history/v2.26.x.md) |
 | **2.26.0** | **战力曲线 + 历届赛果 + 比试排行 + 公开档案**：新增 `power compare` / `power log`（最近 12 条评分曲线）、`contest history`（历届冠军档案）、`rank duel` 第六维、`stats of`（白名单公开档案）；**三轮审计共修 26 条**：`stats of` 用 `get()` 会为任意名字建空档案（改 `peek`）、`contest.history-keep` 只在 Java 默认值里（补 config + step32）、三份存档漏在备份清单外、`metrics/` 整目录替换是死代码（快照实为根目录散文件）、`story-progress.yml` 裸 `save()` 违反 YamlIo 规则、存档守卫表三行文件名写错导致三个模块从未被检查、压测超时会读旧报告假装全绿（自检 550/550 当时、压测 32 并发 17 阶段 667/1/0） | [十五·一](docs/history/v2.26.x.md) |
