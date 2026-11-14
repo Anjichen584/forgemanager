@@ -26,6 +26,19 @@ isSimilar 收剑唯一点钉子补齐——原注释宣称有钉但没写）。�
 
 ## 1. 本轮改了什么
 
+## 1. 本轮改了什么
+
+### 1.0 v2.26.7（main）：整模块移除龙税契约
+
+- 删 `contract/` 包 + ContractMenu/Holder + `/zhujian contract` + 圣物加成（StrengthenService 7 点
+  中性化）+ 图鉴圣物分类（六类→五类）+ forbidden 占位符 + ForgeManager autoJoin + contract.yml
+  备份项（21 份）+ config.yml contract 段
+- 迁移 step33：盘上残留 contract.* 整体清理（config-version 23→24）
+- 钉子适配：断约罚金（引用已删文件）删除、数值夹钉去掉估值部分、contest history 钉去 pick 断言
+  并加「契约残留清零」反向断言
+- 强留项：剑型 FORM 键/valueMult 转展示口径、剑魂传承、CoinReason.CONTRACT 枚举（旧流水解析）
+
+
 ### 1.0 v2.26.4 追加：全仓审计轮（5 路并行）收口 22 条
 
 5 路 Explore 扫描（经济守恒 / 物品复制 / 存档一致性 / 重复领取 / 注入面），每路从**发放点倒查全部入口

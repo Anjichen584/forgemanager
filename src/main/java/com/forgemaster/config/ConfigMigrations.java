@@ -70,7 +70,7 @@ public final class ConfigMigrations {
      * 详见 step19 的注释）。v2.23.1 加 step22 时从 12 抬到 13，加 step23（战力评分）时再抬到 14，加 step24（属性天花板）时抬到 15。
      * v2.26.0 加 step32（大赛历届档案 history-keep）时抬到 23。</p>
      */
-    public static final int CURRENT_VERSION = 23;
+    public static final int CURRENT_VERSION = 24;
 
     private ConfigMigrations() {
     }
@@ -113,6 +113,7 @@ public final class ConfigMigrations {
         step30Expansion24(plugin, cfg);
         step31Expansion25(plugin, cfg);
         step32ContestHistory(plugin, cfg);
+        step33ContractCleanup(plugin, cfg);
         cfg.set("config-version", CURRENT_VERSION);
         plugin.saveConfig();
     }
@@ -1303,6 +1304,27 @@ public final class ConfigMigrations {
      * step31（v2.25 拓展）：血怒/坚韧附魔上限、灵契重抽、强化保险三段新键。
      * 与 step30 同口径：contains 判断，只补缺，绝不覆盖服主已有值。
      */
+    /**
+     * step33（v2.26.7）：龙税契约（contract）整模块移除——把盘上残留的 contract.*
+     * 键整体清掉。不删的话 /zhujian config check 会一直显示一段「只写在盘上、
+     * 代码已不读」的死配置。按 step21/step28 的删键口径：读盘判断、只删不留痕。
+     */
+    private static void step33ContractCleanup(ForgingMasterPlugin plugin, FileConfiguration cfg) {
+        java.io.File diskFile = new java.io.File(plugin.getDataFolder(), "config.yml");
+        if (!diskFile.isFile()) {
+            return;
+        }
+        YamlConfiguration disk = YamlConfiguration.loadConfiguration(diskFile);
+        if (!disk.contains("contract") || disk.getConfigurationSection("contract") == null) {
+            return;
+        }
+        for (String key : disk.getConfigurationSection("contract").getKeys(true)) {
+            cfg.set("contract." + key, null);
+        }
+        cfg.set("contract", null);
+        plugin.getLogger().info("[migrate] step33：龙税契约已移除，盘上残留的 contract.* 配置已清理");
+    }
+
     private static void step31Expansion25(ForgingMasterPlugin plugin, FileConfiguration cfg) {
         int written = 0;
         for (String[] kv : new String[][]{

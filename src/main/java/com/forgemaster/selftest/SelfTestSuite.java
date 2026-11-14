@@ -5878,29 +5878,6 @@ public final class SelfTestSuite {
                 store.restoreSignin(u, 0, null); // 净效果为零，不碰真实数据
             }
         });
-        add(g, "断约罚金必须判 takeCoins 返回值（v2.26.0 修 P2）", () -> {
-            // 反例：罚金没收上来（余额在 coins() 读取与扣款之间变化），广播却照喊
-            // 「剑币少了 N」= 全服看到一条假账。收缴失败必须按实际措辞 + 留痕。
-            java.io.File pkgRoot = findSourcePackageRoot();
-            if (pkgRoot == null) {
-                plugin.getLogger().info("[selftest] 找不到源码树，跳过罚金返回值守卫");
-                return;
-            }
-            java.io.File src = new java.io.File(pkgRoot, "contract/ContractManager.java");
-            require(src.isFile(), "找不到 ContractManager.java");
-            String code;
-            try {
-                code = new String(java.nio.file.Files.readAllBytes(src.toPath()),
-                        java.nio.charset.StandardCharsets.UTF_8);
-            } catch (java.io.IOException ex) {
-                throw new IllegalStateException("读不到 ContractManager.java: " + ex.getMessage());
-            }
-            require(code.contains("collected = plugin.stats().takeCoins"),
-                    "断约罚金必须接收 takeCoins 返回值（collected = ...），不能裸调");
-            require(code.contains("!collected"), "收缴失败必须有分支处理，不许静默吞");
-            require(code.contains("罚金分文未能收缴"),
-                    "收缴失败时广播必须换成如实措辞，不许再喊「剑币少了 N」的假账");
-        });
         add(g, "战力曲线：append/of 往返 + 去重 + remove 净效果为零（v2.26.0）", () -> {
             var store = plugin.powerLog();
             require(store != null, "战力曲线存储没初始化");
@@ -6181,10 +6158,6 @@ public final class SelfTestSuite {
                 plugin.getLogger().info("[selftest] 找不到源码树，跳过 数值夹紧 钉子");
                 return;
             }
-            String appraise = sourceMethodBody("contract/ContractManager.java", "public long appraise(ItemStack item)");
-            require(appraise != null && appraise.contains("Double.isNaN") && appraise.contains("Double.isInfinite"),
-                    "估值连乘链必须有 NaN/Infinity 守卫（round 会把 Infinity 饱和成 Long.MAX）");
-            require(appraise.contains("Math.min(v, 1.0e12)"), "估值必须有总夹紧上限");
             String store = sourceMethodBody("stats/StatsStore.java", "public long addCoins(UUID uuid, long amount, com.forgemaster.econ.CoinReason reason)");
             require(store != null && store.contains("Long.MAX_VALUE"),
                     "addCoins 必须饱和加法（原 Math.max(0, coins+amount) 溢出变负时会把余额清零）");
@@ -6359,37 +6332,15 @@ public final class SelfTestSuite {
                 nc.append(line).append('\n');
             }
             String body = nc.toString();
-            // ① 分派：contract 的 pick 子命令、contest 的 history 子命令
-            int pickDispatch = hits(body, "case \"pick\", \"xuan\", \"xuanze\"");
-            require(pickDispatch == 1, "contract pick 分派 case 应恰好 1 处，实际 " + pickDispatch);
             // v2.26.0 修：history 分派从「contest() 里的 if 分支」提到方法入口（contest.enabled
             // 不该连坐只读档案），所以断言改成认别名组本身：分派 + tabContest 候选各一处。
             int histDispatch = hits(body, "\"history\", \"lishi\", \"dangan\"");
             require(histDispatch == 2, "contest history 别名组应出现在分派 + tabContest（恰好 2 处），实际 "
                     + histDispatch);
-            // ② help：两条都要在 helpLines 里
-            int pickHelp = hits(body, "pick <1|2|3>");
-            require(pickHelp == 1, "contract pick 的 help 文案应恰好 1 处，实际 " + pickHelp);
             int histHelp = hits(body, "history 历届档案");
             require(histHelp == 1, "contest history 的 help 文案应恰好 1 处，实际 " + histHelp);
-            // ③ Tab：pick 别名组（分派 + tabContract 各 1）与 history 别名组（分派 + tabContest 各 1）
-            int pickTab = hits(body, "\"pick\", \"xuan\", \"xuanze\"");
-            require(pickTab >= 2, "pick 别名组应出现在分派 + tabContract（≥2 处），实际 " + pickTab);
             int histTab = hits(body, "\"history\", \"lishi\"");
             require(histTab >= 1, "history 别名组应出现在 tabContest（≥1 处），实际 " + histTab);
-            // ④ 领奖路径不碰剑币：contractPick 方法体内不许出现 wallet / takeCoins
-            //（用 "void contractPick(" 定位，避免命中 contract() 分派里的调用点）
-            String chunk = null;
-            for (String part : code.split("\\n    (?:private|public) ")) {
-                if (part.contains("void contractPick(")) {
-                    chunk = part;
-                    break;
-                }
-            }
-            require(chunk != null, "找不到 contractPick 方法体（方法被挪走或改名了？）");
-            int coinHits = hits(chunk, "takeCoins") + hits(chunk, "wallet()");
-            require(coinHits == 0, "contract pick 领奖路径出现剑币调用 " + coinHits
-                    + " 处（红线：只发圣物，绝不碰钱包）");
         });
         add(g, "stats of 只读不建档：公开档案走 peek 不走 get（v2.26.0）", () -> {
             // v2.26.0 的真实缺陷（审计轮查出）：statsOfPublic 用了 stats().get(uuid)，
