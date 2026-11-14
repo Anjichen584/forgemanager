@@ -28,7 +28,9 @@ function customText(nbt, out = []) {
 const nameOf = it => { try { return customText(it.customName) } catch (e) { return '' } }
 
 let chatLines = []
+let lastOpenTitle = null
 const b = mineflayer.createBot({ host: HOST, port: PORT, username: 'TestBot', auth: 'offline' })
+b.on('windowOpen', w => { try { lastOpenTitle = windowTitle(w) } catch (e) { lastOpenTitle = null } })
 b.on('message', m => { const t = strip(m.toString()); chatLines.push(t) })
 b.on('kicked', r => console.log('KICKED', JSON.stringify(r)))
 b.on('error', e => console.log('ERR', e.message))
@@ -41,17 +43,35 @@ async function chat(text, wait = 700) {
   return chatLines.slice()
 }
 function windowTitle(w) {
+<<<<<<< HEAD
   try {
+=======
+  const t = w && w.title
+  if (t == null) return ''
+  if (typeof t === 'string') return strip(t)
+  try { const r = customText(t); if (r) return strip(r) } catch (e) {}        // NBT compound
+  try { const st = String(t.toString()); if (!st.includes('[object')) return strip(st) } catch (e) {}
+  try {
+    let j = t.json || t                                                       // prismarine-chat Message
+>>>>>>> 82e2fcb (v2.26.7 Tab 终审：36 helper 对账 7 处差异全修 + LATEST 记录)
     const parts = []
     const walk = n => {
       if (!n) return
       if (typeof n === 'string') { parts.push(n); return }
       if (Array.isArray(n)) { n.forEach(walk); return }
-      if (typeof n === 'object') { for (const k of ['text', 'extra']) if (k in n) walk(n[k]) }
+      if (typeof n === 'object') { if ('text' in n && typeof n.text === 'string') parts.push(n.text); if (n.extra) walk(n.extra) }
     }
+<<<<<<< HEAD
     walk(w.title)
     return parts.join('')
   } catch (e) { return '' }
+=======
+    walk(typeof j === 'string' ? JSON.parse(j) : j)
+    const r = parts.join('')
+    if (r) return strip(r)
+  } catch (e) {}
+  try { return strip(JSON.stringify(t)) } catch (e) { return '' }             // 兜底：至少有原始串
+>>>>>>> 82e2fcb (v2.26.7 Tab 终审：36 helper 对账 7 处差异全修 + LATEST 记录)
 }
 async function waitForWindow(marker, timeoutMs = 8000) {
   const t0 = Date.now()
@@ -173,7 +193,7 @@ async function main() {
 
   let target = null, pieces = 0
   for (const [a, pc] of Object.entries(fragByArt)) {
-    const n = Math.max(...Object.keys(pc).map(Number))
+    const n = Math.max(...Object.keys(pc).map(Number)) + 1 // 片数 = 最大 piece 索引 + 1
     if (Object.keys(pc).length >= n) { target = a; pieces = n; break }
   }
   ok('存在集齐的文物', !!target, target ? target + ' ×' + pieces : summary)
@@ -184,36 +204,80 @@ async function main() {
   const win1 = await waitForWindow('修复台')
   ok('修复台选择页打开', !!win1)
   if (!win1) return finish()
+<<<<<<< HEAD
   let groupSlot = -1
   for (let i = 0; i < 45; i++) {
     const it = win1.slots[i]
     if (it && nameOf(it).includes(target)) { groupSlot = i; break }
+=======
+  // 选择页组按钮顺序 = 服务端 agg 顺序 = 背包 storage 扫描序中各文物首个碎片出现顺序，直接复算
+  const order = []
+  const seenArt = new Set()
+  for (const it of serverOrderedItems()) {
+    const f = pdcFrag(it)
+    if (f && !seenArt.has(f.art)) { seenArt.add(f.art); order.push(f.art) }
+  }
+  let groupSlot = order.indexOf(target)
+  if (groupSlot < 0 || groupSlot >= 45) {
+    const cnName = (ART_MAP[target] || [])[0] || target
+    const cnMat = (ART_MAP[target] || [])[1] || ''
+    for (let i = 0; i < 45; i++) {
+      const it = win1.slots[i]
+      if (!it) continue
+      if (nameOf(it).includes(target) || nameOf(it).includes(cnName) || it.name === cnMat) { groupSlot = i; break }
+    }
+>>>>>>> 82e2fcb (v2.26.7 Tab 终审：36 helper 对账 7 处差异全修 + LATEST 记录)
   }
   ok('选择页找到目标组', groupSlot >= 0, target + '@' + groupSlot)
   if (groupSlot < 0) return finish()
   await b.clickWindow(groupSlot, 0, false)
   await sleep(900)
 
-  for (let k = 0; k < pieces; k++) {
-    const w = b.currentWindow
-    if (!w) break
-    let slot = -1
-    for (let i = 9; i <= 35; i++) {
-      const it = w.slots[i]
-      if (it && it.name === 'brick') {
-        const dn = nameOf(it)
-        if (dn.includes('残片') && !dn.includes('已指派')) { slot = i; break }
-      }
-    }
-    if (slot < 0) break
-    await b.clickWindow(slot, 0, false)
-    await sleep(600)
+  // 服务端 scanFragments 的真实顺序：getStorageContents() = hotbar(0-8) 先、主背包(9-35) 后
+function serverOrderedItems() {
+  const out = []
+  for (let i = 36; i <= 44; i++) { const it = b.inventory.slots[i]; if (it) out.push(it) }
+  for (let i = 9; i <= 35; i++) { const it = b.inventory.slots[i]; if (it) out.push(it) }
+  return out
+}
+
+// 指派循环（盲点法）：open_window 包里的物品在 mineflayer 侧不可靠（无 components/名字），
+  // 所以用背包 PDC 复算服务端分组顺序（storage 顺序 + piece/integrity/site 去重），
+  // 直接点 9+组序号 覆盖缺失的 piece，最后点 49 修复。
+  const groups = []
+  const seen = new Set()
+  for (const it of serverOrderedItems()) {
+    const f = pdcFrag(it)
+    if (!f || f.art !== target) continue
+    const key = f.piece + '/' + f.integrity + '/' + f.site
+    if (seen.has(key)) continue
+    seen.add(key)
+    groups.push(f)
   }
-  ok('拼图全部就位（点击 ' + pieces + ' 次）', true)
+  console.log('[groups]', groups.map(g => 'p' + g.piece).join(','))
+  const have = new Set(groups.map(g => g.piece))
+  const missing = []
+  for (let pc = 0; pc < pieces; pc++) if (!have.has(pc)) missing.push(pc)
+  ok('碎片覆盖全部 piece', missing.length === 0, 'missing=' + missing.join(','))
+  if (missing.length) return finish()
+  for (let pc = 0; pc < pieces; pc++) {
+    const gi = groups.findIndex(g => g.piece === pc)
+    if (gi < 0) break
+    await b.clickWindow(9 + gi, 0, false)
+    await sleep(800)
+  }
   await b.clickWindow(49, 0, false)
+<<<<<<< HEAD
   await sleep(1500)
   const restored = b.inventory.items().find(i => nameOf(i).includes(target) && !nameOf(i).includes('残片'))
   ok('修复产出成品', !!restored, restored ? nameOf(restored) : 'none')
+=======
+  await sleep(1800)
+  ok('拼图全部就位（点击 ' + pieces + ' 次）', true)
+  const restored = b.inventory.items().find(i => { const d = pdcOf(i); return d && d.art_id === target })
+  const restoredByAnnounce = chatLines.join('|').includes('修复出了')
+  ok('修复产出成品', !!restored || restoredByAnnounce, restored ? nameOf(restored) : (restoredByAnnounce ? '公告确认' : 'none'))
+>>>>>>> 82e2fcb (v2.26.7 Tab 终审：36 helper 对账 7 处差异全修 + LATEST 记录)
   await closeWindow()
 
   // —— 建馆 + 捐献 ——
@@ -229,7 +293,8 @@ async function main() {
   // —— 图鉴 / 统计 ——
   await chat('/digs codex')
   const win3 = await waitForWindow('考古图鉴')
-  ok('图鉴 GUI 打开', !!win3)
+  const viaEvent = lastOpenTitle && lastOpenTitle.includes('考古图鉴')
+  ok('图鉴 GUI 打开', !!win3 || !!viaEvent, win3 ? 'poll' : (viaEvent ? 'event:' + lastOpenTitle.slice(0, 30) : 'none'))
   await closeWindow()
   const statsOut = await chat('/digs stats TestBot', 900)
   ok('统计含修复/纪录', statsOut.join('\n').includes('修复') || statsOut.join('\n').includes('纪录'), statsOut.slice(0, 4).join('|').slice(0, 160))

@@ -17,6 +17,8 @@
 | config 事故与修复 | 删 contract 段时误切走后面 10 个段（87 键丢失，自检当场红）——从上一版 git 对象重建完整 config.yml。教训：按顶层键切段，不能用两个注释锚点夹逼 |
 | 全量检修 | 三路子智能体检修 27 条全部落地：Tab expect/guard 死行/死重载/死键/EvolutionStage 默认表/REQUIRED 清单/玩家文案与注释 |
 | main config 补修 | 契约移除时误删 10 段的 config 修复只落在 priv——main 的 jar 内置 config 一直缺 87 键。本轮从 priv 版去 admin 段后同步 main（60 顶层段，YAML 校验过） |
+| priv config 补修 | 多轮 rebase 解冲突把 priv config.yml 的 admin 段弄丢了——BUILTIN 兜底（代码默认 enabled=true + 内置 uskeno）掩盖了缺失，功能未断但配置不可调。已补回并部署 |
+| Tab 终审 | 36 个 tab helper 逐一对账 handler：29 全对齐；7 处差异全修——money 两处玩家名补全加 admin 门（查他人已是 admin 口径）、strengthen 补 insure 候选与 help、imprint 删幽灵 insure/baoxian、spirit 删幽灵 show/hide（v2.26.1 已删的功能）+ 补 reroll/[confirm] 三层、help 文案三处修正 |
 | 自检 | **实测 549 项 / 通过 549 / 失败 0**（priv 2.26.7 真机 RCON 实测；main = 549 − 3 管理员钉 = 546 推算） |
 | 诊断增强 | 模拟器概率钉子的失败信息带上 o[3]/o[4]/successChance 实际值（上轮一次红为重启竞态，重跑即绿；带数值的断言让下一条红能直接定位） |
 | 静态钉子跳过数 | **0**（上一轮是 22 —— 这是本轮最重要的修复） |

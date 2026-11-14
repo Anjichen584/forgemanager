@@ -3433,7 +3433,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         addHelp(out, u + "story", "查看当前剧情章节");
 
         out.add(HELP_G_FORGE);
-        addHelp(out, u + "strengthen", "铁砧强化：右键铁砧放剑、持重锤左键落锤（info 看明牌概率）");
+        addHelp(out, u + "strengthen", "铁砧强化：右键铁砧放剑、持重锤左键落锤（info 看明牌概率 · insure 保险开关）");
         out.add("<dark_gray>      sim <目标> 单档期望 · plan <目标> [局数] · curve 六档曲线 · set <等级>");
         out.add("<dark_gray>      reforge <序号> 重铸 · strip <序号> 剥成词条符 · graft 装词条 · merge 三合一 · jianyi 建议");
         addHelp(out, u + "hammer", "领一把铁匠重锤（原版重锤 MACE 也认）");
@@ -3451,7 +3451,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         addHelp(out, u + "copy", "临摹：copy <谱号> 开始（同种子复刻）· stop / cancel 取消");
 
         out.add(HELP_G_ECON);
-        addHelp(out, u + "money", "剑币余额（balance [玩家] · coin balance）");
+        addHelp(out, u + "money", "剑币余额（balance [玩家] 查他人要管理员 · coin balance）");
         addHelp(out, u + "shop", "商会（用剑币买原料与图纸）");
         addHelp(out, u + "blackmarket", "黑市（每日轮换特价，限购）");
         addHelp(out, u + "signin", "每日签到（7 天一轮递增，第 7 天大奖）");
@@ -3468,7 +3468,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         addHelp(out, u + "contest", "锻造大赛：状态 · list 看榜 · watch 观战 · gui 面板 · history 历届档案");
 
         out.add(HELP_G_WORLD);
-        addHelp(out, u + "spirit", "剑灵：info · feed 喂养 · name <剑名> · reroll 重抽 · show / hide");
+        addHelp(out, u + "spirit", "剑灵：info · feed 喂养 · name <剑名> · reroll 重抽（reroll confirm 确认）");
         addHelp(out, u + "tomb", "剑冢：list · bury 埋剑 · take / challenge / info / remove <编号>");
         addHelp(out, u + "tombrun", "秘境：enter 进图 · status 看进度 · quit 退出");
         addHelp(out, u + "shangjin", "每日悬赏：不带参看货单 · claim <序号> 看预览 · 再 claim <序号> confirm 才交剑");
@@ -4020,6 +4020,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             case "metrics", "jingji" -> sender.hasPermission("forgemaster.admin") ? tabMetrics(args) : List.of();
             case "config", "peizhi" -> sender.hasPermission("forgemaster.admin") ? tabConfig(args) : List.of();
             case "fixattrs", "xiufu" -> sender.hasPermission("forgemaster.admin") ? tabFixAttrs(args) : List.of();
+ (v2.26.7 Tab 终审：36 helper 对账 7 处差异全修 + LATEST 记录)
             case "stats" -> tabStats(sender, args);
             case "power", "zhanli" -> tabPower(sender, args);
             case "profile", "dangan" -> tabPlayerArg(sender, args);
@@ -4143,7 +4144,8 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
                 return filter(ops, args[2]);
             }
             if (args.length == 4) {
-                return filter(players(), args[3]);
+                // v2.26.7：coin 的第 4 层玩家名只给 admin（balance 查他人 / give 都要 admin）
+                return admin ? filter(players(), args[3]) : List.of();
             }
             if (args.length == 5) {
                 return filter(AMOUNTS, args[4]);
@@ -4160,7 +4162,8 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             return List.of();
         }
         if (isAny(sub, "balance", "bal") && args.length == 3) {
-            return filter(players(), args[2]);
+            // v2.26.7：money balance <玩家> 查他人要 admin（handler 同口径），tab 同口径
+            return admin ? filter(players(), args[2]) : List.of();
         }
         return List.of();
     }
@@ -4202,7 +4205,8 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
                     "reforge", "chongzhu", "xilian",
                     "strip", "bo", "bobo", "graft", "yizhi", "zhuang",
                     "jianyi", "prof", "proficiency", "shulian",
-                    "merge", "hecheng", "he"));
+                    "merge", "hecheng", "he",
+                    "insure", "baoxian"));
             if (sender.hasPermission("forgemaster.admin")) {
                 subs.addAll(List.of("set", "shezhi"));
             }
@@ -4352,7 +4356,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
 
     private List<String> tabImprint(String[] args) {
         if (args.length == 2) {
-            return filter(List.of("merge", "hecheng", "he", "insure", "baoxian"), args[1]); // v2.25：补全含保险开关
+            return filter(List.of("merge", "hecheng", "he"), args[1]); // v2.26.7：保险开关搬去了 strengthen，不再给幽灵候选
         }
         return List.of();
     }
@@ -4544,8 +4548,12 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
 
     private List<String> tabSpirit(String[] args) {
         if (args.length == 2) {
+            // v2.26.7：show/hide 是 v2.26.1 删掉的剑身环绕幽灵动词，不再给；reroll 补上
             return filter(List.of("info", "view", "feed", "yang", "name", "rename",
-                    "show", "hide"), args[1]);
+                    "reroll"), args[1]);
+        }
+        if (args.length == 3 && isAny(args[1].toLowerCase(Locale.ROOT), "reroll")) {
+            return filter(List.of("confirm", "queren"), args[2]);
         }
         return List.of();
     }

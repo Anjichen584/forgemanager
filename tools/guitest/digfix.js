@@ -55,17 +55,21 @@ b.once('spawn', async () => {
     if (title.includes('就位')) {
       // 点碎片直到 49 绿
       for (let k = 0; k < 8; k++) {
+        const wNow = b.currentWindow          // 整窗重开后每轮取新引用
+        if (!wNow) { console.log('window closed'); break }
         let slot = -1
         for (let i = 9; i <= 35; i++) {
-          const it = w2.slots[i]
+          const it = wNow.slots[i]
           if (it && it.name === 'brick' && !nameOf(it).includes('已指派')) { slot = i; break }
         }
-        if (slot < 0) break
-        const dn = nameOf(w2.slots[slot])
+        if (slot < 0) { console.log('all assigned'); break }
+        const dn = nameOf(wNow.slots[slot])
         await b.clickWindow(slot, 0, false)
         await sleep(900)
-        const it49 = b.currentWindow.slots[49]
-        console.log('click', slot, dn.slice(0, 22), '→ 49:', nameOf(it49))
+        const wNow2 = b.currentWindow
+        const it49 = wNow2 ? wNow2.slots[49] : null
+        const it0 = wNow2 ? wNow2.slots[0] : null
+        console.log('click', slot, dn.slice(0, 18), '→ 49:', nameOf(it49), '| piece槽0:', it0 ? nameOf(it0) : '-')
         if (nameOf(it49).includes('开始修复')) {
           await b.clickWindow(49, 0, false)
           await sleep(1500)
