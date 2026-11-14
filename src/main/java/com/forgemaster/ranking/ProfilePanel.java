@@ -18,7 +18,12 @@ public final class ProfilePanel {
 
     public static void show(ForgingMasterPlugin plugin, CommandSender to, UUID uuid) {
         StatsStore store = plugin.stats();
-        StatsStore.Stats st = store.get(uuid);
+        // v2.26.5（审计嫌疑 #2）：同 stats 命令——查任意 UUID 不再凭空建档
+        StatsStore.Stats st = store.peek(uuid);
+        if (st == null) {
+            Msg.send(to, "<gray>这个玩家没有档案（没进过服或没锻过剑）。</gray>");
+            return;
+        }
         long now = System.currentTimeMillis();
         boolean alive = st.streak > 0 && st.streakAt > 0 && now - st.streakAt <= StatsStore.STREAK_WINDOW_MS;
 

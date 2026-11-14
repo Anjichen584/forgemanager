@@ -72,9 +72,10 @@ public final class EnchantRouter implements Listener {
             event.setCancelled(true);
             return;
         }
-        // 点在自己背包里（raw >= 顶部尺寸）：允许
+        // 点在自己背包里（raw >= 顶部尺寸）：放行。v2.26.5（审计 #嫌疑）：原来
+        // setCancelled(false) 会强行覆盖背包保护类插件的决定——Router 只该管
+        // 自己的顶部格子，别反向放行别人的取消。
         if (raw >= EnchantGui.SIZE) {
-            event.setCancelled(false);
             return;
         }
         if (raw == EnchantGui.ACTION_SLOT) {

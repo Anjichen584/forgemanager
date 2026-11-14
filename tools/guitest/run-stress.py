@@ -4,7 +4,7 @@
 做四件事：
   1. 测试服没在跑就起它（paper.jar，日志到 testserver/_stress-server.log），等 "Done ("
   2. 部署 target/ 下最新的 ForgingMaster-*.jar（--no-deploy 可跳过）
-  3. 跑 tools/guitest/concurrent4.js（默认 32 bot：Conc01..Conc32；BOT_COUNT 可改，--phases 可只跑指定阶段）
+  3. 跑 tools/guitest/concurrent4.js（默认 16 bot（max-players=20 的现实上限）；BOT_COUNT 可改，--phases 可只跑指定阶段）
   4. 汇总存档到 testserver/_stress-<时间戳>.json，stdout 打印 PASS/WARN/FAIL；自起的服跑完关掉
 
 用法：
@@ -31,11 +31,11 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
-SERVER = os.environ.get("FM_SERVER", r"D:\IDEA\mc-plugins\ForgingMaster\testserver")
+SERVER = os.environ.get("FM_SERVER", r"D:\game.21.10server")  # v2.26.5：旧 testserver 路径已失效
 LOG = os.path.join(SERVER, "_stress-server.log")
-PORT = 25577
-RCON_PORT = 25599
-RCON_PASS = "testpass"
+PORT = 25565  # v2.26.5：随服务器实际位置更新
+RCON_PORT = 25575  # v2.26.5：随服务器实际位置更新
+RCON_PASS = "bmtest123"  # v2.26.5：随服务器实际位置更新
 
 # Windows 控制台默认 cp936，输出被管道接走时中文会变成乱码；强制 UTF-8
 try:
@@ -178,7 +178,7 @@ def summarize(stamp, started_at=None, timed_out=False):
             continue
         print("  ! [%s] %s — %s" % (x["area"], x["name"], x["detail"][:160]))
     # 硬规则：botCount 必须等于设定值，否则可能被 clamp 静默截断
-    want = int(os.environ.get("BOT_COUNT", "32"))
+    want = int(os.environ.get("BOT_COUNT", "16"))
     got = out["botCount"]
     alive = out.get("botCountAlive")
     if got != want:
@@ -260,7 +260,7 @@ def main():
     # 上限定在 32 是因为一轮压测时长：**实测 32 并发跑满 17 个阶段约 33 分钟**
     # （v2.26.0 实测：11:23 起，到 pass 阶段已 29 分钟，1800s 超时当场被杀）。
     # 所以 --timeout 默认放到 3600s；写 17 分钟是旧数字，别再据此判断「卡住了」。
-    env["BOT_COUNT"] = os.environ.get("BOT_COUNT", "32")
+    env["BOT_COUNT"] = os.environ.get("BOT_COUNT", "16")
     cmd = ["node", "concurrent4.js"] + args.phases
     print("[stress] 跑：" + " ".join(cmd))
     timed_out = False
@@ -297,9 +297,9 @@ def main():
         return 1
     if out["skipped"] > 0:
         return 2
-    if out["botCount"] != int(os.environ.get("BOT_COUNT", "32")):
+    if out["botCount"] != int(os.environ.get("BOT_COUNT", "16")):
         return 3
-    if out.get("botCountAlive") not in (None, int(os.environ.get("BOT_COUNT", "32"))):
+    if out.get("botCountAlive") not in (None, int(os.environ.get("BOT_COUNT", "16"))):
         return 3
     if out["timedOut"]:
         return 4

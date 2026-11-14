@@ -108,6 +108,9 @@ public final class MetricsService {
             warn("启动采样定时器失败: " + ex.getMessage());
             return;
         }
+        // v2.26.5（审计嫌疑）：回档后 lastPruneDay 已是今天 → 目录当天不再重扫。
+        // start() 在 reloadAll / 回档链路都会走到，重置游标让看板视图与盘面重新对齐。
+        lastPruneDay = null;
         // 首条样本等到一个间隔之后：刚启动时流水计数是 0，此刻采样只会往当天文件里
         // 塞一条全零样本，把「当日产出」的起点画成 0（其实只是还没开张）
         refreshCacheAsync();

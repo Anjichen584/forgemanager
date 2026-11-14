@@ -211,7 +211,8 @@ public final class StrengthenSnapshot {
         if (meta == null || meta.displayName() == null) {
             return item.getType().name();
         }
-        String plain = Msg.plain(meta.displayName()).trim();
+        // v2.26.5：显示名会被拼回 MiniMessage 渲染给所有看榜的人，esc 防改名注入
+        String plain = Msg.escText(Msg.plain(meta.displayName()).trim());
         return plain.isEmpty() ? item.getType().name() : plain;
     }
 

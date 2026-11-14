@@ -336,6 +336,25 @@ public final class BackupManager {
             File srcSeasons = new File(dir, SEASONS_DIR);
             if (srcSeasons.isDirectory()) {
                 copyDir(srcSeasons, new File(dataDir, SEASONS_DIR));
+                // v2.26.5（审计嫌疑）：copyDir 是 REPLACE_EXISTING 只增不删——备份之后
+                // 新归档的 season-N.yml 会留在盘上，季号退回后历季名次里能看到「未来」。
+                // 删掉备份点没有的归档文件，让目录与备份点严格一致。
+                File dstSeasons = new File(dataDir, SEASONS_DIR);
+                File[] keep = srcSeasons.listFiles();
+                java.util.Set<String> keepNames = new java.util.HashSet<>();
+                if (keep != null) {
+                    for (File k : keep) {
+                        keepNames.add(k.getName());
+                    }
+                }
+                File[] stale = dstSeasons.listFiles();
+                if (stale != null) {
+                    for (File o : stale) {
+                        if (!keepNames.contains(o.getName()) && o.delete()) {
+                            plugin.getLogger().info("[restore] seasons/ 清掉备份点没有的归档：" + o.getName());
+                        }
+                    }
+                }
             }
         } finally {
             // v2.25 修 P2：中途 IOException 时不能半途而废 —— flushAll 已跑、脏标记已清，
@@ -460,6 +479,11 @@ public final class BackupManager {
         // 等于回档对这个字段完全没生效。低危（只影响展示位置），但同 §3「字段缓存」
         // 那一类是同一个病，接上 reload 比留个「以后再修」干净。
         swallow("回档后", "hall.yml", () -> plugin.hallShrine().reloadOrigin());
+        // v2.26.5（审计嫌疑）：metrics-*.yml 回档已修，但看板的 cache（启动时读入后
+        // 只 append/merge）与 lastPruneDay 没重建——回档后 /zhujian metrics 与 CSV 导出
+        // 仍显示回档前的趋势。reload() = stop+start，start() 会 refreshCacheAsync 按盘
+        // 重建并重置裁剪游标。
+        swallow("回档后", "metrics-*.yml", () -> plugin.metrics().reload());
         // v2.26.0：与 flushAll 同一批 —— 这两份被覆盖后必须按盘重建内存，否则旧副本会在
         // 下一次 record()（结算点同步写）/ append()（每次评分都写）时整份回写，
         // 把刚恢复的文件原样盖回去。这正是 v2.23.1 那个 P0 的同型，不能只加清单。

@@ -197,6 +197,15 @@ public final class EnchantService {
             return false;
         }
 
+        // v2.26.5（审计嫌疑 #3）：空白书 + 附魔注册表全空时，random() 产不出任何词条，
+        // 原来走到掷骰成功后才 return——币和矿已经扣了，无退款。先探一次池子再扣费。
+        if (EnchantItem.bookEntry(plugin, book) == null
+                && plugin.enchants().random(
+                        java.util.concurrent.ThreadLocalRandom.current(), null) == null) {
+            Msg.prefix(player, "<red>没有可用的原创附魔（配置里全关了？），本次不扣费。</red>");
+            return false;
+        }
+
         // 先扣费，再掷骰：扣费失败就什么都别消耗
         var wallet = plugin.wallet();
         if (plan.coinCost() > 0 && !wallet.take(player, plan.coinCost(), CoinReason.ENCHANT)) {

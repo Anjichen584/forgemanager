@@ -17,7 +17,7 @@ import java.util.TreeMap;
 public final class EvolutionRegistry {
 
     private final Settings settings;
-    private final Map<Integer, EvolutionStage> stages = new TreeMap<>();
+    private final java.util.NavigableMap<Integer, EvolutionStage> stages = new TreeMap<>();
 
     private boolean enabled;
     /** 品质加成：品质序数（ROUGH=0..MYTHIC=5）每档加多少成功率 */
@@ -142,11 +142,14 @@ public final class EvolutionRegistry {
      */
     public double cumulativeMult(int stage) {
         double mult = 1.0;
-        for (int i = 1; i <= stage; i++) {
-            EvolutionStage s = stages.get(i);
-            if (s != null) {
-                mult *= s.bonus();
-            }
+        if (stage <= 0 || stages.isEmpty()) {
+            return mult;
+        }
+        // v2.26.5（审计 #22）：stage 来自物品 PDC，老档/异档迁移可能残留超大值——
+        // 原来 for i<=stage 对 TreeMap 空转 2^31 次直接卡死主线程。改为只乘
+        // 「真实存在且 ≤ stage」的阶（headMap），语义不变、复杂度与阶数挂钩。
+        for (EvolutionStage s : stages.headMap(stage, true).values()) {
+            mult *= s.bonus();
         }
         return mult;
     }

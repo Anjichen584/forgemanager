@@ -6328,6 +6328,38 @@ public final class SelfTestSuite {
             require(tabEvent != null && tabEvent.contains("forgemaster.admin"),
                     "tabEvent 的 start/stop 必须按权限过滤");
         });
+        add(g, "v2.26.5 余项：死循环/除零/建档守卫（静态形状钉）", () -> {
+            if (findSourcePackageRoot() == null) {
+                plugin.getLogger().info("[selftest] 找不到源码树，跳过 v2.26.5 余项钉子");
+                return;
+            }
+            String cum = sourceMethodBody("evolve/EvolutionRegistry.java", "public double cumulativeMult(int stage)");
+            require(cum != null && cum.contains("headMap"),
+                    "cumulativeMult 必须按真实存在的阶乘乘（for i<=stage 对 PDC 残留超大值空转卡死主线程）");
+            String hammer = sourceMethodBody("forge/ForgeTuning.java", "public static int hammerInterval(");
+            require(hammer != null && hammer.contains("Math.max(0.1"),
+                    "hammerInterval 的乘区必须有 0.1 下限（配置负值 → Infinity tick 敲打指针卡死）");
+            String statsFn = sourceMethodBody("command/ForgingCommand.java", "private void stats(CommandSender");
+            require(statsFn != null && statsFn.contains("peek(target.getUniqueId())"),
+                    "stats 查任意名必须 peek（get 的 computeIfAbsent 会被 admin 刷空档）");
+            String panel = sourceMethodBody("ranking/ProfilePanel.java", "public static void show(");
+            require(panel != null && panel.contains("store.peek(uuid)"),
+                    "ProfilePanel 必须用 peek（get 的 computeIfAbsent 会被 admin 刷空档）");
+        });
+        add(g, "v2.26.5 回档对齐：seasons 只增不删 + 看板缓存重建（静态形状钉）", () -> {
+            if (findSourcePackageRoot() == null) {
+                plugin.getLogger().info("[selftest] 找不到源码树，跳过回档对齐钉子");
+                return;
+            }
+            String restore = sourceMethodBody("backup/BackupManager.java", "private void restore(");
+            require(restore != null && restore.contains("keepNames.contains"),
+                    "restore 必须清掉 seasons/ 里备份点没有的归档（季号退回后不许看到未来的档案）");
+            require(restore != null && restore.contains("plugin.metrics().reload()"),
+                    "reloadAllSilently 必须重建看板缓存（回档后 metrics 仍显示回档前趋势 = 视图与盘面分裂）");
+            String start = sourceMethodBody("metrics/MetricsService.java", "public void start() {");
+            require(start != null && start.contains("lastPruneDay = null"),
+                    "start() 必须重置裁剪游标（回档/重载后当天目录要能重扫）");
+        });
         add(g, "contest history：赛果归档往返 + 保留 N 届裁剪 + 同届幂等（v2.26.0）", () -> {
             // 用自检专用文件，不碰真实 contest-history.yml；finally 删档 = 净效果为零
             java.io.File tmp = new java.io.File(plugin.getDataFolder(), "selftest-contest-history.yml");

@@ -468,7 +468,13 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             Msg.prefix(sender, "<red>控制台请指定玩家名。</red>");
             return;
         }
-        StatsStore.Stats st = plugin.stats().get(target.getUniqueId());
+        // v2.26.5（审计嫌疑 #2）：get() 是 computeIfAbsent——admin 反复查随机名
+        // 会在内存 + data.yml 里刷空档（stats of 公开路径 v2.26.0 已改 peek，这里跟上）
+        StatsStore.Stats st = plugin.stats().peek(target.getUniqueId());
+        if (st == null) {
+            Msg.prefix(sender, "<gray>" + target.getName() + " 没有档案（没进过服或没锻过剑）。</gray>");
+            return;
+        }
         Quality q = Quality.byName(st.bestQuality);
         Msg.send(sender, "<dark_gray>──── <white>锻造档案</white> <dark_gray>────");
         Msg.send(sender, "<gray>玩家: <white>" + (target.getName() == null ? "?" : target.getName()));

@@ -29,7 +29,10 @@ public final class ForgeTuning {
         if (!enabled(plugin)) {
             return plugin.settings().hammerIntervalTicks();
         }
-        double mult = 1.0 + perTier(plugin, "hammer-speed-per-tier", 0.12) * span(tier);
+        // v2.26.5（审计嫌疑）：mult 无下界——hammer-speed-per-tier 配成负数时
+        // 除数可能为 0/负，除出 Infinity 后 round 成 Integer.MAX_VALUE tick，
+        // 敲打指针永不走（锻打工序静默卡死）。夹个下限。
+        double mult = Math.max(0.1, 1.0 + perTier(plugin, "hammer-speed-per-tier", 0.12) * span(tier));
         return Math.max(1, (int) Math.round(plugin.settings().hammerIntervalTicks() / mult));
     }
 
