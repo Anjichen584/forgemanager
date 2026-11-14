@@ -1,10 +1,10 @@
-# 铸剑大师 · ForgingMaster v2.26.1
+# 铸剑大师 · ForgingMaster v2.26.2
 
 Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「烧红 → 敲打 → 叠钢 → 开刃 → 抛光 → 嵌银丝 → 淬火」的手感搬进 MC，
 锻完之后还有委托、比试、耐久、剑币经济、师徒、成就、段位、剑灵、剑冢、世界事件、剧情、名人堂、商会、拍卖行、排行与赛季。
 
 - 目标 Java：**21+**
-- 构建产物：`target/ForgingMaster-2.26.1.jar`
+- 构建产物：`target/ForgingMaster-2.26.2.jar`
 - 无第三方依赖，纯 Paper API + MiniMessage
 - `config-version`：**23**
 

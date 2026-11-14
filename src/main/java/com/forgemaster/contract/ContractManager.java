@@ -200,12 +200,14 @@ public final class ContractManager {
 
     // ------------------------------------------------------------ 加入 / 退出
 
+    // v2.26.2 修复：原来已签守卫是 `r.joined && r.day > 1`，周目第 1 天重复 join 会
+    // 绕过判定再发一轮圣物三选一（offer 只排除已持有），刷满圣物池。改为只要已签就拒绝。
     public String join(Player p) {
         if (!active()) {
             return "<red>龙税契约未开启。";
         }
         ContractStore.Run r = store.ensure(p.getUniqueId());
-        if (r.joined && r.day > 1) {
+        if (r.joined) {
             return "<gray>你已经在契约中了——今天要交 <white>" + requirement(r.day, r.missed, relicBonus(p.getUniqueId()))
                     + "</white> 估值。";
         }

@@ -341,7 +341,22 @@ public final class EnchantService {
         }
 
         EnchantItem.write(plugin, target, entries);
-        player.getInventory().setItemInMainHand(target);
+        // 把改好的装备放回**它原本所在的那只手**。
+        //
+        // 以前这里是 `setItemInMainHand(target)` —— 无条件写主手，于是实际能走到的
+        // 唯一姿势（主手拿书、副手拿剑，见 EnchantListener 只处理 EquipmentSlot.HAND）
+        // 会同时坏两件事：
+        //   ① 剑被写进主手，把书覆盖掉 → 书凭空消失（玩家白丢一本）
+        //   ② 副手那把剑仍在原地 → 一把剑变两把（**物品复制**）
+        // 两者都是「右键一次就刷出来」的量产漏洞，比数值不平衡严重得多。
+        org.bukkit.inventory.PlayerInventory inv = player.getInventory();
+        ItemStack mainNow = inv.getItemInMainHand();
+        if (mainNow != null && EnchantItem.isBook(mainNow)) {
+            // 主手还是书 → 装备原本在副手，写回副手，别碰主手
+            inv.setItemInOffHand(target);
+        } else {
+            inv.setItemInMainHand(target);
+        }
         player.playSound(player.getLocation(), org.bukkit.Sound.BLOCK_ENCHANTMENT_TABLE_USE, 1f, 1.5f);
         Msg.prefix(player, "<#a78bfa>已附上 <white>" + entry.def().display() + " "
                 + EnchantItem.roman(entries.stream()

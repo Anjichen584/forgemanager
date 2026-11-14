@@ -5165,6 +5165,28 @@ public final class SelfTestSuite {
         return n;
     }
 
+    /**
+     * 数一个玩家背包里某种材质的**总件数**（含主手 / 副手 / 盔甲槽）。
+     *
+     * <p>用来钉「物品守恒」类断言：复制 bug 的表现就是某个材质凭空多出来，
+     * 光看「手上有没有」是抓不到的（旧 bug 里主手和副手同时都有剑）。</p>
+     */
+    private static int countMaterial(org.bukkit.inventory.PlayerInventory inv,
+                                     org.bukkit.Material material) {
+        int n = 0;
+        for (org.bukkit.inventory.ItemStack it : inv.getContents()) {
+            if (it != null && it.getType() == material) {
+                n += it.getAmount();
+            }
+        }
+        // getContents() 不含副手（它在 45 号槽，属于 getContents 之外）
+        org.bukkit.inventory.ItemStack off = inv.getItemInOffHand();
+        if (off != null && off.getType() == material) {
+            n += off.getAmount();
+        }
+        return n;
+    }
+
     /** 按 Lore 前缀数行数（剑意行不能堆） */
     private static long loreRowsStartingWith(ItemStack item, String prefix) {
         var meta = item.getItemMeta();
@@ -6066,6 +6088,30 @@ public final class SelfTestSuite {
             } finally {
                 store.remove(u); // 净效果为零，不污染真实 contract.yml
             }
+        });
+        add(g, "contract join：已签守卫无第 1 天例外，重复 join 不许再发圣物（v2.26.2）", () -> {
+            // 原守卫带 day 例外，周目第 1 天重复 /zhujian contract join 每次都重新
+            // offerRelics（offer 只排除已持有），刷满整个圣物池。join(Player) 需要
+            // 在线玩家，装置调不了，按方法体钉源码形状（守恒律：已签即拒绝）。
+            java.io.File pkgRoot = findSourcePackageRoot();
+            if (pkgRoot == null) {
+                plugin.getLogger().info("[selftest] 找不到源码树，跳过 contract join 守卫钉子");
+                return;
+            }
+            java.io.File src = new java.io.File(pkgRoot, "contract/ContractManager.java");
+            require(src.isFile(), "找不到 ContractManager.java");
+            String code;
+            try {
+                code = new String(java.nio.file.Files.readAllBytes(src.toPath()),
+                        java.nio.charset.StandardCharsets.UTF_8);
+            } catch (java.io.IOException ex) {
+                throw new IllegalStateException("读不到 ContractManager.java: " + ex.getMessage());
+            }
+            String body = methodBody(code, "public String join(Player p)");
+            require(body != null, "join(Player) 方法体切不出来");
+            require(body.contains("if (r.joined)"), "join 的已签守卫必须是 if (r.joined)：已签即拒绝");
+            require(!body.contains("r.day > 1"), "join 守卫不许再带 day 例外（第 1 天重复 join 会刷圣物）");
+            require(body.contains("offerRelics"), "join 的首签发圣物路径必须还在（防钉子改错地方）");
         });
         add(g, "contest history：赛果归档往返 + 保留 N 届裁剪 + 同届幂等（v2.26.0）", () -> {
             // 用自检专用文件，不碰真实 contest-history.yml；finally 删档 = 净效果为零
@@ -7496,6 +7542,75 @@ public final class SelfTestSuite {
                 require(plugin.tombs().saveChecked(), "tombs.yml 写不进去，取剑会被永久拦住"));
         // v2.25.8：碎剑留档**允许挑战**（残影按 brokenAt 加强），这是既定设计不是漏洞。
         // 以前被当成 P1 误报过一轮 —— 这条钉子把结论固定在代码里，别再翻案。
+        add(g, "附魔上书不会复制物品（主手书+副手剑：书消耗一本、剑不多一把）", () -> {
+            // 这条钉子的由来：applyBook 以前无条件 `setItemInMainHand(target)`，
+            // 而 EnchantListener 只处理主手右键 → 实际唯一能走到的姿势就是
+            // 「主手书、副手剑」，于是剑被写进主手（覆盖书）、副手那把剑还在，
+            // **右键一次多一把剑**，是能批量刷的量产漏洞。
+            //
+            // 这里不复现整个事件，只钉住「计数守恒」这条不变式：
+            // 上书前后，(剑数, 书数) 必须变成 (剑数, 书数-1)。
+            org.bukkit.entity.Player p = org.bukkit.Bukkit.getOnlinePlayers().stream()
+                    .findFirst().orElse(null);
+            if (p == null) {
+                return;   // 无人在线时跳过（和 Tab 那条钉子同口径）
+            }
+            var inv = p.getInventory();
+            // 记录原始背包，测完原样还原（自检不许给玩家留副作用）
+            org.bukkit.inventory.ItemStack[] backup = inv.getContents().clone();
+            try {
+                inv.clear();
+                // 造一把「虚构的锻造剑」：只要有 FORGED 标记 + 武器材质就够 applyBook 放行
+                org.bukkit.inventory.ItemStack sword =
+                        new org.bukkit.inventory.ItemStack(org.bukkit.Material.IRON_SWORD);
+                var sm = sword.getItemMeta();
+                sm.getPersistentDataContainer().set(
+                        com.forgemaster.util.Keys.FORGED,
+                        org.bukkit.persistence.PersistentDataType.BYTE, (byte) 1);
+                sword.setItemMeta(sm);
+
+                var def = plugin.enchants().get("charge");
+                require(def != null, "找不到「蓄锋」定义，钉子无法建立");
+                org.bukkit.inventory.ItemStack book = com.forgemaster.enchant.EnchantItem.book(
+                        plugin, new com.forgemaster.enchant.EnchantEffects.Entry(def, 3));
+
+                int swordsBefore = countMaterial(inv, org.bukkit.Material.IRON_SWORD);
+                int booksBefore = countMaterial(inv, org.bukkit.Material.ENCHANTED_BOOK);
+                require(swordsBefore == 1, "测试前置失败：包里应有 1 把剑，实际 " + swordsBefore);
+                require(booksBefore == 1, "测试前置失败：包里应有 1 本书，实际 " + booksBefore);
+
+                // 主手书、副手剑 —— 真实玩家唯一能触发的姿势
+                inv.setItemInMainHand(book);
+                inv.setItemInOffHand(sword);
+
+                plugin.enchantTable().applyBook(p, book, inv.getItemInOffHand());
+
+                int swordsAfter = countMaterial(inv, org.bukkit.Material.IRON_SWORD);
+                int booksAfter = countMaterial(inv, org.bukkit.Material.ENCHANTED_BOOK);
+                require(swordsAfter == swordsBefore,
+                        "附魔后剑变多了：" + swordsBefore + " → " + swordsAfter
+                                + "（applyBook 又把装备写回主手了 —— 这是物品复制）");
+                // 书由监听器扣减；applyBook 本身不动书，所以这里只要求「没变多」
+                require(booksAfter <= booksBefore,
+                        "附魔书变多了：" + booksBefore + " → " + booksAfter);
+                // 主手不该被剑占掉：书的消耗交给监听器，applyBook 不许越权盖主手
+                org.bukkit.inventory.ItemStack mainAfter = inv.getItemInMainHand();
+                require(mainAfter == null || mainAfter.getType().isAir()
+                                || mainAfter.getType() == org.bukkit.Material.ENCHANTED_BOOK,
+                        "applyBook 把装备写进了主手，覆盖了手上的书："
+                                + (mainAfter == null ? "null" : mainAfter.getType()));
+                // 剑必须还在副手，并且真的带上了附魔
+                org.bukkit.inventory.ItemStack offAfter = inv.getItemInOffHand();
+                require(offAfter != null
+                                && offAfter.getType() == org.bukkit.Material.IRON_SWORD,
+                        "副手的剑不见了 —— 装备被搬到了别的手");
+                var entries = com.forgemaster.enchant.EnchantItem.of(plugin, offAfter);
+                require(entries.stream().anyMatch(e -> e.def().id().equals("charge")),
+                        "副手的剑上没有蓄锋 —— 附魔没写进去");
+            } finally {
+                inv.setContents(backup);
+            }
+        });
         add(g, "碎剑留档可被挑战（设计如此：残影按碎在 +N 加强）", () -> {
             // levelOf 用 brokenAt 抬等级，只有挑战路径会调到它；
             // 若将来有人给挑战加 broken gate，这里的镜像断言会先红。
