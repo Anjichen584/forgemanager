@@ -246,6 +246,24 @@ def main():
             return 3
         print("[stress] 服已就绪")
 
+    # v2.26.5：真机世界可能跑在 Peaceful（本服实测就是）——敌对生物生成被服务端拒绝，
+    # 秘境守卫全生成失败，tombrun 阶段只能测「退款」测不了「双花拒绝」。压测期间切
+    # easy，跑完恢复原值；这些命令走 RCON，只在「服已就绪」之后执行。
+    prev_difficulty = None
+    sys.path.insert(0, os.path.join(REPO, "tools"))
+    try:
+        import rcon as _rcon
+        _sock = socket.create_connection(("127.0.0.1", RCON_PORT), timeout=10)
+        if _rcon.login(_sock, RCON_PASS):
+            cur = _rcon.run_command(_sock, 1, "difficulty", settle_seconds=0.5) or ""
+            if "Peaceful" in cur or "peaceful" in cur:
+                prev_difficulty = "peaceful"
+                _rcon.run_command(_sock, 2, "difficulty easy", settle_seconds=0.5)
+                print("[stress] 检测到 Peaceful，压测期间临时切 easy（结束恢复）")
+        _sock.close()
+    except OSError as ex:
+        print("[stress] 难度预检失败（继续，守卫类阶段可能测不到）：" + str(ex))
+
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     # 记下压测开始时刻：summarize() 用它识别「report 是上一次跑剩下的旧文件」。
     # 之前踩过：32 bot 超时被杀，summarize() 读了 2 bot 的旧报告，打出 PASS 52 / FAIL 0。
@@ -273,6 +291,18 @@ def main():
         timed_out = True
 
     out = summarize(stamp, started_at=started_at, timed_out=timed_out)
+
+    if prev_difficulty:
+        sys.path.insert(0, os.path.join(REPO, "tools"))
+        try:
+            import rcon as _rcon
+            _sock = socket.create_connection(("127.0.0.1", RCON_PORT), timeout=10)
+            if _rcon.login(_sock, RCON_PASS):
+                _rcon.run_command(_sock, 3, "difficulty " + prev_difficulty, settle_seconds=0.5)
+            _sock.close()
+            print("[stress] 已恢复原难度：" + prev_difficulty)
+        except OSError as ex:
+            print("[stress] 恢复难度失败（记得手动 /difficulty peaceful）：" + str(ex))
 
     if started_here and not args.keep:
         stop_server()

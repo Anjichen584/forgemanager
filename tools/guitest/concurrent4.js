@@ -388,8 +388,15 @@ phases.tombrun = async (bots) => {
     if (c < 0) fail(area, bot.username + ' 余额为负', `剑币 ${c}（双花透了）`)
     else if (c > 350) fail(area, bot.username + ' 反向加钱', `剑币 ${c} > 350`)
     else pass(area, bot.username + ' 余额不为负', `剑币 ${c}（花掉 ${350 - c}） 回执 ${entered} 行`)
-    if ((text.match(/门票|入场|进入秘境/g) || []).length >= 2) {
+    // v2.26.5：退款回执「守卫没能凝成形（门票已退回）」含「门票」二字，曾被误判成
+    // 重复入场——先把退款行剥掉再数入场证据；退款本身只说明守卫没生成（难度/区域
+    // 限制），双花守恒已由余额断言守住，降级 WARN 不算 FAIL。
+    const refunds = (text.match(/门票已退回/g) || []).length
+    const entryish = (text.replace(/门票已退回/g, '').match(/门票|入场|进入秘境/g) || []).length
+    if (entryish >= 2) {
       fail(area, bot.username + ' 重复入场', text.slice(0, 300))
+    } else if (refunds >= 2) {
+      warn(area, bot.username + ' 守卫没生成（环境前置）', `退款 ${refunds} 次——双花拒绝路径没测到`)
     }
     burst(bot, ['/zhujian tombrun quit'])
     await wait(500)
@@ -1059,15 +1066,19 @@ phases.contract = async (bots) => {
     await settle(bot, 2200)
     const text = take(bot).join(' | ')
     if (/未开启|没有开启/.test(text)) { warn(area, bot.username, '契约功能没开'); continue }
-    // 实际文案是「契约已签。」—— 第一版正则漏了它，白报了 32 条 WARN
-    const joined = /契约已签|已签约|加入|已生效/.test(text)
+    // 实际文案是「契约已签。」—— 第一版正则漏了它，白报了 32 条 WARN。
+    // v2.26.3 起 quit 不删档：quit→join 走「复活继承」路径回「契约已续」
+    // （圣物不重发，防 quit 刷圣物），这也是正确起点，别当「没签上」。
+    const joined = /契约已签|已签约|已生效/.test(text)
+    const revived = /契约已续|重新接纳/.test(text)
     const after = await coins(bot.username)
     if (after === null) { warn(area, bot.username, '读不到剑币'); continue }
     const joinHits = (text.match(/契约已签/g) || []).length
+    const reviveHits = (text.match(/契约已续/g) || []).length
     if (after < 0) fail(area, bot.username + ' 余额为负', String(after))
-    else if (!joined) warn(area, bot.username + ' 没签上', text.slice(0, 160))
+    else if (!joined && !revived) warn(area, bot.username + ' 没签上', text.slice(0, 160))
     else pass(area, bot.username + ' 重复 join 不重复收钱',
-        `重复提示 ${joinHits} 次，币 ${before} → ${after}（差值 ${before - after}）`)
+        `首签 ${joinHits} / 续签 ${reviveHits} 次，币 ${before} → ${after}（差值 ${before - after}）`)
   }
 }
 
