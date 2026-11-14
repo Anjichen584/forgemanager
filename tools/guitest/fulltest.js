@@ -20,7 +20,7 @@ const TOP_LEVEL = [
   'profile', 'rank', 'season', 'codex', 'relicset', 'collection', 'salvage',
   'dissolve', 'imprint', 'board', 'duel', 'repair', 'manual', 'record', 'copy',
   'contest', 'grade', 'gem', 'enchant', 'ench', 'strengthen', 'hammer', 'evolve',
-  'contract', 'shangjin', 'money', 'env', 'story', 'spectrum', 'pass', 'halloffame',
+  'shangjin', 'money', 'env', 'story', 'spectrum', 'pass', 'halloffame',
   'hall', 'power', 'fixattrs', 'config', 'metrics', 'givefull', 'auction', 'order',
   'master', 'title', 'accept', 'guild', 'shop', 'blackmarket', 'signin', 'talent',
   'forge', 'event', 'backup', 'restore', 'help'

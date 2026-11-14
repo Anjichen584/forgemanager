@@ -599,7 +599,8 @@ public final class ForgingMasterPlugin extends JavaPlugin {
             "strengthen.big-sword.enabled",
             "strengthen.big-sword.min-level",
             "strengthen.big-sword.multiplier",
-            "combat.crit.max-chance", "combat.crit.max-damage", "combat.crit.base-multiplier",
+            // v2.26.7：无兜底的纯内容段进清单（丢了既不告警也不自愈）
+            "blackmarket.pool", "season-pass.levels",
     };
 
     /** 老版本的 config.yml 不会自动补新键（避免冲掉用户注释），这里只提醒一句 */

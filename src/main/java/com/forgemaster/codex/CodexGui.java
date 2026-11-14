@@ -31,7 +31,7 @@ public final class CodexGui {
 
     public static final int SIZE = 54;
 
-    /** 六个页签槽位（0-5），顺序与 CodexService.CATEGORIES 一致 */
+    /** 五个页签槽位（0-4），顺序与 CodexService.CATEGORIES 一致 */
     public static final int TAB_QUALITY = 0;
     public static final int TAB_FORM = 1;
     public static final int TAB_SCORE = 2;

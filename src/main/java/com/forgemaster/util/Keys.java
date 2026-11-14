@@ -173,7 +173,7 @@ public final class Keys {
     /** 玩家 PDC：剑魂传承——碎剑等级按比例记在玩家身上，下一把新铸的剑直接自带 */
     public static NamespacedKey INHERIT_LEVEL;
 
-    // ---- v2.14 龙税周目 ----
+    // ---- v2.14 剑型 ----
     /** 剑型 id（ForgeTax sword forms 的移植，估值乘区用） */
     public static NamespacedKey FORM;
 
@@ -312,7 +312,7 @@ public final class Keys {
         CORNERSTONE_USED = new NamespacedKey(plugin, "cornerstone_used");
         INHERIT_LEVEL = new NamespacedKey(plugin, "inherit_level");
 
-        // ---- v2.14 龙税周目 ----
+        // ---- v2.14 剑型 ----
         FORM = new NamespacedKey(plugin, "form");
 
         // ---- v2.15 铁砧强化 ----

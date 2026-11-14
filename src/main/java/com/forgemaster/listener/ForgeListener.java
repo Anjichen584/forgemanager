@@ -70,7 +70,7 @@ public final class ForgeListener implements Listener {
                 return;
             }
             // v2.23.1 修 P2-E：原先缺「点击者 = 会话主人」这道校验，而同文件的
-            // ContractHolder / EvolutionHolder 都有。任何让第三方看到同一份 Inventory
+            // EvolutionHolder 也有。任何让第三方看到同一份 Inventory
             // 的途径（/invsee 类、共享界面、GUI 同步 mod）都能替别人点「放弃 / 淬火选择」，
             // 白丢材料。handleClick 内部落账用的是 session.player()，所以这里不匹配就直接
             // return（事件已在上面 setCancelled(true)，不会放行任何点击）。

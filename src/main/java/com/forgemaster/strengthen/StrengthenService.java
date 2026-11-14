@@ -560,7 +560,7 @@ public final class StrengthenService {
         return Math.max(0, plugin.settings().intOf("strengthen.inherit.cap", 20));
     }
 
-    /** 每次锤击推进狂热：进度攒满换次数；狂热期间每次消耗一次（圣物可加次数） */
+    /** 每次锤击推进狂热：进度攒满换次数；狂热期间每次消耗一次 */
     private void tickFrenzy(ItemStack item, boolean frenzyActive, int extraAttempts) {
         if (frenzyActive) {
             writeInt(item, Keys.FRENZY_LEFT, Math.max(0, frenzyLeftOf(item) - 1));
@@ -661,7 +661,7 @@ public final class StrengthenService {
                 return new int[]{Math.max(0, lv - 1), 0};
             }
             default -> {
-                // HOLD / BREAK / REFUSED：等级不动，连击归零（圣物护住时由调用方另处理）
+                // HOLD / BREAK / REFUSED：等级不动，连击归零（v2.26.7 起无圣物护住）
                 return new int[]{lv, 0};
             }
         }
@@ -678,7 +678,7 @@ public final class StrengthenService {
      * @param combo       当前连击
      * @param noLossArmed 无损连击是否已攒满（这一锤必成）
      * @param kindleBonus 旺火符这类临时加成（百分点）
-     * @param rb          圣物聚合加成
+     * @param relicSuccess/relicGreat/relicBreakMult 中性占位（v2.26.7 圣物退场后恒 0/0/1.0）
      * @param frenzy      炉魂狂热中（不碎）
      * @param cornerstone 基石护体生效中（不碎）
      */
@@ -715,7 +715,7 @@ public final class StrengthenService {
         return oddsOf(item, kindleBonus, 0, 0, 1.0);
     }
 
-    /** 同上，带圣物聚合加成（在线玩家的真实 odds 走这个） */
+    /** 同上，中性参数版（v2.26.7 圣物退场后全仓只走这一个重载） */
     public double[] oddsOf(ItemStack item, double kindleBonus,
                            double relicSuccess, double relicGreat, double relicBreakMult) {
         int level = Math.max(0, levelOf(item));
@@ -770,7 +770,7 @@ public final class StrengthenService {
     /**
      * Monte Carlo 推演：从这把剑当前等级锤到目标级，期望要多少锤 / 剑币 / 材料、碎几把剑。
      *
-     * <p>口径（诚实声明）：按「无连击、无狂热、无符、无圣物、无炉魂保底」的裸状态推演。
+     * <p>口径（诚实声明）：按「无连击、无狂热、无符、无炉魂保底」的裸状态推演。
      * 真实敲砧会攒无损连击与炉魂狂热，实际开销只会比这里低——所以结果按<b>上界</b>读。</p>
      *
      * <p>碎剑按剑魂传承重开（{@code floor(碎时等级 × inheritRate())}，封顶 {@code inheritCap()}）；
@@ -838,13 +838,10 @@ public final class StrengthenService {
         return o[0];
     }
 
-    /** 剑魂传承：碎剑把 {@code floor(等级 × rate)} 记到玩家 PDC 上，
-     * 下一次 ForgeManager 结算新剑时由 {@link #applyInherit} 消费。
-     * （v2.26.7：残誓圣物的传承加成随龙税契约移除。） */
     /**
      * 剑魂传承：碎剑把 {@code floor(等级 × rate)} 记到玩家 PDC 上，
      * 下一次 ForgeManager 结算新剑时由 {@link #applyInherit} 消费。
-     * 残誓圣物给传承比例加成。
+     * （v2.26.7：残誓圣物随龙税契约移除，加成已退场。）
      */
     public void grantInherit(Player player, int brokenLevel) {
         double rate = inheritRate();
@@ -965,7 +962,7 @@ public final class StrengthenService {
      *
      * <p>守恒口径：保险费收了不退（没碎等于买了平安）；碎剑退款只含该锤材料、
      * 不含剑币手续费——手续费买的是落锤资格，材料才是被保险物。
-     * 护胚符 / 凤凰灰 / 基石护体把「碎」救回来的情况不算碎，不触发理赔。</p>
+     * 护胚符 / 基石护体把「碎」救回来的情况不算碎，不触发理赔。</p>
      */
 
     /** 保险总开关（strengthen.insure.enabled） */
@@ -1334,7 +1331,7 @@ public final class StrengthenService {
         if (cornerstone) {
             writeInt(item, Keys.CORNERSTONE_USED, cornerUsedOf(item) + 1);
         }
-        // 每次落锤都算「打铁」：狂热进度照攒（圣物可加狂热次数上限）
+        // 每次落锤都算「打铁」：狂热进度照攒
         tickFrenzy(item, frenzy, 0);
 
         double roll = random.nextDouble();
@@ -1409,16 +1406,15 @@ public final class StrengthenService {
         int needPoints = furnaceNeed(level);
         int furnaceNow = Math.min(needPoints, furnaceOf(item) + 1);
         writeInt(item, Keys.FURNACE, furnaceNow);
-        if (true) {
-            writeInt(item, Keys.STRENGTHEN_COMBO, 0);
-        }
+        // v2.26.7：蜡线圣物退场——连击一律断
+        writeInt(item, Keys.STRENGTHEN_COMBO, 0);
         int comboNow = 0;
         String tail = "<dark_gray> · 炉火 " + furnaceNow + "/" + needPoints
                 + "<newline>" + oddsText + "<newline>"
                 + "连击断了。" + "</dark_gray>";
 
         if (tier == Tier.BREAK) {
-            // ---- 碎裂：凤凰灰（每日一次免碎）→ 护胚符 → 真碎 ----
+            // ---- 碎裂：护胚符救回 → 真碎 ----
             String head = "<red>碎裂！</red><dark_gray>（碎率 " + Msg.fmt(odds[0] * 100, 0) + "%）";
             boolean hasTalisman = Charm.enabled(plugin, Charm.TALISMAN)
                     && Charm.count(player, Charm.TALISMAN) > 0;

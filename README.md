@@ -109,7 +109,7 @@ Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「�
 | 赛季通行证 | `/zhujian pass`：免费轨道通行证，锻造行为攒进度，记录存 `pass-data.yml`（拓展第二档） |
 | 行会商会 | `/zhujian guild`：行会商会社交层，数据存 `guild-data.yml`（拓展第三档） |
 | 名人殿堂 | `/zhujian hall`（admin）：ItemDisplay 平躺展示排行前三名，30s 定时重刷（拓展第一档） |
-| PAPI 占位符 | 装 PlaceholderAPI 后开放 8 个 `%forgemaster_*%` 占位符（反射挂载，没装静默跳过）（拓展第一档） |
+| PAPI 占位符 | 装 PlaceholderAPI 后开放 7 个 `%forgemaster_*%` 占位符（反射挂载，没装静默跳过）（拓展第一档） |
 | 匠人天赋 | 每 5 级 1 点，七项自选（容差 / 命中区 / 控火 / 叠钢 / 开刃 / 词条 / 经验）；经验曲线同时砍陡（v2.9） |
 | 备份回档 | 一键备份存档文件，回档前自动备份当前存档 |
 | 黑市 | `/zhujian blackmarket`（别名 heishi）：每个现实日按权重抽 4 件消耗型特价上架（只卖符 / 锻造原料 / 图纸），折扣 0.55~0.8；同一天全服同货同价，每人每件每天限购 2 次，进度存 `daily-data.yml`（v2.18.0） |
@@ -223,7 +223,7 @@ Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「�
 
 ### PlaceholderAPI 占位符（拓展第一档）
 
-装上 PlaceholderAPI 即自动挂载（反射，没装 PAPI 或 `placeholder.enabled: false` 时静默跳过），共 8 个：
+装上 PlaceholderAPI 即自动挂载（反射，没装 PAPI 或 `placeholder.enabled: false` 时静默跳过），共 7 个：
 
 | 占位符 | 说明 |
 | --- | --- |

@@ -1013,7 +1013,7 @@ phases.spiritReroll = async (bots) => {
     else if (spent < 2000) fail(area, bot.username + ' 重抽扣费不守恒', `成功 1 次应扣 2000，实扣 ${spent}`)
     else if (spent === 2000) pass(area, bot.username + ' 重抽扣费守恒', `实扣 ${spent}，余 ${after}`)
     else warn(area, bot.username + ' 重抽窗口内余额被别处改动',
-      `实扣 ${spent}（含重抽 2000 + 外生 ${spent - 2000}：多为游戏内夜间龙税结算，非本断言可归因），余 ${after}`)
+      `实扣 ${spent}（含重抽 2000 + 外生 ${spent - 2000}：多为外生全服扣费，非本断言可归因），余 ${after}`)
     // ④ 每日限（默认 1 次）：再预览要被拦，且不许扣钱
     take(bot)
     bot.chat('/zhujian spirit reroll')

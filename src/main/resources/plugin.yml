@@ -17,7 +17,7 @@ commands:
       /zhujian <strengthen|hammer|evolve|repair|dissolve|imprint|enchant|ench|gem|grade|salvage>
       /zhujian <manual|record|copy|money|shop|blackmarket|signin>
       /zhujian <board|order|auction|guild|master|accept|duel|contest>
-      /zhujian <spirit|tomb|tombrun|contract|shangjin|forge|event>
+      /zhujian <spirit|tomb|tombrun|shangjin|forge|event>
       【管理员】/zhujian <give|givefull|reload|selftest|backup|restore|config|metrics|fixattrs|halloffame|hall>
     aliases: [ forge, zj, dazhu, zhujianmaster, forgemaster, fm ]
 

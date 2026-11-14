@@ -210,12 +210,11 @@ def main():
     #   bid           加价链 → 最高价唯一 + 被超的钱全退
     #   burst         10 条只读风暴 → 日志不许吐异常、人不许被踢
     #   spiritReroll  nonce 一次性 + 扣费守恒（本轮红过的两处之一）
-    #   contract      三连 join 只许收一次钱（本轮红过的另一处）
     # 这些是**守恒律**断言，不看文案格式；剩下的阶段多是单点功能验证，
     # 改动没碰到的路径不必每轮全跑。
     # 注意：--key 不是「通过标准」的替代品。发版前仍应跑一次全量。
     if args.key and not args.phases:
-        args.phases = ["auction", "bid", "burst", "spiritReroll", "contract"]
+        args.phases = ["auction", "bid", "burst", "spiritReroll", "tombrun"]
         print("[stress] --key：只跑关键子集 %s（约 17 分钟；发版前请跑全量）"
               % ", ".join(args.phases))
 

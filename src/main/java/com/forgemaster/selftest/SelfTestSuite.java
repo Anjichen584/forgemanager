@@ -503,7 +503,7 @@ public final class SelfTestSuite {
         registerV210();
         registerEvolution();
         registerTickets();
-        registerContractLoop();
+        registerV214();
         registerForgingExtra();
     }
 
@@ -796,9 +796,9 @@ public final class SelfTestSuite {
         });
     }
 
-    // ---------------------------------------------------------------- v2.14 龙税周目 / 剑型 / 悬赏
+    // ---------------------------------------------------------------- 剑型 / 悬赏 / 强化曲线
 
-    private void registerContractLoop() {
+    private void registerV214() {
         String g = "v2.14 剑型 / 悬赏 / 强化曲线";
 
 
@@ -2471,7 +2471,7 @@ public final class SelfTestSuite {
                 double[] o = s.odds(lv, 0, false, 0, 0, 0, 1.0, false, false);
                 double sum = o[0] + o[1] + o[2] + o[3] + o[4];
                 require(Math.abs(sum - 1.0) < 1e-9, "五态概率和不是 1: " + sum + " @+" + lv);
-                // 大成项必须就是 greatBase（裸锤、无连击、无圣物）
+                // 大成项必须就是 greatBase（裸锤、无连击）
                 require(Math.abs(o[3] - s.greatBase()) < 1e-9,
                         "大成概率和 greatBase 不一致 @+" + lv);
                 // 成功 + 大成 必须就是成功率
@@ -3599,8 +3599,7 @@ public final class SelfTestSuite {
                         "reforge", "strip", "graft", "jianyi", "merge"));
                 expects.put("strengthen reforge", List.of("gui", "info"));
                 expects.put("evolve", List.of("sim", "now"));
-                expects.put("contract", List.of("join", "quit", "deposit"));
-                expects.put("shangjin", List.of("claim"));
+                        expects.put("shangjin", List.of("claim"));
                 expects.put("contest", List.of("start", "list", "watch", "gui"));
                 expects.put("season", List.of("end"));
                 expects.put("rank", List.of("coins", "reputation", "streak", "level",
@@ -3867,7 +3866,6 @@ public final class SelfTestSuite {
                     {"anvil", "anvils.yml"},
                     {"auction", "auction.yml"},
                     {"order", "orders.yml"},
-                    {"contract", "contract.yml"},
                     {"guild", "guild-data.yml"},
                     {"pass", "pass-data.yml"},
                     {"codex", "codex-data.yml"},

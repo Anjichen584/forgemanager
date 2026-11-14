@@ -85,8 +85,7 @@ async function main () {
     ['/zhujian give TabBot iron ', ['ROUGH', 'LEGENDARY', 'MYTHIC']],
     ['/zhujian enchant ', ['extract']],
     ['/zhujian evolve ', ['sim', 'now']],
-    ['/zhujian contract ', ['join', 'quit', 'deposit']],
-    ['/zhujian rank ', ['coins', 'reputation', 'streak', 'level', 'text']],
+        ['/zhujian rank ', ['coins', 'reputation', 'streak', 'level', 'text']],
     ['/zhujian forge ', ['risk', 'cancel']],
     ['/zhujian halloffame ', ['set', 'clear']],
     // v2.23.5 那组「同步存量数据」的指令：主名 + 别名 + 第二层都要补得出来

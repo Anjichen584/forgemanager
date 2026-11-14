@@ -1239,7 +1239,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             Msg.send(p, "<gray>期望碎剑 <white>" + Msg.fmt(plan.expBreaks(), 1)
                     + "</white> 把<dark_gray>（碎后按剑魂传承重开）</dark_gray> · 达成率 <white>"
                     + Msg.fmt(plan.reachedRate() * 100, 1) + "%</white>");
-            Msg.send(p, "<dark_gray>口径：裸状态（无连击/狂热/符/圣物），实际只会更省；结果按上界读。"
+            Msg.send(p, "<dark_gray>口径：裸状态（无连击/狂热/符），实际只会更省；结果按上界读。"
                     + (plan.cappedRuns() > 0 ? " 发散 " + plan.cappedRuns() + " 局未计入达成。" : "")
                     + "</dark_gray>");
             return;
@@ -1947,7 +1947,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             Msg.prefix(sender, "<green>已回档到 <white>" + args[1] + "</white>。</green>"
                     + " <gray>回档前的存档已自动备份为 <white>" + preId + "</white>。");
             // v2.23.1：restore 现在会 flush 全部 → 备份 → 覆盖 → 只重载（不 save），
-            // SAVE_FILES 里的存档（当前 22 份，见 BackupManager）内存态都已按文件重建，
+            // SAVE_FILES 里的存档（当前 21 份，见 BackupManager）内存态都已按文件重建，
             // 外加数据根目录的 metrics-*.yml 与 seasons/ 目录。
             // 仍建议重启，因为个别模块的 5 秒冲刷可能与重载擦肩。
             Msg.prefix(sender, "<#ff9a3c>存档与内存缓存已同步重建（覆盖 "

@@ -45,7 +45,7 @@ public final class CodexListener implements Listener {
             return;
         }
 
-        // 页签：0-5
+        // 页签：0-4
         if (slot >= 0 && slot < CodexService.CATEGORIES.size()) {
             String tab = CodexService.CATEGORIES.get(slot);
             if (!tab.equals(holder.tab())) {

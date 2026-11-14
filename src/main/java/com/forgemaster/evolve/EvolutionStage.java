@@ -26,13 +26,15 @@ public record EvolutionStage(int index, int level, String title, String color,
         // v2.17.3 乘区重定：各阶 bonus 连乘 ≈ ×1.77（旧值连乘 ≈ ×5.0，
         // 叠上强化 +60% 后满配直接 +699%，太夸张）。改的是默认值，
         // 服主配置里写死的数字以配置为准。
+        // v2.26.7：同步 step14 重定后的现行表（原 defaults 是 2.19.2 前的旧经济曲线，
+        // evolution.stages 段缺失的盘会回退到旧值——第 6 阶期望 9.7 万币）。
         return new EvolutionStage[]{
-                new EvolutionStage(1, 5, "精钢", "#7fd3ff", 1.08, 600, 8, 0.95, 1),
-                new EvolutionStage(2, 10, "寒钢", "#4ee36b", 1.08, 1500, 16, 0.88, 1),
-                new EvolutionStage(3, 15, "流星", "#b06bff", 1.10, 4000, 24, 0.78, 2),
-                new EvolutionStage(4, 20, "传世", "#ffb84d", 1.10, 9000, 32, 0.66, 2),
-                new EvolutionStage(5, 25, "不朽", "#ff3d6e", 1.12, 20000, 48, 0.52, 3),
-                new EvolutionStage(6, 30, "造化", "#ffd166", 1.12, 45000, 64, 0.40, 3),
+                new EvolutionStage(1, 5, "精钢", "#7fd3ff", 1.06, 600, 8, 0.95, 1),
+                new EvolutionStage(2, 10, "寒钢", "#4ee36b", 1.07, 1400, 16, 0.88, 1),
+                new EvolutionStage(3, 15, "流星", "#b06bff", 1.09, 3000, 24, 0.78, 2),
+                new EvolutionStage(4, 20, "传世", "#ffb84d", 1.10, 6000, 32, 0.66, 2),
+                new EvolutionStage(5, 25, "不朽", "#ff3d6e", 1.12, 12000, 48, 0.52, 3),
+                new EvolutionStage(6, 30, "造化", "#ffd166", 1.15, 24000, 64, 0.40, 3),
         };
     }
 }

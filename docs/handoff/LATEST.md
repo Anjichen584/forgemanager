@@ -14,7 +14,10 @@
 | 版本 | **2.26.7**（整模块移除：龙税契约） |
 | 产物 | `target/ForgingMaster-2.26.7.jar`（main 干净版；priv 版在 dist/） |
 | `config-version` | 23（本轮不加配置键） |
-| 自检 | **实测 550 项 / 通过 550 / 失败 0**（main 口径，真机 RCON + `-Dforgemaster.source-root`，静态钉子真执行；priv 分支实测 **553/0**，含管理员注入 3 钉） |
+| config 事故与修复 | 删 contract 段时误切走后面 10 个段（87 键丢失，自检当场红）——从上一版 git 对象重建完整 config.yml。教训：按顶层键切段，不能用两个注释锚点夹逼 |
+| 全量检修 | 三路子智能体检修 27 条全部落地：Tab expect/guard 死行/死重载/死键/EvolutionStage 默认表/REQUIRED 清单/玩家文案与注释 |
+| 自检 | **实测 549 项 / 通过 549 / 失败 0**（priv 2.26.7 真机 RCON 实测；main = 549 − 3 管理员钉 = 546 推算） |
+| 诊断增强 | 模拟器概率钉子的失败信息带上 o[3]/o[4]/successChance 实际值（上轮一次红为重启竞态，重跑即绿；带数值的断言让下一条红能直接定位） |
 | 静态钉子跳过数 | **0**（上一轮是 22 —— 这是本轮最重要的修复） |
 **终审轮（v2.26.6 收口）**：独立回归审查确认三轮修复无 P1/P2 回归；6 条 P3 当场清掉 5 条
 （Keys 注释复位、webhook 字段 volatile、行会 autosave 挂守卫、TaskGuard 重入约定、
@@ -52,7 +55,8 @@ isSimilar 收剑唯一点钉子补齐——原注释宣称有钉但没写）。�
 | 注入面 | `Msg.esc/escText` 统一清洗口；附魔台物品名、剑冢兜底名×2、殿堂铭牌、剑谱名、蜕变品名 五处出口套用；行会名字符白名单；剑名拒收 RTL/零宽/控制字符 |
 
 钉子 +6，v2.26.5 再 +2（余项守卫 / 回档对齐；回档对齐钉子的 marker 曾写错——restore 是
-public synchronized String 签名、metrics 重建在 reloadAllSilently，自检当场抓出当场修），
+public synchronized String 签名、metrics 重建在 reloadAllSilently，自检当场抓出当场修）。
+priv 分支追加：helpLines 钉子改切 3 参 owner 重载（priv 拆了重载后 2 参薄壳切不出 SAVE_FILES.length，属 priv 专属假红）。
 均按仓库惯例带「找不到源码树即跳过」守卫（不带 flag 起服不假红；带 `-Dforgemaster.source-root` 才真正执行）。
 **逐条证据与完整台账见 `docs/history/v2.26.x.md` 十五·五。**
 
