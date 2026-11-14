@@ -31,7 +31,7 @@
 
 ---
 
-## 八、剑灵、剑冢、极限锻造、世界事件、剧情
+## 八、剑灵、剑冢、世界事件、剧情
 
 ### 剑灵（`/zhujian spirit`）
 - 击中敌人养灵（`spirit.gain-per-hit`），`spirit feed` 花剑币喂养，`spirit name 剑名` 起名（存 PDC）。
@@ -42,9 +42,6 @@
 - `tomb challenge 编号` 付费挑战复刻，成功得剑币与声望，失败扣声望且挑战费不退。
 - `tomb take 编号` 取回（`owner-can-retrieve` 与 `retrieve-fee` 可配）。
 
-### 极限锻造（`/zhujian forge risk` / `forge cancel`）
-- `forge risk` 预设下一把剑按极限模式开工：命中区缩窄、成功分数加成，但每阶段结束有炸剑概率，炸剑材料全失并断链。
-- `forge cancel` 撤销预设。成品打 `RISK_MADE` 标记。
 
 ### 世界事件（`/zhujian event`）
 - 按 `events.interval-minutes` 定时开一场（默认 60 分钟，持续 180 秒），也可由管理员 `event start <id>` / `event stop` 手动控制。

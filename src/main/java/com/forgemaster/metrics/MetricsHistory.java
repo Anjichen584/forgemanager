@@ -27,7 +27,6 @@ import java.util.logging.Logger;
  *   refund: 1200            # 其中退款回滚
  *   consumed: 96550
  *   forged: 812
- *   breaks: 40
  *   modules:
  *     shop: 300
  *     gem: 100
@@ -38,7 +37,6 @@ import java.util.logging.Logger;
  *     produced: 0           # 当日累计（不含退款）
  *     consumed: 0
  *     forged: 0
- *     breaks: 0
  *     modules: { }
  * </pre>
  *
@@ -73,7 +71,7 @@ public final class MetricsHistory {
      * <p>{@code producedRaw} 是含退款的原始产出，{@code refund} 单列——这样当日产出
      * 与文字报表同口径（剔除退款），但基线本身仍能对上 {@code StatsStore} 的原始计数。</p>
      */
-    public record Base(long producedRaw, long refund, long consumed, long forged, long breaks,
+                       public record Base(long producedRaw, long refund, long consumed, long forged,
                        Map<String, Long> modules) {
 
         public Base {
@@ -81,7 +79,6 @@ public final class MetricsHistory {
             refund = Math.max(0L, refund);
             consumed = Math.max(0L, consumed);
             forged = Math.max(0L, forged);
-            breaks = Math.max(0L, breaks);
             modules = modules == null || modules.isEmpty()
                     ? Map.of()
                     : Collections.unmodifiableMap(new LinkedHashMap<>(modules));
@@ -99,10 +96,10 @@ public final class MetricsHistory {
         /** 从一次采集结果立基线（当天第一条样本） */
         public static Base of(MetricsData data) {
             if (data == null) {
-                return new Base(0, 0, 0, 0, 0, Map.of());
+                return new Base(0, 0, 0, 0, Map.of());
             }
             return new Base(data.producedRaw, data.refund, data.consumed,
-                    data.forged, data.breaks, data.consumedBy);
+                    data.forged, data.consumedBy);
         }
     }
 
@@ -222,7 +219,7 @@ public final class MetricsHistory {
         }
         return new Base(sec.getLong("produced", 0L), sec.getLong("refund", 0L),
                 sec.getLong("consumed", 0L), sec.getLong("forged", 0L),
-                sec.getLong("breaks", 0L), modules);
+                modules);
     }
 
     /**
@@ -251,7 +248,6 @@ public final class MetricsHistory {
                         asLong(map.get("produced")),
                         asLong(map.get("consumed")),
                         asLong(map.get("forged")),
-                        asLong(map.get("breaks")),
                         asModules(map.get("modules"))));
             } catch (RuntimeException ignored) {
                 // 单条坏样本不该让整天的趋势消失
@@ -332,7 +328,6 @@ public final class MetricsHistory {
             yml.set("baseline.refund", base.refund());
             yml.set("baseline.consumed", base.consumed());
             yml.set("baseline.forged", base.forged());
-            yml.set("baseline.breaks", base.breaks());
             for (Map.Entry<String, Long> e : base.modules().entrySet()) {
                 yml.set("baseline.modules." + e.getKey(), e.getValue());
             }
@@ -355,7 +350,6 @@ public final class MetricsHistory {
         map.put("produced", s.produced());
         map.put("consumed", s.consumed());
         map.put("forged", s.forged());
-        map.put("breaks", s.breaks());
         map.put("modules", new LinkedHashMap<>(s.modules()));
         return map;
     }

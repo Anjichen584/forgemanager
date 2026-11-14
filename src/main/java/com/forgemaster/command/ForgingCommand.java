@@ -165,7 +165,6 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             case "blackmarket", "heishi" -> blackmarket(sender);
             case "signin", "qiandao" -> signin(sender);
             case "talent", "tianfu" -> talent(sender, args);
-            case "forge", "jixian" -> forgeRisk(sender, args);
             case "event", "shijian" -> worldEvent(sender, args);
             case "backup", "beifen" -> backup(sender);
             case "restore", "huandang" -> restore(sender, args);
@@ -1559,7 +1558,17 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
                     return;
                 }
             }
-            Msg.prefix(p, bm.claim(p, index));
+            // v2.26.1：领赏改两段式。第三段是不是 confirm 决定「预览」还是「真收剑」——
+            // claim() 内部会把非 confirm 的调用当成预览（只摊开剑与金额，不动任何东西）。
+            // 照 spirit reroll / dissolve 的惯例，queren 也能当 confirm 用。
+            boolean confirm = args.length >= 4
+                    && (args[3].equalsIgnoreCase("confirm") || args[3].equalsIgnoreCase("queren"));
+            String out = bm.claim(p, index, confirm);
+            // 预览分支自己已经把多行消息发完了，返回空串 —— 不能走 Msg.prefix，
+            // 否则玩家会收到一条只剩前缀的空消息。
+            if (out != null && !out.isBlank()) {
+                Msg.prefix(p, out);
+            }
             return;
         }
         for (String piece : bm.describe()) {
@@ -2265,7 +2274,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
                             + d.produced() + "</#8ce99a> <white>消耗</white> <#ffa8a8>-"
                             + d.consumed() + "</#ffa8a8> <white>净</white> "
                             + (d.net() >= 0 ? "<#8ce99a>+" : "<#ffa8a8>") + d.net() + "</>"
-                            + " <gray>锻造 " + d.forged() + " · 碎裂 " + d.breaks() + "</gray>");
+                            + " <gray>锻造 " + d.forged() + "</gray>");
                 }
                 for (String line : svc.trendText().split("<newline>")) {
                     if (!line.isBlank()) {
@@ -3183,40 +3192,6 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         }
     }
 
-    // ------------------------------------------------------------ 极限锻造（D3）
-
-    /** /zhujian forge risk：预设下一把剑按极限模式开工；/zhujian forge cancel 撤销预设 */
-    private void forgeRisk(CommandSender sender, String[] args) {
-        if (!(sender instanceof Player p)) {
-            Msg.prefix(sender, "<red>极限锻造要在游戏里用。</red>");
-            return;
-        }
-        if (args.length < 2 || !"risk".equalsIgnoreCase(args[1]) && !"cancel".equalsIgnoreCase(args[1])) {
-            Msg.prefix(p, "<gray>用法：<white>/zhujian forge risk</white> 预设极限锻造（下一把剑生效）· "
-                    + "<white>/zhujian forge cancel</white> 撤销");
-            return;
-        }
-        if ("cancel".equalsIgnoreCase(args[1])) {
-            com.forgemaster.forge.RiskMode.disarm(p.getUniqueId());
-            Msg.prefix(p, "<gray>已撤销极限锻造预设。");
-            return;
-        }
-        if (!com.forgemaster.forge.RiskMode.enabled(plugin)) {
-            Msg.prefix(p, "<red>极限锻造没开（risk.enabled = false）。</red>");
-            return;
-        }
-        if (plugin.forge().isBusy(p)) {
-            Msg.prefix(p, "<red>你手上还有活儿没干完，干完再预设。</red>");
-            return;
-        }
-        com.forgemaster.forge.RiskMode.arm(p.getUniqueId());
-        Msg.prefix(p, "<#ff5252><bold>极限锻造已预设</bold></#ff5252><gray>：下一把剑锻打更快、命中区更窄、"
-                + "成功分数 +" + String.format(java.util.Locale.ROOT, "%.0f",
-                (com.forgemaster.forge.RiskMode.scoreMultiplier(plugin) - 1) * 100)
-                + "%，但每个阶段都可能炸剑（材料全失、连锻断）。5 分钟内选剑胚生效。");
-        plugin.forge().openMenu(p);
-    }
-
     // ------------------------------------------------------------ 世界事件（D4）
 
     /** /zhujian event [status|start <id>|stop]，start/stop 需要管理员权限 */
@@ -3536,8 +3511,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         addHelp(out, u + "tomb", "剑冢：list · bury 埋剑 · take / challenge / info / remove <编号>");
         addHelp(out, u + "tombrun", "秘境：enter 进图 · status 看进度 · quit 退出");
         addHelp(out, u + "contract", "龙税契约：不带参开面板 · join / quit / deposit · pick <1|2|3> 补领圣物");
-        addHelp(out, u + "shangjin", "每日悬赏：不带参看货单 · claim <序号> 领赏");
-        addHelp(out, u + "forge", "极限锻造：risk 预设下一把 · cancel 撤销");
+        addHelp(out, u + "shangjin", "每日悬赏：不带参看货单 · claim <序号> 看预览 · 再 claim <序号> confirm 才交剑");
         addHelp(out, u + "event", "世界事件：不带参看状态 · start [id] / stop（这两个要管理员）");
         addHelp(out, u + "help", "这张表");
 
@@ -3968,8 +3942,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             List.of("anvil", "tiean", "zhen"),
             List.of("master", "shifu"),
             List.of("accept"),
-            // ---- 极限锻造 / 世界事件 / 帮助 ----
-            List.of("forge", "jixian"),
+            // ---- 世界事件 / 帮助 ----
             List.of("event", "shijian"),
             List.of("help"),
             // ---- 服主 ----
@@ -4059,7 +4032,6 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             case "contest", "dasai" -> tabContest(sender, args);
             case "season", "jijie" -> tabSeason(sender, args);
             case "rank", "paihang" -> tabRank(args);
-            case "forge", "jixian" -> tabForge(args);
             // ---- 名人堂 / 殿堂 ----
             case "halloffame" -> tabHallOfFame(args);
             case "hall" -> tabHall(args);
@@ -4316,6 +4288,11 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             int count = plugin.bounties() == null ? 3 : plugin.bounties().current().size();
             return filter(affixSlots(Math.max(1, count)), args[2]);
         }
+        // v2.26.1：领赏要 confirm 才真收剑 —— Tab 到第 4 段就给这一条，
+        // 玩家不用去记「到底要不要写 confirm」。
+        if (args.length == 4) {
+            return filter(List.of("confirm"), args[3]);
+        }
         return List.of();
     }
 
@@ -4365,12 +4342,6 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         return List.of();
     }
 
-    private List<String> tabForge(String[] args) {
-        if (args.length == 2) {
-            return filter(List.of("risk", "cancel"), args[1]);
-        }
-        return List.of();
-    }
 
     private List<String> tabHallOfFame(String[] args) {
         if (args.length == 2) {

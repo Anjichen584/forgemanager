@@ -1,10 +1,10 @@
-# 铸剑大师 · ForgingMaster v2.26.0
+# 铸剑大师 · ForgingMaster v2.26.1
 
 Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「烧红 → 敲打 → 叠钢 → 开刃 → 抛光 → 嵌银丝 → 淬火」的手感搬进 MC，
 锻完之后还有委托、比试、耐久、剑币经济、师徒、成就、段位、剑灵、剑冢、世界事件、剧情、名人堂、商会、拍卖行、排行与赛季。
 
 - 目标 Java：**21+**
-- 构建产物：`target/ForgingMaster-2.26.0.jar`
+- 构建产物：`target/ForgingMaster-2.26.1.jar`
 - 无第三方依赖，纯 Paper API + MiniMessage
 - `config-version`：**23**
 
@@ -36,7 +36,8 @@ Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「�
 
 | 版本 | 一句话 | 详情 |
 | --- | --- | --- |
-| **2.26.0** | **战力曲线 + 历届赛果 + 比试排行 + 公开档案**：新增 `power compare` / `power log`（最近 12 条评分曲线）、`contest history`（历届冠军档案）、`rank duel` 第六维、`stats of`（白名单公开档案）；**三轮审计共修 22 条**：`stats of` 用 `get()` 会为任意名字建空档案（改 `peek`）、`contest.history-keep` 只在 Java 默认值里（补 config + step32）、三份存档漏在备份清单外、`metrics/` 整目录替换是死代码（快照实为根目录散文件）、`story-progress.yml` 裸 `save()` 违反 YamlIo 规则、存档守卫表三行文件名写错导致三个模块从未被检查、压测超时会读旧报告假装全绿（自检 545/545、压测 32 并发 17 阶段 667/1/0） | [十五·一](docs/history/v2.26.x.md) |
+| **2.26.1** | **三件「不可逆操作」与「回档链路」收口**：悬赏领赏改**两段式确认**（原来一步收剑、不可撤销，玩家整理背包时手滑就丢主属性最好的剑；现照 `spirit reroll` 的写法预览 + `confirm`，并用「品质+强化+锻阶+剑名+灵性」指纹把确认绑到预览那把剑上，退服即清）；`bounty-data.yml` 补 `flush`（原是全仓唯一「有 reload 无 flush」的项，回档后内存旧 `claimed` 会整份回写、静默吞掉回档）；`HallShrine` 补 `reloadOrigin`（`origin` 是字段缓存，回档换了 `hall.yml` 它不知道，殿堂原点停在旧坐标直到重启）。`metrics-export-*.csv` 与 `papi-cache/` 查证后确认**不该进备份**（可再生 / 是缓存），改为写清原因。**另按用户要求整模块移除极限锻造（`forge risk`）与剑身环绕（`spirit show\|hide`）**——两者都来自 `5c9b40e`「v2.23.1 查错+收敛」，非本轮所加；连带清掉整条碎剑率统计链路（`breaks` 唯一数据源就是炸剑，留着是永远 0 的假指标）、`risk-made`/`risk-lost` 称号维度、两个 PDC 键（自检 539/539，550→539 是随功能删钉） | [十五·二](docs/history/v2.26.x.md) |
+| **2.26.0** | **战力曲线 + 历届赛果 + 比试排行 + 公开档案**：新增 `power compare` / `power log`（最近 12 条评分曲线）、`contest history`（历届冠军档案）、`rank duel` 第六维、`stats of`（白名单公开档案）；**三轮审计共修 26 条**：`stats of` 用 `get()` 会为任意名字建空档案（改 `peek`）、`contest.history-keep` 只在 Java 默认值里（补 config + step32）、三份存档漏在备份清单外、`metrics/` 整目录替换是死代码（快照实为根目录散文件）、`story-progress.yml` 裸 `save()` 违反 YamlIo 规则、存档守卫表三行文件名写错导致三个模块从未被检查、压测超时会读旧报告假装全绿（自检 550/550 当时、压测 32 并发 17 阶段 667/1/0） | [十五·一](docs/history/v2.26.x.md) |
 | **2.25.9** | **三条「钱货时序」收口**：金库存钱 / 捐基金写盘失败就退回（虚拟钱不进内存账）、签到存档失败回滚内存进度（不再「已签但没发奖」）；行会两个钱口统一走 `wallet().take`；压测补 3 阶段并修掉「掉线 bot 仍参与断言」的脚本坑（自检 528/528，压测 318/0/0） | [十四·补二十](docs/history/v2.25.x.md#十四补二十v2259行会金库的账本口径--签到落盘返回值--压测补三个阶段) |
 | **2.25.8** | **签到发奖顺序 + 取剑写盘成败**两条 P1 收口：构造奖励提到发钱之前、写盘失败不再「币到手记录回滚」；取剑落盘失败不再静默（自检 525/525） | [十四·补十九](docs/history/v2.25.x.md#十四补十九v2258签到与取剑的两处钱货时序) |
 | **2.25.7** | **四条 P1 收口（钱货时序）**：付费轨「先扣钱后记录」→ 先落盘再扣钱（写盘失败一分不扣）；领奖记录落盘失败不再静默（可对账，防重启重领）；黑市限购改成「先占额度→落盘→才发货」（防崩溃刷折扣货）；`wallet().give` 返回值不再丢（照拍卖行 `warnLost`）；`anvil-forge.enabled` 补到 `strike`/`strikeBatch`（原来只关了进场） | [v2.25.x](docs/history/v2.25.x.md) |
@@ -87,7 +88,6 @@ Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「�
 | 环境修正 | 天气与时辰影响加热、淬火收益、叠钢时间与开刃绿区 |
 | 剑灵 | 击中敌人养灵，可喂养、起名，灵性到档位解锁灵契词条 |
 | 剑冢 | 埋剑入冢全服可见，他人付费挑战复刻，成功得剑币与声望 |
-| 极限锻造 | 预设下一把剑：命中区缩窄、分数加成，但阶段结束有炸剑概率 |
 | 世界事件 | 定时或手动开启（如陨星降临），地面刷星材 |
 | 剧情 | 按锻造与委托进度推进章节 |
 | 名人堂 | 盔甲架陈列前几名，定时刷新 |
@@ -101,7 +101,6 @@ Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「�
 | 星陨套装 | `/zhujian relicset`：按材料件数判定的独立套装（config 驱动，与词条套装共存），示例套装带「落星斩」技能（拓展第二档） |
 | 名剑谱 | `/zhujian spectrum`：条目 config 驱动的名剑谱，达成登记可领奖，记录存 `spectrum-data.yml`（拓展第二档） |
 | 赛季通行证 | `/zhujian pass`：免费轨道通行证，锻造行为攒进度，记录存 `pass-data.yml`（拓展第二档） |
-| 剑灵显形 | `/zhujian spirit show\|hide`：灵性达标的命名剑主手显形 ItemDisplay 浮游体（拓展第三档） |
 | 行会商会 | `/zhujian guild`：行会商会社交层，数据存 `guild-data.yml`（拓展第三档） |
 | 名人殿堂 | `/zhujian hall`（admin）：ItemDisplay 平躺展示排行前三名，30s 定时重刷（拓展第一档） |
 | PAPI 占位符 | 装 PlaceholderAPI 后开放 8 个 `%forgemaster_*%` 占位符（反射挂载，没装静默跳过）（拓展第一档） |
@@ -179,7 +178,6 @@ Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「�
 | `/zhujian accept` | 收下拜师邀请 |
 | `/zhujian spirit [info\|feed\|name 剑名\|show\|hide]` | 剑灵（别名 `jianling`）；`show` / `hide` 开关主手显形浮游体（灵性达标才有效） |
 | `/zhujian tomb [list\|bury\|take 编号\|challenge 编号\|info 编号\|remove 编号]` | 剑冢（别名 `jiantomb` `jianzhong`；`remove` 需 admin） |
-| `/zhujian forge risk` / `forge cancel` | 极限锻造预设 / 撤销 |
 | `/zhujian event [status]` | 查看世界事件 |
 | `/zhujian contract [join\|quit\|deposit]`（别名 `longshui` `shui`） | 龙税契约（v2.19.2）：不带参开面板，`join` 签约 / `quit` 退出 / `deposit` 交税 |
 | `/zhujian shangjin [claim <序号>]`（别名 `bounty` `xuanshang`） | 每日悬赏：不带参看今日货单，`claim` 领赏（按现实日换单，v2.23.4 修「重启当天变空」） |
@@ -273,7 +271,6 @@ Minecraft **1.21.11**（Paper / Purpur 兼容）锻造小游戏插件。把「�
 | `talent` | 匠人天赋：每几点给 1 点 `points-per-level`、洗点费用 `reset-cost`（v2.9） |
 | `proficiency` | 剑意：开关、Lore 开关、门槛 `tiers`、档名 `tier-names`、加成 `bonuses`、PVP 开关、播报门槛 |
 | `strengthen.season-catchup` | 赛季追赶：开关、上限 `max-bonus`、等级阈值 `level-threshold`、每日 `per-day` |
-| `risk` | 极限锻造：命中区缩窄、分数加成、炸剑概率 |
 | `events` | 世界事件：间隔、时长、刷星频率、各事件类型 |
 | `spirit` | 剑灵：灵性上限、喂养花费、灵契词条数、档位名 |
 | `tomb` | 剑冢：每人上限、取回规则、挑战费与奖惩 |

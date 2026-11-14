@@ -388,6 +388,15 @@ public final class BackupManager {
         swallow(stage, "daily-data.yml", () -> plugin.dailyStore().save());
         swallow(stage, "season.yml", () -> plugin.seasons().save());
         swallow(stage, "hall-strengthen.yml", () -> plugin.hallOfFame().strengthen().save());
+        // v2.26.0 审计轮补：bounty-data.yml 原是全仓唯一「有 reload 无 flush」的项。
+        // 回档把文件换成旧的，内存里还是回档前的 claimed，下一次 claim() 的 save()
+        // 会整份回写 —— 回档结果被静默吞掉，连日志都没有。与 v2.23.1 / v2.25 同型。
+        //
+        // 注：hall.yml 这里**故意没有一行**，不是漏了。它的两次写（/zhujian halloffame set
+        // 整份重写、HallShrine.setOrigin 改 shrine 段）都是变更即写盘，没有内存脏窗口，
+        // 所以 flush 不产生任何内容差异。它需要的是 reload（见 reloadAllSilently），
+        // 因为 HallShrine.origin 是字段缓存。
+        swallow(stage, "bounty-data.yml", () -> plugin.bounties().flush());
         // v2.26.0：这两份都不走 markDirty + 异步冲刷，落盘时机各不相同，所以必须在这里显式落：
         // ① contest-history 只在结算点写一次（赛果不可再生），没有定时器兜底；
         // ② power-log 每次 append 就写（观测数据，同样没有定时器兜底）；
@@ -445,6 +454,12 @@ public final class BackupManager {
             swallow("回档后", "anvils.yml", () -> plugin.anvilForge().loadFrom(anvilsFile));
         }
         swallow("回档后", "bounty-data.yml", () -> plugin.bounties().reload());
+        // v2.26.0 审计轮补：hall.yml 覆盖后必须刷掉 HallShrine 的字段缓存。
+        // origin() 是惰性加载 + 一次缓存，回档换了文件它并不知道 —— 于是「殿堂原点」
+        // 在回档后到重启前一直指向旧坐标，而 /zhujian hall set 写回去的还是缓存值，
+        // 等于回档对这个字段完全没生效。低危（只影响展示位置），但同 §3「字段缓存」
+        // 那一类是同一个病，接上 reload 比留个「以后再修」干净。
+        swallow("回档后", "hall.yml", () -> plugin.hallShrine().reloadOrigin());
         // v2.26.0：与 flushAll 同一批 —— 这两份被覆盖后必须按盘重建内存，否则旧副本会在
         // 下一次 record()（结算点同步写）/ append()（每次评分都写）时整份回写，
         // 把刚恢复的文件原样盖回去。这正是 v2.23.1 那个 P0 的同型，不能只加清单。

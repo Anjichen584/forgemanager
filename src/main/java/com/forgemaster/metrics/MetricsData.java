@@ -23,7 +23,7 @@ import java.util.Map;
  * 抄完这份不可变数据就可以随便丢给异步线程，之后主线程怎么改都影响不到它。
  * 这也是任务书「异步任务不能遍历 Bukkit 集合」的落地方式。</p>
  *
- * <p>字段口径：{@code producedRaw} / {@code consumed} / {@code forged} / {@code breaks}
+ * <p>字段口径：{@code producedRaw} / {@code consumed} / {@code forged}
  * 全是<b>服务器生命周期</b>累计（{@code StatsStore} 的计数器不随赛季重置）。
  * 当日增量由 {@link MetricsSample#ofDay} 与基线相减得到。</p>
  */
@@ -31,8 +31,7 @@ public final class MetricsData {
 
     /** 单个玩家的计数副本（模块热度 / 使用深度用） */
     public record PlayerRow(int forged, int bestStrengthen, int level, long coins,
-                            int salvaged, int repaired, int riskMade, int riskLost,
-                            double bestScore) {
+                            int salvaged, int repaired, double bestScore) {
     }
 
     /** 采样时的在线人数 */
@@ -53,8 +52,6 @@ public final class MetricsData {
     public final Map<String, Long> consumedBy;
 
     public final long forged;
-    public final long breaks;
-    public final long riskMade;
     public final long salvaged;
     public final long repaired;
     public final long spirits;
@@ -75,7 +72,7 @@ public final class MetricsData {
     public final List<PlayerRow> rows;
 
     public MetricsData(int online, int players, long totalCoins, long producedRaw, long consumed,
-                       long refund, long forged, long breaks, long riskMade, long salvaged,
+                       long refund, long forged, long salvaged,
                        long repaired, long spirits, long tombs, long commissionsDone,
                        long commissionsFailed, long duelWins, long duelLosses, long achvPoints,
                        Map<String, Long> producedBy, Map<String, Long> consumedBy,
@@ -87,8 +84,6 @@ public final class MetricsData {
         this.consumed = Math.max(0L, consumed);
         this.refund = Math.max(0L, refund);
         this.forged = Math.max(0L, forged);
-        this.breaks = Math.max(0L, breaks);
-        this.riskMade = Math.max(0L, riskMade);
         this.salvaged = Math.max(0L, salvaged);
         this.repaired = Math.max(0L, repaired);
         this.spirits = Math.max(0L, spirits);
@@ -124,7 +119,7 @@ public final class MetricsData {
 
     /** 空数据（stats 未就绪 / 启动早期）：所有方法都安全返回 0 */
     public static MetricsData empty(int online) {
-        return new MetricsData(online, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        return new MetricsData(online, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 Map.of(), Map.of(), Map.of(), List.of(), List.of());
     }
 
@@ -135,10 +130,10 @@ public final class MetricsData {
      * （比如「当日增量 = 当前 − 基线 − 退款增量」这种纯算术）。</p>
      */
     public static MetricsData minimal(int online, long totalCoins, long producedRaw, long consumed,
-                                      long refund, long forged, long breaks,
+                                      long refund, long forged,
                                       Map<String, Long> producedBy, Map<String, Long> consumedBy) {
         return new MetricsData(online, 0, totalCoins, producedRaw, consumed, refund,
-                forged, breaks, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                forged, 0, 0, 0, 0, 0, 0, 0, 0, 0,
                 producedBy, consumedBy, Map.of(), List.of(), List.of());
     }
 
@@ -166,8 +161,6 @@ public final class MetricsData {
         }
 
         long forged = 0;
-        long breaks = 0;
-        long riskMade = 0;
         long salvaged = 0;
         long repaired = 0;
         long spirits = 0;
@@ -198,8 +191,6 @@ public final class MetricsData {
                 balances.add(bal);
                 coins = MetricsMath.add(coins, bal);
                 forged = MetricsMath.add(forged, Math.max(0, st.forged));
-                breaks = MetricsMath.add(breaks, Math.max(0, st.riskLost));
-                riskMade = MetricsMath.add(riskMade, Math.max(0, st.riskMade));
                 salvaged = MetricsMath.add(salvaged, Math.max(0, st.salvaged));
                 repaired = MetricsMath.add(repaired, Math.max(0, st.repaired));
                 spirits = MetricsMath.add(spirits, Math.max(0, st.spirits));
@@ -218,7 +209,7 @@ public final class MetricsData {
                     }
                 }
                 rows.add(new PlayerRow(st.forged, st.bestStrengthen, st.level, bal,
-                        st.salvaged, st.repaired, st.riskMade, st.riskLost, st.bestScore));
+                        st.salvaged, st.repaired, st.bestScore));
             } catch (RuntimeException ignored) {
                 // 单份坏档案跳过
             }
@@ -227,7 +218,7 @@ public final class MetricsData {
         return new MetricsData(online, balances.size(), coins,
                 stats.producedTotal(), stats.consumedTotal(),
                 amountOf(stats.producedByReason(), CoinReason.REFUND.key()),
-                forged, breaks, riskMade, salvaged, repaired, spirits, tombs,
+                forged, salvaged, repaired, spirits, tombs,
                 commDone, commFailed, duelW, duelL, achv,
                 stats.producedByReason(), stats.consumedByReason(), byQuality, balances, rows);
     }
@@ -344,11 +335,6 @@ public final class MetricsData {
         return 0;
     }
 
-    /** 极限锻造炸剑率 = 炸剑 / (成功 + 炸剑)；0 次尝试返回 0 */
-    public double breakRate() {
-        long attempts = MetricsMath.add(riskMade, breaks);
-        return MetricsMath.share(breaks, attempts);
-    }
 
     /** 档案数里有多少人用过某个计数（>= min 次）；rows 为空返回 0 */
     public int playersWithForgedAtLeast(int min) {

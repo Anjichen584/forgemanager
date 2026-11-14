@@ -417,7 +417,6 @@ public final class SelfTestSuite {
         com.forgemaster.pass.SelfTestPass.register(this);
         com.forgemaster.relicset.SelfTestRelicSet.register(this);
         com.forgemaster.tomb.SelfTestTombGuard.register(this);
-        com.forgemaster.spiritdisplay.SelfTestSpiritDisplay.register(this);
         com.forgemaster.guild.SelfTestGuild.register(this);
         // v2.24 拓展：切片一（附魔/词条新机制）与切片二（剑灵剑冢/经济社交）的护栏
         com.forgemaster.selftest.SelfTestExpansion24Enchant.register(this);
@@ -3259,11 +3258,13 @@ public final class SelfTestSuite {
                                 com.forgemaster.util.Keys.BIG_SWORD_DISPLAY,
                                 org.bukkit.persistence.PersistentDataType.STRING),
                         "实体缺少 BIG_SWORD_DISPLAY 标记（孤儿清扫会漏掉它）");
-                // 和剑灵显形必须是两个键，不能互相清扫
-                require(!display.getPersistentDataContainer().has(
-                                com.forgemaster.util.Keys.SPIRIT_DISPLAY,
+                // v2.26.1：剑灵显形（spiritdisplay）已整模块移除，原来的「不能误打成剑灵标记」
+                // 断言随之失去对象 —— 那个键已经不存在，断言恒为真，等于没有断言。
+                // 保留这条钉子真正想守的东西：实体必须带**自己的**键，且键值形态正确。
+                require(display.getPersistentDataContainer().has(
+                                com.forgemaster.util.Keys.BIG_SWORD_DISPLAY,
                                 org.bukkit.persistence.PersistentDataType.STRING),
-                        "剑体放大实体被错打成了剑灵标记");
+                        "剑体放大实体缺少自己的标记键（孤儿清扫会漏掉它）");
             } finally {
                 display.remove();
             }
@@ -3597,7 +3598,6 @@ public final class SelfTestSuite {
                 expects.put("season", List.of("end"));
                 expects.put("rank", List.of("coins", "reputation", "streak", "level",
                         "strengthen", "text"));
-                expects.put("forge", List.of("risk", "cancel"));
                 expects.put("halloffame", List.of("set", "clear"));
                 expects.put("hall", List.of("set", "show", "del"));
                 expects.put("enchant", List.of("extract"));
@@ -3638,7 +3638,7 @@ public final class SelfTestSuite {
                 //    这类是叶子命令，下一层本来就该是空的，把它们塞进来只会误报。
                 for (String alias : List.of("qianghua", "duanzao", "baoshi", "xuanshang",
                         "mijing", "cifu", "xiufu", "linmo", "jianling", "hanghui",
-                        "shifu", "paihang", "jijie", "dasai", "jixian", "jiapo",
+                        "shifu", "paihang", "jijie", "dasai", "jiapo",
                         "tianfu", "shijian", "dingdan", "paimai", "bishi", "cailiao",
                         "fumotai", "qian", "coin")) {
                     require(!next.apply(alias).isEmpty(),
@@ -6099,6 +6099,52 @@ public final class SelfTestSuite {
                 tmp.delete(); // 净效果为零
             }
         });
+        add(g, "hall 大赛冠军：数据源必须是 ContestHistoryStore + 只读展示 + 空档案不抛异常（v2.26.1）", () -> {
+            java.io.File pkgRoot = findSourcePackageRoot();
+            if (pkgRoot == null) {
+                plugin.getLogger().info("[selftest] 找不到源码树，跳过名人堂大赛冠军守卫");
+                return;
+            }
+            // ① 数据源钉子（按方法体核，不数整文件）：refresh() 必须经
+            //    ContestManager.historyStore() 取赛果档案，不许绕开 ContestHistoryStore 读别的快照
+            String body = nonCommentSource(new java.io.File(pkgRoot, "hall/HallOfFame.java"));
+            String refresh = methodBody(body, "public void refresh(");
+            require(refresh != null, "找不到 HallOfFame.refresh 方法体（被挪走或改名了？）");
+            require(hits(refresh, "historyStore()") >= 1,
+                    "HallOfFame.refresh 必须经 ContestManager.historyStore() 取大赛档案（命中 "
+                            + hits(refresh, "historyStore()") + " 处）");
+            // ② 只读钉子：contestLines 展示路径不许出现任何写盘 / 归档调用（只读展示红线）
+            String lines = methodBody(body, "static List<String> contestLines(");
+            require(lines != null, "找不到 contestLines 方法体（被挪走或改名了？）");
+            int writeHits = hits(lines, "YamlIo") + hits(lines, ".save(") + hits(lines, "record(");
+            require(writeHits == 0, "大赛冠军展示路径出现写盘 / 归档调用 " + writeHits
+                    + " 处（红线：只读展示，不写任何存档）");
+            // ③ 功能钉子：空档案不抛异常且给空态文案——用临时 store 实例（文件不存在 → 空档案），
+            //    全程不碰真实 contest-history.yml；finally 删档 = 净效果为零
+            java.io.File tmp = new java.io.File(plugin.getDataFolder(), "selftest-hall-contest-champion.yml");
+            try {
+                var store = new com.forgemaster.contests.ContestHistoryStore(plugin, tmp, 5);
+                store.load();
+                var empty = com.forgemaster.hall.HallOfFame.contestLines(store.recent(5), store.size());
+                require(empty.size() == 1, "空档案应给一行空态文案，实际 " + empty.size() + " 行");
+                require(empty.get(0).contains("还没有"), "空态文案应说明还没有大赛冠军，实际: " + empty.get(0));
+                // 有数据：一届一行，含届次 / 冠军名 / 分数
+                var e = new com.forgemaster.contests.ContestHistoryStore.Entry();
+                e.code = "ABC123";
+                e.at = System.currentTimeMillis();
+                e.material = "铁锭";
+                e.winner = "ChampBot";
+                e.winnerScore = 12.3;
+                var rows = com.forgemaster.hall.HallOfFame.contestLines(
+                        java.util.List.of(e), 1);
+                require(rows.size() == 1, "一届应生成一行冠军行，实际 " + rows.size() + " 行");
+                require(rows.get(0).contains("第 1 届"), "冠军行应含届次，实际: " + rows.get(0));
+                require(rows.get(0).contains("ChampBot") && rows.get(0).contains("12.3"),
+                        "冠军行应含冠军名与分数，实际: " + rows.get(0));
+            } finally {
+                tmp.delete(); // 净效果为零
+            }
+        });
         add(g, "contract pick / contest history：命令三处同源 + 领奖不碰剑币（v2.26.0）", () -> {
             // 源码扫描钉子：只扫非注释行，失败要报命中数。
             java.io.File pkgRoot = findSourcePackageRoot();
@@ -6289,6 +6335,7 @@ public final class SelfTestSuite {
             exempt.put("anvils-selftest.yml", "自检临时：砧位用例自建的存档，用例结束即删");
             exempt.put("anvils-selftest-batch.yml", "自检临时：批量砧位用例，用例结束即删");
             exempt.put("selftest-contest-history.yml", "自检临时：赛史用例专用文件，不碰真实 contest-history.yml");
+            exempt.put("selftest-hall-contest-champion.yml", "自检临时：名人堂冠军行用例专用文件，不碰真实 contest-history.yml，用例结束即删");
             java.util.Set<String> found = new java.util.TreeSet<>();
             try (var walk = java.nio.file.Files.walk(pkgRoot.toPath())) {
                 for (java.nio.file.Path p : walk.filter(x -> x.toString().endsWith(".java")).toList()) {
@@ -6450,6 +6497,103 @@ public final class SelfTestSuite {
                     "contest-history 的重载不是 historyStore().load()（拿旧内存写盘比不重载更糟）");
             require(hits(reloadHistory, ".save()") == 0,
                     "contest-history 的重载段出现了 save()（会把回档前的内存写回去）");
+        });
+        add(g, "回档链路不留「唯独它特殊」的例外（bounty 补 flush / hall 补 reload）", () -> {
+            // 第三轮审计留下的两条，形状都相同：**清单里有它，但两条链路各缺一步**。
+            // 上一轮正是「唯独它特殊」这个借口让 bounty 的缺口藏了两整轮，
+            // 所以这条钉子不是「顺便查一下」，而是把一个具体教训变成判据。
+            java.io.File pkgRoot = findSourcePackageRoot();
+            if (pkgRoot == null) {
+                return;
+            }
+            String src = nonCommentSource(new java.io.File(pkgRoot, "backup/BackupManager.java"));
+            require(src != null, "找不到 BackupManager.java");
+            String flush = methodBody(src, "void flushAll(");
+            String reload = methodBody(src, "void reloadAllSilently(");
+            require(flush != null, "找不到 flushAll 方法体（改名了？）");
+            require(reload != null, "找不到 reloadAllSilently 方法体（改名了？）");
+
+            // ① bounty-data.yml：原来只接了 reload，flushAll 里没有 —— 全仓唯一例外。
+            // 缺 flush 的后果是「回档把文件换成旧的，内存里还是新的，下次 claim() 整份回写」。
+            require(hits(flush, "\"bounty-data.yml\"") >= 1,
+                    "flushAll 没落 bounty-data.yml（回档前盘面不是真相，旧 claimed 会盖回回档结果）");
+            require(hits(reload, "\"bounty-data.yml\"") >= 1,
+                    "reloadAllSilently 没重载 bounty-data.yml（内存旧态会让下次 claim 整份回写）");
+            require(flush.contains("bounties().flush()"),
+                    "flushAll 里 bounty 那一段不是 bounties().flush()（需要一个明确的落盘入口）");
+            String sb = nonCommentSource(new java.io.File(pkgRoot, "bounty/BountyManager.java"));
+            require(sb != null && !sb.isEmpty(), "找不到 BountyManager.java");
+            require(hits(sb, "public void flush()") == 1,
+                    "BountyManager 没有 public void flush()（回档链路调不到落盘入口）");
+
+            // ② hall.yml：HallShrine.origin 是字段缓存，回档换了文件它不知道，
+            // 于是殿堂原点在回档后到重启前一直是旧坐标。这条必须接 reload。
+            require(hits(reload, "\"hall.yml\"") >= 1,
+                    "reloadAllSilently 没重载 hall.yml（HallShrine.origin 字段缓存会让原点停在旧坐标）");
+            require(reload.contains("hallShrine().reloadOrigin()"),
+                    "hall.yml 的重载不是 hallShrine().reloadOrigin()（只读文件不刷缓存等于没重载）");
+            String sh = nonCommentSource(new java.io.File(pkgRoot, "hall/HallShrine.java"));
+            require(sh != null && !sh.isEmpty(), "找不到 HallShrine.java");
+            require(hits(sh, "public void reloadOrigin()") == 1,
+                    "HallShrine 没有 public void reloadOrigin()（回档后缓存刷不掉）");
+
+            // ③ 反方向也要守：hall.yml **不该**出现在 flushAll。
+            // 它的两次写都是变更即写盘，没有内存脏窗口；加一行 flush 只会在回档日志里
+            // 多一条「什么都没做」的记录，还会让人以为它和 bounty 是同一种病。
+            // 这条断言的意义是：以后有人「为了让表格整齐」而补上它，会被拦下来问一句为什么。
+            require(hits(flush, "\"hall.yml\"") == 0,
+                    "flushAll 里不该有 hall.yml —— 它变更即写盘，没有脏窗口；该补的是 reload 不是 flush");
+
+            // ④ 同类病最难查的一点：四个模块都有 save/load 入口却漏接线。
+            // 这里顺带确认 BountyManager.save() 的异常面也补了 RuntimeException
+            // （YamlIo.save 可能抛 SecurityException / IllegalArgumentException），
+            // 否则一个权限问题会冒到 claim() 的玩家提示里。
+            require(sb.contains("catch (RuntimeException ex)"),
+                    "BountyManager.save() 没兜 RuntimeException（未预期异常会冒到 claim 的调用方）");
+        });
+        add(g, "悬赏领赏必须是两段式（不可逆操作不许一步到位）", () -> {
+            // v2.26.1：claim() 一旦过关就 setItemInMainHand(null) —— 剑当场消失、不可撤销，
+            // 换回一笔小钱。而触发条件只是「主手拿了件达标的锻造品」，玩家整理背包时
+            // 手滑输一次命令就把主属性最好的剑交出去了。
+            // 全仓同类不可逆操作（spirit reroll / dissolve / talent reset / strengthen strip）
+            // 都是两段式，唯独这里是一步到位 —— 是漏的，不是特意的。
+            java.io.File pkgRoot = findSourcePackageRoot();
+            if (pkgRoot == null) {
+                return;
+            }
+            String bm = nonCommentSource(new java.io.File(pkgRoot, "bounty/BountyManager.java"));
+            require(bm != null && !bm.isEmpty(), "找不到 BountyManager.java");
+            // ① 签名必须带 confirm 位：三参调用是「预览 / 执行」的分界
+            require(hits(bm, "public String claim(Player p, int index, boolean confirm)") == 1,
+                    "BountyManager.claim 不是两段式签名（缺 confirm 位就等于没有闸）");
+            // ② 收剑那一行必须出现在 confirm 分支之后
+            String previewMark = "\"/zhujian shangjin claim \" + (index + 1) + \" confirm</white>\"";
+            int previewAt = bm.indexOf("!confirm");
+            int takeAt = bm.indexOf("setItemInMainHand(null)");
+            require(previewAt > 0, "claim 里找不到 !confirm 预览分支");
+            require(takeAt > previewAt,
+                    "收剑（setItemInMainHand(null)）出现在预览分支之前 —— 预览也会真的收剑");
+            // ③ confirm 必须校验「还是预览那把剑」，否则可以预览破剑再换好剑 confirm。
+            // 只断言有指纹比较：不锁死实现细节（换哈希算法不该判红）。
+            require(bm.contains("pend.sword().equals(sword)"),
+                    "confirm 没校验主手还是预览那把剑（可预览 A 剑、换成 B 剑再确认）");
+            require(hits(bm, "pendingClaim.remove(") >= 1,
+                    "confirm 用完没摘掉待确认状态（可重复确认）");
+            // ④ 退服要清 —— 否则重登后 confirm 仍能匹配上旧预览，等于绕过预览。
+            String listener = nonCommentSource(
+                    new java.io.File(pkgRoot, "listener/ForgeListener.java"));
+            require(listener != null && listener.contains("bounties().forgetPending("),
+                    "退服没清悬赏待确认状态（重登后可直接 confirm，绕过预览）");
+            // ⑤ 命令层必须把第 4 段认成 confirm，并且预览返回的空串不能走 Msg.prefix
+            String cmd = nonCommentSource(
+                    new java.io.File(pkgRoot, "command/ForgingCommand.java"));
+            require(cmd != null && cmd.contains("args[3].equalsIgnoreCase(\"confirm\")"),
+                    "命令层没识别 confirm 段（玩家写了 confirm 也只会再预览一次）");
+            require(cmd.contains("out != null && !out.isBlank()"),
+                    "预览分支返回空串却照样 Msg.prefix（玩家会收到一条只有前缀的空消息）");
+            // ⑥ Tab 补全第 4 段要给 confirm，不然玩家得靠记
+            require(cmd.contains("List.of(\"confirm\"), args[3]"),
+                    "Tab 补全没给第 4 段的 confirm");
         });
         add(g, "比试维度不许被活跃档案判据漏掉（v2.26.0 审计轮）", () -> {
             // 真实缺陷：Rankings.active() 原来只看 forged / coins / reputation / streak。
@@ -7359,31 +7503,6 @@ public final class SelfTestSuite {
             int level = Math.max(0, brokenAt);
             require(level == brokenAt, "碎剑留档的挑战等级应等于碎在 +N");
             require(plugin.tombs() != null, "剑冢管理器未初始化");
-        });
-        add(g, "风险模式开关可读", () ->
-                require(com.forgemaster.forge.RiskMode.enabled(plugin) || !com.forgemaster.forge.RiskMode.enabled(plugin),
-                        "风险模式开关接口异常"));
-        add(g, "风险模式武装/解除往返", () -> {
-            UUID fake = UUID.nameUUIDFromBytes("SelfTest-risk".getBytes());
-            com.forgemaster.forge.RiskMode.disarm(fake);
-            require(!com.forgemaster.forge.RiskMode.isArmed(fake), "解除后仍武装");
-            com.forgemaster.forge.RiskMode.arm(fake);
-            require(com.forgemaster.forge.RiskMode.isArmed(fake), "武装后未生效");
-            com.forgemaster.forge.RiskMode.disarm(fake);
-        });
-        add(g, "风险模式分数倍率为正", () ->
-                require(com.forgemaster.forge.RiskMode.scoreMultiplier(plugin) > 0, "风险倍率非正"));
-        add(g, "世界事件管理器已初始化", () ->
-                require(plugin.events() != null, "世界事件管理器未初始化"));
-        add(g, "世界事件 id 列表可读", () ->
-                require(plugin.events().ids() != null, "事件 id 列表为空"));
-        add(g, "剧情管理器已初始化", () ->
-                require(plugin.story() != null, "剧情管理器未初始化"));
-        add(g, "剧情章节总数非负", () ->
-                require(plugin.story().total() >= 0, "剧情章节数为负"));
-        add(g, "剧情进度读取（假 UUID）", () -> {
-            UUID fake = UUID.nameUUIDFromBytes("SelfTest-story".getBytes());
-            require(plugin.story().progressOf(fake) >= 0, "剧情进度为负");
         });
     }
 

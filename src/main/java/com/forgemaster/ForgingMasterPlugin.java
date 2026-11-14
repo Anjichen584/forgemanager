@@ -65,7 +65,6 @@ public final class ForgingMasterPlugin extends JavaPlugin {
     /** 剑冢秘境（tombrun）：残影挑战之上的分层副本，波次 / 门票 / 残页 config 驱动 */
     private com.forgemaster.tombrun.TombRunService tombrun;
     private com.forgemaster.spirit.SpiritManager spirit;
-    private com.forgemaster.spiritdisplay.SpiritDisplayService spiritDisplay;
     /** 剑体放大（v2.20）：强化等级越高手里的剑越大；纯视觉 ItemDisplay，不改伤害 */
     private com.forgemaster.bigsword.SwordGrowthService swordGrowth;
     private com.forgemaster.codex.CodexService codex;
@@ -198,9 +197,6 @@ public final class ForgingMasterPlugin extends JavaPlugin {
         // 审计 #8：tombs.yml 落盘改 dirty + 5 秒异步冲刷，主线程埋/取不再同步整文件重写
         tombs.startAutoFlush();
         spirit = new com.forgemaster.spirit.SpiritManager(this);
-        // 剑灵显形（拓展第三档）：灵性第 3 档及以上的命名剑主手显形 ItemDisplay 浮游体，
-        // 自带 40L 巡检 / 30s 孤儿清扫 / 退服换世界死亡即时撤除，构造即挂监听并起巡检
-        spiritDisplay = new com.forgemaster.spiritdisplay.SpiritDisplayService(this);
         // 剑体成长曲线（v2.22.1 起只管曲线）：砧上剑身按 strengthen.big-sword.* 的
         // 里程碑曲线逐锤变大；手上悬浮剑与护甲体型放大已移除，服务只负责
         // 持有曲线 + 清扫旧版残留实体 / 修饰符。
@@ -438,9 +434,6 @@ public final class ForgingMasterPlugin extends JavaPlugin {
             "auction.enabled",
             "auction.tax-rate",
             "auction.min-increment",
-            "risk.enabled",
-            "risk.score-bonus-percent",
-            "risk.explode-chance",
             "events.enabled",
             "events.interval-minutes",
             "events.types",
@@ -718,10 +711,6 @@ public final class ForgingMasterPlugin extends JavaPlugin {
         }
         if (hallShrine != null) {
             hallShrine.stop();
-        }
-        if (spiritDisplay != null) {
-            // 剑灵显形：撤掉全部浮游体并差量扣回暴击加成（stop 幂等，重复调用安全）
-            spiritDisplay.stop();
         }
         if (swordGrowth != null) {
             // 剑体放大：撤掉所有大剑实体并停刷新任务。不撤的话关服会把孤儿留进存档
@@ -1129,10 +1118,6 @@ public final class ForgingMasterPlugin extends JavaPlugin {
 
     public com.forgemaster.spirit.SpiritManager spirit() {
         return spirit;
-    }
-
-    public com.forgemaster.spiritdisplay.SpiritDisplayService spiritDisplay() {
-        return spiritDisplay;
     }
 
     public com.forgemaster.bigsword.SwordGrowthService swordGrowth() {

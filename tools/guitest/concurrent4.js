@@ -877,7 +877,9 @@ phases.dropout = async (bots) => {
   await until(() => !!victim.currentWindow, 1200)
   const opened = !!victim.currentWindow
   victim.quit()
-  await settle(bot, 1500)
+  // v2.26.0 提交（b5cc626）把 wait 换成 settle 时把变量名也带错了：
+  // 此刻 for (const bot of others) 还没开始，bot 未定义 → 阶段炸出假 FAIL。
+  await settle(victim, 1500)
   for (const bot of others) {
     take(bot)
     bot.chat('/zhujian blackmarket')
@@ -1344,6 +1346,15 @@ phases.powerCompare = async (bots) => {
 // 管理命令** → 没有注入胜负的合法入口。所以「赢家名 + 胜字样」这条降级为：
 // rank duel text 与档案 duel-wins/losses 的一致性对账（有胜必上榜、榜上数字 = 档案数字、
 // 0 胜不占榜），WARN 写明降级原因。
+//
+// 采样化口径（v2.26.1 起写死在这里，防止下一轮再被「对 31 个 bot 各跑一遍」的旧结论带偏）：
+//   · 完整的「发起→deny→再发起→accept→开始→退服清锁」链路**只跑 1 对** —— 取存活 bot
+//     的前两名（living[0] × living[1]），无论 BOT_COUNT 是 2 还是 32，配对数恒为 1。
+//     同一条链对第 3~31 个 bot 再打一遍是重复验证同一件事，一行新信息都没有。
+//   · 其余 bot 只做廉价断言：档案胜负可读（每人 1 条 RCON `zhujian stats`）+
+//     rank duel text 的「榜 ↔ 档案」全员对账 —— 都是纯读，不加链路。
+//   · 实际配对数打进 stdout（见链路分支里的 console.log），报告里肉眼可查。
+//     2 bot 时断言集合与采样化之前逐条一致（本注释只记录口径，不动任何断言行）。
 phases.duelRank = async (bots) => {
   const area = '比试排行'
   const readDuel = async (name) => {
@@ -1363,6 +1374,9 @@ phases.duelRank = async (bots) => {
 
   const [a, b] = bots
   if (bots.length >= 2 && a && b) {
+    // 链路只跑这一对。配对数写进 stdout：32 bot 全量时这里必须是「1 对」，
+    // 若哪天有人把它改回逐 bot/逐对循环，这个数字会当场变大。
+    console.log(`  （比试链路只跑 1 对：${a.username} × ${b.username}；其余 ${bots.length - 2} 个 bot 只做档案/榜对账，不重复打链）`)
     // ② 清主手：档位按主手强化等级分档（DuelTiers），双方空手 = 同档 0，不会被跨档拦截
     await rc('minecraft:clear ' + a.username)
     await rc('minecraft:clear ' + b.username)
@@ -1513,6 +1527,10 @@ async function main () {
   const bots = []
   // 在 try 外声明：try/finally 之后写报告时还要用它（const 是块级作用域，写里面会 ReferenceError）
   let aliveAtStart = 0
+  // 每阶段实测耗时（ms）。过去「duelRank 占 17.7 分钟」这类结论全靠口口相传，
+  // 没有任何计时记录可查证（LATEST #1 按它发起改造，查证时连一条日志都找不到）。
+  // 现在每阶段结束打印一行实测值，并写进报告 phaseMs —— 下一次优化按数字说话。
+  const phaseMs = {}
   try {
     // 逐个上线（一起连会让测试服握手排队，反而测不到东西）
     const joinT0 = Date.now()
@@ -1576,7 +1594,10 @@ async function main () {
         console.log(`  （跳过 ${bots.length - living.length} 个已掉线的 bot）`)
       }
       const mark = logSize()
+      const t0 = Date.now()
       try { await phases[name](living) } catch (e) { fail(name, '阶段异常', e.message) }
+      phaseMs[name] = Date.now() - t0
+      console.log(`  （${name} 耗时 ${(phaseMs[name] / 1000).toFixed(1)}s）`)
       await wait(600)
       scanLog(mark, name)
     }
@@ -1602,7 +1623,9 @@ async function main () {
     // 判「32 并发」要看这一个，两者不一致时 run-stress.py 会点名。
     botCountAlive: aliveAtStart,
     // 握手节流单独记录：它不是插件缺陷，但每轮都出现说明服务端连接上限到了
-    throttleEvents: throttle.events, throttleRetries: throttle.retries, rows
+    throttleEvents: throttle.events, throttleRetries: throttle.retries,
+    // 每阶段实测耗时（毫秒）：「duelRank 占全量多少」这类结论以这里为准
+    phaseMs, rows
   }, null, 2))
   process.exit(bad.length ? 1 : 0)
 }

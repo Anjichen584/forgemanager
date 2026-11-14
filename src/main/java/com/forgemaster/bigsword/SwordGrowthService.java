@@ -71,7 +71,7 @@ public final class SwordGrowthService {
      * 清扫旧版悬浮剑 / 崩服残留的展示实体。
      *
      * <p>这些实体是非持久的，正常关服会被清掉；但 kill -9 / 断电这类硬崩会留下残留。
-     * 启动 / 停服各扫一遍，按 PDC 标记全量清，和剑灵显形的做法一致。</p>
+     * 启动 / 停服各扫一遍，按 PDC 标记全量清，只用自己那个键，不碰别人的实体。</p>
      */
     private void cleanupOrphans() {
         int removed = 0;

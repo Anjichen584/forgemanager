@@ -41,8 +41,6 @@ public final class Keys {
     public static NamespacedKey SPIRIT_MAX;
     /** 剑灵：名字 */
     public static NamespacedKey SPIRIT_NAME;
-    /** 极限锻造标记（RISK 模式产物） */
-    public static NamespacedKey RISK_MADE;
     /** 赛季编号 */
     public static NamespacedKey SEASON;
 
@@ -194,31 +192,13 @@ public final class Keys {
      */
     public static NamespacedKey HALL_DISPLAY;
 
-    // ---- 拓展第三档：剑灵显形（spiritdisplay）----
-    /**
-     * 剑灵显形实体标记（值 = 主人玩家 UUID）。
-     *
-     * <p>显形 ItemDisplay 专用，与殿堂的 {@link #HALL_DISPLAY}、砧位的
-     * {@link #ANVIL_SESSION} 完全独立——孤儿清扫只认自己的键，绝不误撤
-     * 其他模块的展示实体（audit/02-stability.md 条目 #10 的模块隔离结论）。</p>
-     */
-    public static NamespacedKey SPIRIT_DISPLAY;
-    /**
-     * 剑灵显形暴击加成标记（打在<b>物品</b>上，值 = 本次加成的暴击量）。
-     *
-     * <p>显形期间给主手剑的 {@link #CRIT_CHANCE} 差量加上
-     * {@code spirit.display.bonus.crit-chance}，同时在剑上记下本次加成量；
-     * 撤除时按标记逐件扣回（背包 / 副手 / 光标 / 死亡掉落都扫），找不到就放弃，
-     * 绝不凭记忆扣到别的剑上。有标记且重复扣会幂等跳过。</p>
-     */
-public static NamespacedKey SPIRIT_DISPLAY_BONUS;
 
     /**
      * 剑体放大实体标记（值 = 主人 UUID）。
      *
-     * <p>和 {@link #SPIRIT_DISPLAY} 分开是有原因的：剑灵是挂在肩侧的浮游展示，
-     * 剑体放大是握在手里的巨型模型，两者的生命周期、位置算法、清理时机都不同。
-     * 共用一个键会导致「关掉剑灵把大剑一起撤了」这种事故。模块隔离是审计铁律。</p>
+     * <p>和其他展示实体的键分开是有原因的：剑体放大是握在手里的巨型模型，
+     * 生命周期、位置算法、清理时机都自成一套。共用一个键会导致
+     * 「撤一个模块把另一个模块的实体一起撤了」这种事故。模块隔离是审计铁律。</p>
      */
     public static NamespacedKey BIG_SWORD_DISPLAY;
 
@@ -281,7 +261,6 @@ public static NamespacedKey SPIRIT_DISPLAY_BONUS;
         SPIRIT = new NamespacedKey(plugin, "spirit");
         SPIRIT_MAX = new NamespacedKey(plugin, "spirit_max");
         SPIRIT_NAME = new NamespacedKey(plugin, "spirit_name");
-        RISK_MADE = new NamespacedKey(plugin, "risk_made");
         SEASON = new NamespacedKey(plugin, "season");
         ARMOR_SLOT = new NamespacedKey(plugin, "armor_slot");
         DAMAGE_REDUCE = new NamespacedKey(plugin, "damage_reduce");
@@ -340,10 +319,6 @@ public static NamespacedKey SPIRIT_DISPLAY_BONUS;
 
         // ---- 拓展第一档：名人殿堂 ----
         HALL_DISPLAY = new NamespacedKey(plugin, "hall_display");
-
-        // ---- 拓展第三档：剑灵显形 ----
-        SPIRIT_DISPLAY = new NamespacedKey(plugin, "spirit_display");
-        SPIRIT_DISPLAY_BONUS = new NamespacedKey(plugin, "spirit_display_bonus");
 
         // ---- 剑体放大（v2.20）----
         BIG_SWORD_DISPLAY = new NamespacedKey(plugin, "big_sword_display");

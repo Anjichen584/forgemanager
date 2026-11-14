@@ -100,7 +100,6 @@ public final class MetricsCsv {
                 num(s.consumed()),
                 num(s.net()),
                 num(s.forged()),
-                num(s.breaks()),
                 field(modules(s.modules())));
     }
 

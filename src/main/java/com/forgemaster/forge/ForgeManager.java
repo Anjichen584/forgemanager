@@ -416,8 +416,6 @@ public final class ForgeManager {
         session.mastery(stats.get(player.getUniqueId()).level);
         session.talents(com.forgemaster.growth.Talents.kit(stats.get(player.getUniqueId())));
         session.forgerTitle(StatsStore.titleOf(stats.get(player.getUniqueId()).reputation));
-        // 极限锻造：有预设且配置开启才生效，开工时消耗预设（D3）
-        session.risk(RiskMode.enabled(plugin) && RiskMode.consume(player.getUniqueId()));
         if (plugin.duels() != null) {
             plugin.duels().bindSession(session);
         }
@@ -769,8 +767,7 @@ public final class ForgeManager {
     }
 
     private void tickHammering(ForgeSession s) {
-        int interval = s.risk() ? RiskMode.hammerInterval(plugin)
-                : ForgeTuning.hammerInterval(plugin, s.material().tier());
+        int interval = ForgeTuning.hammerInterval(plugin, s.material().tier());
         if (s.tickCounter() % interval != 0) {
             return;
         }
@@ -906,9 +903,6 @@ public final class ForgeManager {
     }
 
     private void finishFolding(ForgeSession s, Player p, boolean timeout) {
-        if (maybeExplode(s, p, "叠钢")) {
-            return;
-        }
         int total = Math.max(1, s.foldSequence().size());
         double score = (double) s.foldCursor() / total - s.foldMissed() * 0.08;
         s.foldScore(Math.max(0.0, Math.min(1.0, score)));
@@ -1183,9 +1177,6 @@ public final class ForgeManager {
     }
 
     private void finishGrinding(ForgeSession s, Player p) {
-        if (maybeExplode(s, p, "开刃")) {
-            return;
-        }
         s.grindScore((double) s.grindTicksIn() / Math.max(1, s.grindTicksTotal()));
         if (p != null) {
             Msg.prefix(p, "<green>开刃完成：稳定度 <white>"
@@ -1320,7 +1311,7 @@ public final class ForgeManager {
                     + "成色 <white>" + Msg.fmt(s.polishScore() * 100, 1) + "%</white>"
                     + " <dark_gray>(" + s.polishHits() + "/" + s.polishPasses() + " 刀进亮区)");
         }
-        // 抛光属于冷加工，极限锻造不在这里爆剑（爆剑点仍是锻打 / 叠钢 / 开刃）
+        // 抛光属于冷加工，不在这里判定碎裂（碎剑点仍是锻打 / 叠钢 / 开刃）
         afterPolishing(s, p);
     }
 
@@ -1546,9 +1537,6 @@ public final class ForgeManager {
         int dist = Math.abs(s.pointer() - s.zoneCenter());
         int zone = s.material().zoneWidth() + StatsStore.extraZoneWidth(s.mastery())
                 + s.talents().zone();
-        if (s.risk()) {
-            zone = Math.max(0, zone - RiskMode.zoneShrink(plugin)); // 极限锻造：命中区变窄
-        }
         ForgeSession.Hit hit = dist == 0
                 ? ForgeSession.Hit.PERFECT
                 : (dist <= zone ? ForgeSession.Hit.GOOD : ForgeSession.Hit.MISS);
@@ -1586,9 +1574,6 @@ public final class ForgeManager {
                 + " <dark_gray>| 评分 " + Msg.fmt(s.hammerScore() * 100, 0));
 
         if (s.strikesDone() >= s.material().strikes()) {
-            if (maybeExplode(s, p, "锻打")) {
-                return;
-            }
             if (settings.foldingEnabled()) {
                 startFolding(s, p);
             } else {
@@ -1702,9 +1687,6 @@ public final class ForgeManager {
         total = total * (1.0 + s.grade().scoreBonus() / 100.0);
         // 档位越高越压分，品质只留给手最稳的人
         total = total * ForgeTuning.scoreFactor(plugin, s.material().tier());
-        if (s.risk()) {
-            total = total * RiskMode.scoreMultiplier(plugin); // 极限锻造：成功分数提高（D3）
-        }
         total = Math.max(0.0, Math.min(100.0, total));
         s.finalScore(Math.round(total * 10.0) / 10.0);
         s.quality(Quality.of(s.finalScore()));
@@ -1755,10 +1737,6 @@ public final class ForgeManager {
         // 龙税契约 auto-join：锻了第一把剑就算入局
         if (plugin.contractManager() != null) {
             plugin.contractManager().autoJoin(p.getUniqueId());
-        }
-        if (s.risk()) {
-            RiskMode.markRisk(result); // 打 RISK_MADE 标记
-            stats.countRisk(p.getUniqueId(), true);
         }
         s.result(result);
         if (s.stage() != null && !s.stage().isClosed()) {
@@ -1998,42 +1976,6 @@ public final class ForgeManager {
                 sound(p, Sound.ENTITY_ITEM_BREAK, 0.7f, 0.8f);
             }
         }
-    }
-
-    /**
-     * 极限锻造的阶段爆剑判定（D3）。非 RISK 会话直接返回 false。
-     * 爆了：材料计 riskLost、断连锻链、会话结束，返回 true 让调用方停止本阶段。
-     */
-    private boolean maybeExplode(ForgeSession s, Player p, String stageName) {
-        // v2.24 商会科技 forge-success：会员炸剑概率降低（骰阈值上抬，
-        // GuildService 内已封顶 +5%；非极限锻造不受影响）
-        double explodeAt = RiskMode.explodeChance(plugin)
-                - plugin.guilds().forgeSuccessBonus(s.uuid());
-        if (!s.risk() || random.nextDouble() >= Math.max(0.0, explodeAt)) {
-            return false;
-        }
-        s.finished(true);
-        removeSession(s); // 审计 #9：下场统一走 removeSession，tick 迭代中只记账
-        stats.countRisk(s.uuid(), false);
-        if (p != null) {
-            plugin.streaks().onBreak(p, "极限锻造炸剑");
-            if (p.getOpenInventory().getTopInventory().getHolder() instanceof ForgeHolder h
-                    && h.session() == s) {
-                p.closeInventory();
-            }
-            Msg.prefix(p, "<red>极限锻造在「" + stageName + "」阶段炸剑了！</red> <gray>材料全部损失，连锻断了。</gray>");
-            sound(p, Sound.ENTITY_GENERIC_EXPLODE, 1.0f, 0.9f);
-            p.getWorld().spawnParticle(Particle.EXPLOSION, feet(p).add(0, 0.5, 0), 3, 0.3, 0.2, 0.3, 0.0);
-        }
-        if (s.stage() != null) {
-            s.stage().despawn();
-            s.stage(null);
-        }
-        if (s.bossBar() != null) {
-            s.bossBar().removeAll();
-            s.bossBar(null);
-        }
-        return true;
     }
 
     /**

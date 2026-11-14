@@ -55,7 +55,7 @@ public final class MetricsService {
      *
      * <p>字段取当天<b>最后一条</b>样本的值——样本本身是当日累计，所以最后一条就是当天总量。</p>
      */
-    public record DayTotal(LocalDate day, long produced, long consumed, long forged, long breaks,
+    public record DayTotal(LocalDate day, long produced, long consumed, long forged,
                            int samples, double avgOnline) {
 
         public long net() {
@@ -399,7 +399,7 @@ public final class MetricsService {
                 onlineSum += Math.max(0, s.online());
             }
             out.add(new DayTotal(e.getKey(), lastOne.produced(), lastOne.consumed(),
-                    lastOne.forged(), lastOne.breaks(), list.size(),
+                    lastOne.forged(), list.size(),
                     MetricsMath.average(onlineSum, list.size())));
         }
         out.sort((a, b) -> a.day().compareTo(b.day()));

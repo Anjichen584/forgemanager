@@ -71,8 +71,6 @@ public final class ForgeSession {
     /** 锻造者称号（结算时写入 Lore） */
     private String forgerTitle = "";
 
-    /** 极限锻造（RISK）：锻打加快、命中区变窄、分数倍率提高，但每个阶段都可能炸剑 */
-    private boolean risk;
 
     /** 本局随机源：比试用同一种子，保证条件一致 */
     private Random rnd = new Random();
@@ -374,14 +372,6 @@ public final class ForgeSession {
 
     public void mastery(int v) {
         this.mastery = Math.max(1, v);
-    }
-
-    public boolean risk() {
-        return risk;
-    }
-
-    public void risk(boolean v) {
-        this.risk = v;
     }
 
     public String forgerTitle() {

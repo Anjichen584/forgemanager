@@ -17,6 +17,7 @@ import org.bukkit.entity.Entity;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitTask;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -36,12 +37,17 @@ import java.util.UUID;
  * <p>传承维度：再往下是「历代名剑」——每季一个赛季结算时刻下的永久记录
  * （数据源 {@link com.forgemaster.season.SeasonLegacy}，最多摆最近
  * {@code season.legacy.show-count} 季，默认 5）。同样一套盔甲架 + 同一套 PDC 标记，
- * 所以三类条目共用一次 {@link #clearAll()}，互不残留。</p>
+ * 所以四类条目共用一次 {@link #clearAll()}，互不残留。</p>
+ *
+ * <p>大赛维度：最后是「大赛冠军」——每届一场的赛果档案（v2.26.1 接上 v2.26.0 留的口子），
+ * 数据源 {@link com.forgemaster.contests.ContestHistoryStore}（{@code contest-history.yml}），
+ * 只读展示：摆最近几届的「届次 / 冠军 / 分数」，<b>不写任何存档、不碰经济</b>。
+ * 档案为空（还没打过大赛）时摆一行空态文案；大赛模块没初始化时整块跳过。</p>
  *
  * <p><b>为什么这里也用盔甲架，而不是告示牌</b>：告示牌要在世界方块里落数据，
  * 摆的时候得改方块、清理时得还原，玩家在陈列区修个东西就可能被顺手拆掉或覆盖；
  * 而盔甲架是实体，能靠 PDC 标记精确回收，位置只由配置决定，不改动地形。
- * 三类条目共用一套生成 / 清理逻辑，不会出现「刷新把上一类擦掉了」这种事。</p>
+ * 四类条目共用一套生成 / 清理逻辑，不会出现「刷新把上一类擦掉了」这种事。</p>
  */
 public final class HallOfFame {
 
@@ -50,6 +56,12 @@ public final class HallOfFame {
 
     /** 历代名剑的 rank 标记基准：-1000 - 序号，和 -1 的强化排、1..N 的名次都不冲突 */
     private static final int LEGACY_RANK_BASE = -1000;
+
+    /** 大赛冠军的 rank 标记基准：-2000 - 序号，和强化排 / 历代名剑 / 名次都不冲突 */
+    private static final int CONTEST_RANK_BASE = -2000;
+
+    /** 大赛冠军陈列最多摆最近几届（与历代名剑默认 showCount 对齐；档案本身保留更多） */
+    static final int CONTEST_SHOW_ROWS = 5;
 
     private final ForgingMasterPlugin plugin;
     private final NamespacedKey markKey;
@@ -171,6 +183,76 @@ public final class HallOfFame {
             for (int i = 0; i < recent.size(); i++) {
                 spawnLegacyRow(base.clone().add(0, next - i * step, 0), i, legacy.describe(recent.get(i)));
             }
+        }
+        // 大赛冠军（v2.26.1）：一届一行，按届次升序（旧的在上、新的在下），最多最近 N 届。
+        // 数据源只有 ContestHistoryStore（contest-history.yml），只读展示，不写档不碰经济；
+        // 大赛模块没初始化时整块跳过，档案为空时 contestLines 给一行空态文案。
+        var contests = plugin.contests();
+        if (contests != null) {
+            com.forgemaster.contests.ContestHistoryStore store = contests.historyStore();
+            List<String> championLines = contestLines(store.recent(CONTEST_SHOW_ROWS), store.size());
+            for (int i = 0; i < championLines.size(); i++) {
+                spawnContestRow(base.clone().add(0, next - i * step, 0), i, championLines.get(i));
+            }
+        }
+    }
+
+    /**
+     * 大赛冠军的展示行（v2.26.1，public static 是为了自检可以直接断言，不需要 Bukkit 世界）。
+     *
+     * <p>行格式照历代名剑的排法：{@code 第 N 届 · 冠军名 · 分数 · 剑胚}，末尾附档案号（种子号），
+     * 方便对上 {@code /zhujian contest history <号>} 查单届详情。</p>
+     *
+     * <p>届次号 N 是档案内的序号（1 = 档案里最老的一届）：{@code contest-history.yml} 按
+     * {@code contest.history-keep} 从头部裁最老的届，绝对届数无从考证，档案内序号是唯一
+     * 不会撒谎的口径。</p>
+     *
+     * @param recent    最近几届赛果（旧 → 新）；为空时给一行空态文案，不抛异常
+     * @param totalSize 档案总届数（用于把序号对齐到「档案里最老的一届 = 第 1 届」）
+     */
+    public static List<String> contestLines(List<com.forgemaster.contests.ContestHistoryStore.Entry> recent,
+                                            int totalSize) {
+        List<String> out = new ArrayList<>();
+        if (recent == null || recent.isEmpty()) {
+            out.add("<gray>大赛还没有冠军——第一场打完就有了。</gray>");
+            return out;
+        }
+        int first = Math.max(1, totalSize - recent.size() + 1);
+        for (int i = 0; i < recent.size(); i++) {
+            com.forgemaster.contests.ContestHistoryStore.Entry e = recent.get(i);
+            String winner = e.winner == null || e.winner.isBlank() ? "无名" : e.winner;
+            String material = e.material == null || e.material.isBlank() ? "未知剑胚" : e.material;
+            out.add("<#ffd166>第 " + (first + i) + " 届</#ffd166>"
+                    + " <white>" + winner + "</white>"
+                    + " <dark_gray>·</dark_gray> <gray>"
+                    + com.forgemaster.contests.ContestHistoryStore.fmtScore(e.winnerScore) + " 分</gray>"
+                    + " <dark_gray>·</dark_gray> <gray>" + material + "</gray>"
+                    + " <dark_gray>" + (e.code == null || e.code.isBlank() ? "" : "#" + e.code) + "</dark_gray>");
+        }
+        return out;
+    }
+
+    /** 大赛冠军那一行：内容由 {@link #contestLines} 拼好，这里只负责摆盔甲架 */
+    private void spawnContestRow(Location at, int index, String line) {
+        World world = at.getWorld();
+        if (world == null || line == null) {
+            return;
+        }
+        ArmorStand stand = world.spawn(at, ArmorStand.class, s -> {
+            s.setVisible(false);
+            s.setGravity(false);
+            s.setInvulnerable(true);
+            s.setSmall(true);
+            s.setMarker(true);
+            s.setPersistent(false);
+            s.setCustomNameVisible(true);
+            s.customName(Msg.mm(line));
+            // 和另外三类共用标记：关服 / 重载 / 刷新前的 clearAll() 一起收走
+            s.getPersistentDataContainer().set(markKey, PersistentDataType.BYTE, (byte) 1);
+            s.getPersistentDataContainer().set(rankKey, PersistentDataType.INTEGER, CONTEST_RANK_BASE - index);
+        });
+        if (stand == null) {
+            plugin.getLogger().warning("名人堂盔甲架生成失败：大赛冠军第 " + (index + 1) + " 行");
         }
     }
 

@@ -1053,18 +1053,7 @@ public final class SpiritManager implements Listener {
             }
             // 灵契重抽（v2.25 切片二）：无参 = 预览，confirm = 真执行（两段式确认）
             case "reroll" -> reroll(player, args.length >= 3 && isConfirmWord(args[2]));
-            // 剑灵显形（拓展第三档）：走独立的 spiritdisplay 服务，只在这里加转发分支
-            case "show" -> {
-                if (plugin.spiritDisplay() != null) {
-                    plugin.spiritDisplay().show(player);
-                }
-            }
-            case "hide" -> {
-                if (plugin.spiritDisplay() != null) {
-                    plugin.spiritDisplay().hide(player);
-                }
-            }
-            default -> Msg.prefix(player, "<gray>用法: <white>/zhujian spirit [info|feed|name <剑名>|reroll [confirm]|show|hide]</white>");
+            default -> Msg.prefix(player, "<gray>用法: <white>/zhujian spirit [info|feed|name <剑名>|reroll [confirm]]</white>");
         }
     }
 

@@ -15,7 +15,6 @@ import java.util.Map;
  *   produced   <b>当日</b>累计产出（不含退款，口径同文字报表）
  *   consumed   <b>当日</b>累计消耗
  *   forged     <b>当日</b>锻造总数
- *   breaks     <b>当日</b>极限锻造炸剑数
  *   modules    <b>当日</b>各消耗理由的金额增量（模块热度 = 谁在吸币）
  * </pre>
  *
@@ -27,7 +26,7 @@ import java.util.Map;
  * 但一旦进趋势图就会画出负的柱子。宁可显示 0。（正常路径由 {@link #ofDay} 保证不会负。）</p>
  */
 public record MetricsSample(long at, int online, long totalCoins,
-                            long produced, long consumed, long forged, long breaks,
+                            long produced, long consumed, long forged,
                             Map<String, Long> modules) {
 
     /** 紧凑构造器：全部钳非负，模块表归一成不可变副本 */
@@ -38,7 +37,6 @@ public record MetricsSample(long at, int online, long totalCoins,
         produced = Math.max(0L, produced);
         consumed = Math.max(0L, consumed);
         forged = Math.max(0L, forged);
-        breaks = Math.max(0L, breaks);
         modules = normalize(modules);
     }
 
@@ -97,20 +95,18 @@ public record MetricsSample(long at, int online, long totalCoins,
      */
     public static MetricsSample ofDay(long at, MetricsData data, MetricsHistory.Base base) {
         if (data == null) {
-            return new MetricsSample(at, 0, 0, 0, 0, 0, 0, Map.of());
+            return new MetricsSample(at, 0, 0, 0, 0, 0, Map.of());
         }
         long baseProduced = base == null ? 0 : base.producedRaw();
         long baseRefund = base == null ? 0 : base.refund();
         long baseConsumed = base == null ? 0 : base.consumed();
         long baseForged = base == null ? 0 : base.forged();
-        long baseBreaks = base == null ? 0 : base.breaks();
 
         long producedDelta = Math.max(0, data.producedRaw - baseProduced);
         long refundDelta = Math.max(0, data.refund - baseRefund);
         long produced = Math.max(0, producedDelta - refundDelta);
         long consumed = Math.max(0, data.consumed - baseConsumed);
         long forged = Math.max(0, data.forged - baseForged);
-        long breaks = Math.max(0, data.breaks - baseBreaks);
 
         Map<String, Long> modules = new LinkedHashMap<>();
         if (data.consumedBy != null && !data.consumedBy.isEmpty()) {
@@ -126,6 +122,6 @@ public record MetricsSample(long at, int online, long totalCoins,
             }
         }
         return new MetricsSample(at, data.online, data.totalCoins, produced, consumed,
-                forged, breaks, modules);
+                forged, modules);
     }
 }

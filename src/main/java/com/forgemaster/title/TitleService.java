@@ -295,8 +295,6 @@ public final class TitleService {
             case "level" -> st.level;
             case "best-strengthen" -> st.bestStrengthen;
             case "best-streak" -> st.bestStreak;
-            case "risk-made" -> st.riskMade;
-            case "risk-lost" -> st.riskLost;
             case "achv-points" -> st.achvPoints;
             default -> 0;
         };
@@ -375,8 +373,6 @@ public final class TitleService {
             case "level" -> "专精等级";
             case "best-strengthen" -> "强化";
             case "best-streak" -> "连锻峰值";
-            case "risk-made" -> "极限成功";
-            case "risk-lost" -> "炸剑次数";
             case "achv-points" -> "成就点";
             default -> key;
         };

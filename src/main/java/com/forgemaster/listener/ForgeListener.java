@@ -481,8 +481,12 @@ public final class ForgeListener implements Listener {
         if (plugin.duels() != null) {
             plugin.duels().onQuit(event.getPlayer().getUniqueId());
         }
-        // 极限锻造预设跟着人走：退服就作废，别让静态 ARMED 只增不减
-        com.forgemaster.forge.RiskMode.disarm(event.getPlayer().getUniqueId());
+        // v2.26.1：悬赏领赏的待确认状态跟着会话走，退服即作废。
+        // 同 SpiritManager#onQuit 的 v2.25.2 教训 —— 不清的话重登后
+        // `claim N confirm` 还能匹配上旧预览，等于绕过「必须先看预览」这道闸。
+        if (plugin.bounties() != null) {
+            plugin.bounties().forgetPending(event.getPlayer().getUniqueId());
+        }
     }
 
     /** 潜行 + 右键铁砧 = 直接开锻造台 */

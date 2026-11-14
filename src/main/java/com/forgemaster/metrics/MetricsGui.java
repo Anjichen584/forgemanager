@@ -200,8 +200,7 @@ public final class MetricsGui {
                         out.add("<gray>" + d.day() + "</gray> <white>产出</white> <#8ce99a>+"
                                 + d.produced() + "</#8ce99a> <white>消耗</white> <#ffa8a8>-"
                                 + d.consumed() + "</#ffa8a8> <white>净</white> "
-                                + (d.net() >= 0 ? "<#8ce99a>+" : "<#ffa8a8>") + d.net() + "</>"
-                                + " <gray>锻造 " + d.forged() + " · 碎裂 " + d.breaks() + "</gray>");
+                                + (d.net() >= 0 ? "<#8ce99a>+" : "<#ffa8a8>") + d.net() + "</>");
                     }
                 }
                 for (String line : svc.trendText().split("<newline>")) {

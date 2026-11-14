@@ -68,8 +68,6 @@ public final class StatsStore {
         public Set<String> graduates = new LinkedHashSet<>();
         public int spirits;
         public int tombs;
-        public int riskMade;
-        public int riskLost;
         public int achvPoints;
         public Set<String> achievements = new LinkedHashSet<>();
 
@@ -189,8 +187,6 @@ public final class StatsStore {
             st.graduates = new LinkedHashSet<>(sec.getStringList("graduates"));
             st.spirits = sec.getInt("spirits", 0);
             st.tombs = sec.getInt("tombs", 0);
-            st.riskMade = sec.getInt("risk-made", 0);
-            st.riskLost = sec.getInt("risk-lost", 0);
             st.achvPoints = sec.getInt("achv-points", 0);
             st.bestStrengthen = Math.max(0, sec.getInt("best-strengthen", 0));
                 st.rankTier = Math.max(0, sec.getInt("rank-tier", 0));
@@ -728,16 +724,6 @@ public final class StatsStore {
         dirty = true;
     }
 
-    /** 极限锻造计数：made = true 记为成功产出（riskMade），false 记为炸剑（riskLost） */
-    public void countRisk(UUID uuid, boolean made) {
-        Stats st = get(uuid);
-        if (made) {
-            st.riskMade++;
-        } else {
-            st.riskLost++;
-        }
-        dirty = true;
-    }
 
     public void recordSalvage(UUID uuid) {
         Stats st = get(uuid);
@@ -933,8 +919,6 @@ public final class StatsStore {
             yml.set(base + ".graduates", new ArrayList<>(st.graduates));
             yml.set(base + ".spirits", st.spirits);
             yml.set(base + ".tombs", st.tombs);
-            yml.set(base + ".risk-made", st.riskMade);
-            yml.set(base + ".risk-lost", st.riskLost);
             yml.set(base + ".achv-points", st.achvPoints);
             yml.set(base + ".best-strengthen", st.bestStrengthen);
             yml.set(base + ".rank-tier", st.rankTier);

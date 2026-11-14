@@ -114,6 +114,31 @@ public final class HallShrine {
         return origin == null ? null : origin.clone();
     }
 
+    /**
+     * 丢掉字段缓存、按盘面重读原点（v2.26.0 审计轮补，restore 的 reloadAllSilently 用）。
+     *
+     * <p><b>为什么需要：</b>{@link #origin()} 是惰性加载 + 字段缓存 —— 第一次读之后
+     * {@code origin} 就不再变。<b>回档把 hall.yml 换成旧的之后，内存里那份不动</b>，
+     * 于是「殿堂原点」在回档后到重启前一直指向旧坐标：粒子/标牌摆在新位置，
+     * 而 {@code /zhujian hall set} 写回去的又是缓存值，等于回档对这个字段完全没生效。</p>
+     *
+     * <p>只刷新坐标，<b>不碰展示任务</b>：清缓存后调用 {@link #origin()} 即可重新读盘。
+     * 是否要重建粒子/标牌由调用方决定 —— 回档流程本身会在最后统一重摆，
+     * 这里顺手 stop() 反而会让那次重摆落空（顺序敏感，别加）。</p>
+     */
+    public void reloadOrigin() {
+        origin = null;
+        // 立刻读一次：读不出来（未设置 / 文件没了 / 世界未加载）就让缓存保持 null，
+        // 与「从未设置过」同义，origin() 下次调用会再试。异常不能冒出去 ——
+        // 调用方是回档链里的 swallow，一份坏存档不该让整条回档报错。
+        try {
+            origin = readOrigin();
+        } catch (RuntimeException ex) {
+            origin = null;
+            plugin.getLogger().warning("回档后重读殿堂原点失败，按未设置处理：" + ex);
+        }
+    }
+
     private Location readOrigin() {
         File file = hallFile();
         if (!file.exists()) {

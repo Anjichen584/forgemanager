@@ -1642,22 +1642,6 @@ blueprint:
   tolerance-bonus: 0.15    # 持图纸锻造时加热容差 +15%
 
 # ------------------------------------------------------------
-# 极限锻造 RISK（w2-shop · D3）：/zhujian forge risk 预设下一把剑
-#   enabled                开关
-#   hammer-interval-ticks  锻打指针走一格的间隔（tick），越小越快，原版默认约 3
-#   zone-shrink            命中区半径缩窄格数
-#   score-bonus-percent    成功分数加成百分比（35 = 总分 ×1.35）
-#   explode-chance         每个阶段结束时炸剑的概率（0~0.95）
-# 炸剑：材料全失，计入 riskLost，连锻断链；成品打 RISK_MADE 标记并计入 riskMade。
-# ------------------------------------------------------------
-risk:
-  enabled: true
-  hammer-interval-ticks: 2
-  zone-shrink: 1
-  score-bonus-percent: 35
-  explode-chance: 0.06
-
-# ------------------------------------------------------------
 # 世界事件（w2-shop · D4）：定时随机或管理员手动开启，期间在玩家附近空投稀有材料并全服公告
 #   enabled                  总开关
 #   interval-minutes         随机开启的检查间隔（分钟，无事件时计时）
@@ -1771,18 +1755,6 @@ spirit:
   reroll:
     cost: 2000             # 每次重抽费用（剑币，负数按 0 = 免费）
     daily-limit: 1         # 每把剑每天可重抽几次（夹进 [1, 99]）
-  # ---- 剑灵显形（拓展第三档）----
-  # 灵性达标且已命名的剑在主手玩家肩侧显形为一枚 ItemDisplay 浮游体（绕身环绕）。
-  display:
-    enabled: true
-    min-tier: 3                    # 灵性达到第几档才显形（0 起）
-    growth-per-tier: 1.15          # v2.23：显形体随灵性档位长大，每档 ×1.15（1.0 = 关闭成长）
-    require-named: true            # 未命名的「无名之剑」不显形——鼓励养成
-    orbit-radius: 0.8              # 环绕半径（格），肩侧 0.8
-    scale: 0.35                    # 浮游体的迷你展示缩放
-    bonus:
-      enabled: true                # 显形期间给主手剑加暴击（撤除时差量扣回）
-      crit-chance: 0.02            # 暴击率加成（+2%）
 # ---- 剑冢（v2.0 · w8）----
 # 埋剑入冢，全服可见；其他玩家可付费挑战复刻，成功得剑币与声望，失败扣声望且挑战费不退。
 # ---- 剑冢（v1.6 / 残影挑战 v2.7）----

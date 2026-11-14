@@ -150,6 +150,8 @@ def summarize(stamp, started_at=None, timed_out=False):
         "botCount": data.get("botCount"),
         # 真正连上的数量：botCount 只是「打算跑几个」，连不上时它照样等于设定值
         "botCountAlive": data.get("botCountAlive"),
+        # 每阶段实测耗时（毫秒，concurrent4.js 写的）：「单阶段占全量多少」以这里为准
+        "phaseMs": data.get("phaseMs"),
         "timedOut": bool(timed_out),
         "pass": len(rows) - len(bad) - len(warn),
         "warn": len(warn),
@@ -197,8 +199,12 @@ def main():
     ap.add_argument("--timeout", type=int, default=3600, help="压测本体超时（秒）")
     args = ap.parse_args()
 
-    # v2.26.0：关键子集。全量 17 阶段 32 bot 要 33 分钟，其中 duelRank 一个就占 17.7
-    # （每轮只用 2 个 bot 打，却对 31 个各跑一遍，且已知是 WARN 降级）。
+    # v2.26.0：关键子集。全量 17 阶段 32 bot 要 33~53 分钟（_stress-20261113-115452 →
+    # 132907 → 142216 三次实跑的时间戳差），是「改完代码快速验证」的最大成本。
+    # 旧注释曾写「duelRank 一个就占 17.7 分钟、对 31 个 bot 各跑一遍」—— 查证不成立：
+    # 该阶段的邀请链从落地起就是只对存活前两名跑 1 对，其余 bot 走档案/榜对账，
+    # 而且当时没有任何阶段级计时记录（v2.26.1 起 concurrent4.js 每阶段打印实测耗时
+    # 并写进报告 phaseMs，占多少分钟以数字为准，别再口口相传）。
     # 改代码后想快速确认「没把核心并发面改坏」，跑这 5 个就够：
     #   auction       同 tick 抢同一口价 → 只许一人成交
     #   bid           加价链 → 最高价唯一 + 被超的钱全退

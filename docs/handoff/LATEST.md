@@ -1,4 +1,4 @@
-# v2.26.0 交付报告（给失忆的自己）
+# v2.26.1 交付报告（给失忆的自己）
 
 > 上一轮：v2.25.9（自检 528 项，压测 32 并发 15 阶段 318/0/0）
 
@@ -6,10 +6,10 @@
 
 | 项 | 值 |
 | --- | --- |
-| 版本 | **2.26.0** |
-| 产物 | `target/ForgingMaster-2.26.0.jar` |
+| 版本 | **2.26.1** |
+| 产物 | `target/ForgingMaster-2.26.1.jar`（1,692,974 B） |
 | `config-version` | **23**（step32 补 `contest.history-keep`） |
-| 自检 | **547 项，失败 0**（下限 = **547**，只许增不许减） |
+| 自检 | **539 项，失败 0**（下限 = **539**；550→539 是删两个模块连带删钉，见 §0） |
 | 压测 | 见下方 §1.6（本轮 32 并发实跑数字） |
 | README | 397 行 / 39.7 KB（上限 450 行 / 48 KB） |
 | `SAVE_FILES` | **22 份**（+ contest-history / power-log / hall-legacy）+ `metrics-*.yml` 散文件 + `seasons/` |
@@ -72,10 +72,11 @@
 ### 1.6 两道门（本轮实跑）
 
 ```
-mvn -B -q clean package            → exit 0，jar 1,706,892 B
-_run_selftest_full.py              → 547 项 / 通过 547 / 失败 0
+mvn -B -q clean package            → exit 0，jar 1,692,974 B
+_run_selftest_full.py              → 539 项 / 通过 539 / 失败 0
 run-stress.py --key（32 bot）       → PASS 203 / WARN 0 / FAIL 0，exit 0
-                                     _stress-20261113-160019.json
+                                     _stress-20261114-142643.json（删两个模块后实跑）
+                                     另一次 _stress-20261113-160019.json 同为 203/0/0
                                      botCount=32、botCountAlive=32、skipped=0、timedOut=false
                                      5 个关键阶段，约 12 分钟
 run-stress.py（全量 17 阶段）        → 上一次全量 PASS 667 / WARN 1 / FAIL 0（_stress-20261113-142216.json，33 分钟）
@@ -92,6 +93,40 @@ run-stress.py（全量 17 阶段）        → 上一次全量 PASS 667 / WARN 1
 `botCount` 只是「打算跑几个」（`joinWithRetry` 失败会少 push，它照样等于设定值），
 `botCountAlive` 才是真正连上的数量 —— 这个字段是本轮新增的，就为了让「32 设了、28 上了」可被发现。
 
+### 1.7 用户在最后关头砍掉两个功能：极限锻造 + 剑身环绕
+
+原话：「极限锻造是什么鬼，你加的吗，不管谁加的去掉然后还有个剑身环绕又是谁写的动画，我服了，都不要」。
+
+**两个都不是本轮加的**，都来自 `5c9b40e`「v2.23.1: 全面查错 + 数值收敛」。查证方式：
+`git log -S "RiskMode"` / `git log -S "SpiritDisplayService"`。这一条留个记号 ——
+**功能被塞进一个标题写着「查错 + 收敛」的提交里，提交信息一字未提**，事后只能靠 `-S` 反推。
+
+| 删掉的 | 用户看到的东西 | 整文件删 |
+| --- | --- | --- |
+| **极限锻造** | `/zhujian forge risk`：命中区缩窄、分数 +35%、每阶段 6% 炸剑 | `forge/RiskMode.java` |
+| **剑身环绕** | `/zhujian spirit show\|hide`：主手剑在肩侧绕圈飞的浮游体，+2% 暴击 | `spiritdisplay/SpiritDisplayService.java`、`SelfTestSpiritDisplay.java` |
+
+连带必须一起删的（这才是容易漏的）：
+
+1. **统计链路串删** —— `riskMade` / `riskLost` 从 `StatsStore` → `MetricsData` → `MetricsSample` →
+   `MetricsHistory` → `MetricsCsv` → `MetricsGui` → `MetricsService`。其中 `breaks`（碎剑率）
+   **唯一数据源就是极限锻造炸剑**，功能没了它永远 0 —— 留着就是「永远显示 0%、像没人碎过剑」的
+   假绿，所以整条删。**注意 `StrengthenService` 里也有叫 `breaks` 的局部变量，那是强化概率数学，不能动。**
+2. **称号维度** —— `SpectrumService` / `TitleService` 的 `case "risk-made"` / `"risk-lost"`，
+   以及 `config.yml` 里 `risk-taker` 称号（`condition: { type: stat, key: risk-made, min: 100 }`）。
+   留着则该称号**永远解锁不了**，且条件指向不存在的 stat key。
+3. **必需键清单** —— `REQUIRED_CONFIG_KEYS` 的 3 个 `risk.*`。**这条是自检逮出来的**：
+   源码和清单都删干净了，但部署的是旧 jar，自检报「内置 config.yml 缺 3 个必需键」。
+   重新 `mvn package` + 重新部署后消失 —— 自检读的是**打进 jar 的那份 config.yml**，不是源码目录。
+4. **PDC 键** —— `Keys.SPIRIT_DISPLAY` / `SPIRIT_DISPLAY_BONUS`：删声明之后还得删 `onEnable` 里的
+   `= new NamespacedKey(...)` 初始化，否则编译红；再检查 javadoc 有没有 `{@link #SPIRIT_DISPLAY}` 悬挂
+   （`BIG_SWORD_DISPLAY` 注释里正好有一句）。
+5. **一条会变成假绿的钉子** —— 原断言「剑体放大实体不能误打成剑灵标记」，键删了以后它恒真。
+   **恒真的钉子等于没有钉子**，改写为断言它真正想守的：实体必须带自己的键且类型正确。
+
+数字变化：自检 **550 → 539**（11 条钉子只测这两个模块，随被测对象一起删）。
+与 `AGENTS.md` 第 6 条「只许增不许减」冲突 —— 已在规则下面写例外说明，**不能悄悄改数字**。
+jar 1,713,949 B → 1,692,974 B（-21 KB）。
 ### 压测连红两次，两次都不是插件缺陷
 
 这一轮压测跑了三次才绿，前两次都报「剑灵重抽」扣费不守恒：
@@ -110,14 +145,35 @@ run-stress.py（全量 17 阶段）        → 上一次全量 PASS 667 / WARN 1
 
 ## 2. 下一轮先做这 3 条
 
+> v2.26.0 收尾时这里原本列了三条「低危待办」。**后来逐条查证，结论是三样东西**：
+> 一条是真缺口（会静默吞掉回档）、一条是显示问题、一条根本不该做。
+> 前两条已修并加了自检钉子（548 项里的「回档链路不留唯独它特殊的例外」），
+> 第三条改为在下面写清楚「为什么不修」。教训是：**「低危待办」这个词同时承担了
+> 「必须修 / 可以修 / 别修」三种含义，下一个人分不出来** —— 清单要么写结论，要么别列。
+
+**已修（v2.26.0 审计轮补）**
+- `BountyManager` 补 `public void flush()`，接进 `BackupManager.flushAll`。
+  原来它是全仓唯一「有 reload 无 flush」的项：回档换文件后内存还是旧 `claimed`，
+  下次 `claim()` 的 `save()` 整份回写，**回档被静默吞掉**。同 v2.23.1 / v2.25 那个形状。
+  顺带把 `save()` 的异常面扩到 `RuntimeException`。
+- `HallShrine` 补 `public void reloadOrigin()`，接进 `reloadAllSilently`。
+  `origin` 是字段缓存，回档换了 `hall.yml` 它不知道，原点停在旧坐标直到重启。
+  注意 `hall.yml` **只补 reload 不补 flush**：两次写都是变更即写，没有脏窗口
+  （钉子会把「为了整齐去加 flush」拦下来）。
+
+**不该修（已查证，别再翻）**
+- `metrics-export-<stamp>.csv`：用户主动导出的产物，源数据 `metrics-<日期>.yml` 已备份，
+  回档后重导即可。把历史 CSV 也一起还原反而奇怪 —— 它不是世界状态。
+- `papi-cache/`：运行时 javac 编译 PAPI 扩展类的缓存目录，进程启动即重建，本质是临时产物。
+- 两者塞进 `SAVE_FILES` 的实际坏处：备份被无上限历史 CSV 撑大 + 覆盖一个马上重编译的缓存目录。
+
+**下一轮真正该做的**
 | # | 事 | 位置 | 为什么 |
 | --- | --- | --- | --- |
-| 1 | `bounty-data.yml` 是唯一「有 reload 无 flush」的项 | `BackupManager.flushAll` | 领赏/换日同步写，目前没有脏窗口；但这种「唯独它特殊」的项值得一句注释，否则下个人不知道该不该补 |
-| 2 | `HallShrine.origin` 是字段缓存 | `HallShrine:68` | `hall.yml` 在清单里但 flush/reload 都是 0。展示位置在回档后到重启前是旧值。低危，但同 §3 第 2 条同理 |
-| 3 | `metrics-export-<stamp>.csv` 不在备份 | `MetricsCsv:150` | 导出物，原则上可不备，但没有明文说明 —— 下次有人问「回档后导出的 CSV 呢」会翻半天 |
-
-顺带值得做：`papi-cache/`（纯缓存，不必备但也没说明）；
-`CrossPlay` 那类「跨模块装饰器」如果再加，注意自检的方法体切片是按单文件做的。
+| 1 | `duelRank` 对 31 个 bot 各跑一遍，但每轮只用 2 个 | `concurrent4.js` | 单阶段占 17.7 分钟（全量 33 分钟的一半），29 次是重复验证同一件事 |
+| 2 | 阶段内并发不可行，已被实测否掉 | 见 `concurrent4.js` 注释 | Minecraft RCON 串行收发：并发 8 条 `list` 只回 1 条。别再试 |
+| 3 | `CrossPlay` 那类跨模块装饰器若再加 | `SelfTestSuite` | 自检的方法体切片是按单文件做的，跨文件拼接会漏 |
+| 4 | **同类不可逆命令还有 4 处一步到位** | `DissolveService` / `TombManager` / `ContractManager` / `AnvilForgeManager` | 悬赏改两段式之后，剩下 4 个 `setItemInMainHand(null)` 仍然是一键入魂：分解、埋冢、契约入贡、放上铁砧。前三个语义上是玩家主动「献出」，误触概率低于悬赏（悬赏只是主手达标），所以本轮没动 —— **但这是同一个形状，要改就一起改** |
 
 ## 3. 不能重犯的坑
 
@@ -175,7 +231,7 @@ python tools\agentdocs.py check
 ## 5. 60 秒自查
 
 - [ ] `pom.xml` 版本 = README 首行 = 部署的 jar 名（**先改版本号再 build 再压测**）
-- [ ] 自检项数 ≥ **547**
+- [ ] 自检项数 ≥ **539**
 - [ ] 压测报告 `botCount=32` **且 `botCountAlive=32`**、`FAIL 0`（WARN 也应为 0；有人数不足跳过的阶段等于没测）
 - [ ] README ≤ 450 行 / 48 KB
 - [ ] `config-version` = 23，且 `step32` 在 `run()` 里被调用
@@ -191,4 +247,4 @@ python tools\agentdocs.py check
   `SeasonManager.java`、`BackupManager.java`、`ConfigMigrations.java`、`ForgingMasterPlugin.java`、
   `SelfTestSuite.java`、`config.yml`
 - 工具：`tools/guitest/concurrent4.js`（`powerCompare` / `duelRank` 两阶段 + 掉线 bot 处理）
-- 文档：`docs/history/v2.26.x.md`（新建）、本文件、`README.md`（标题 + 索引行）、`AGENTS.md`（547 / 索引）
+- 文档：`docs/history/v2.26.x.md`（新建）、本文件、`README.md`（标题 + 索引行）、`AGENTS.md`（539 / 索引）
