@@ -16,7 +16,7 @@
 | `config-version` | 23（本轮不加配置键） |
 | 自检 | **实测 550 项 / 通过 550 / 失败 0**（main 口径，真机 RCON + `-Dforgemaster.source-root`，静态钉子真执行；priv 分支实测 **553/0**，含管理员注入 3 钉） |
 | 静态钉子跳过数 | **0**（上一轮是 22 —— 这是本轮最重要的修复） |
-| 压测 | v2.26.5：压测装置随服迁移（FM_SERVER=D:/game/1.21.10server、RCON 25575/bmtest123、PORT 25565、bot 协议 1.21.10、默认 16 bot ≤ max-players=20）；--key 五阶段实测结果见 §1.9 |
+| 压测 | v2.26.5：压测装置随服迁移（FM_SERVER=D:/game/1.21.10server、RCON 25575/bmtest123、PORT 25565、bot 协议 1.21.10、默认 16 bot ≤ max-players=20）。**--key 五阶段实测：PASS 107 / WARN 0 / FAIL 0，botCount=16 且 botCountAlive=16，skipped 0 / timedOut false**（`_stress-20261115-002251.json`）；全量 17 阶段未跑 |
 | README | 396 行 / 41.4 KB（上限 450 行 / 48 KB） |
 | 分支 | `main` 干净可推送；`local-priv` 私有永不推送 |
 
