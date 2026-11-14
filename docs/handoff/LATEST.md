@@ -32,7 +32,8 @@
 | P3 | `money balance <玩家>` 查他人要 admin；8 个二级 Tab helper 权限过滤；`coins` volatile；三处饱和加法；估值链 isNaN/Infinity + 1e12 夹紧 + pool 饱和；`contract.tax.base` 夹下界；`premiumLong` contains→磁盘判定 |
 | 注入面 | `Msg.esc/escText` 统一清洗口；附魔台物品名、剑冢兜底名×2、殿堂铭牌、剑谱名、蜕变品名 五处出口套用；行会名字符白名单；剑名拒收 RTL/零宽/控制字符 |
 
-钉子 +6（落盘口径 / saveChecked 契约 / Wallet 收口 / 数值夹紧 / 注入面 / 命令面）。
+钉子 +6（落盘口径 / saveChecked 契约 / Wallet 收口 / 数值夹紧 / 注入面 / 命令面），
+均按仓库惯例带「找不到源码树即跳过」守卫（不带 flag 起服不假红；带 `-Dforgemaster.source-root` 才真正执行）。
 **逐条证据与完整台账见 `docs/history/v2.26.x.md` 十五·五。**
 
 
