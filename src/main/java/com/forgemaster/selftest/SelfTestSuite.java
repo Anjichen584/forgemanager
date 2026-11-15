@@ -6355,6 +6355,47 @@ public final class SelfTestSuite {
             require(help != null && help.contains("risk 清极限锻造残留"),
                     "fixattrs 的 help 文案必须写明 risk 清洗");
         });
+        add(g, "v2.26.7 宝石再砍一刀：fix 同步宝石数值 + 暴击聚合写入即封顶（运行时钉）", () -> {
+            var gems = plugin.gems();
+            require(gems != null, "GemService 没初始化");
+            // 新熔炼的宝石：星辉石（暴击）L5 应为 0.075~0.015×5 区间内（砍半后）
+            org.bukkit.inventory.ItemStack gemItem = gems.createGem(
+                    com.forgemaster.gem.GemType.CRIT, com.forgemaster.gem.GemType.Grade.L5);
+            var gm = gemItem.getItemMeta();
+            double v = gm.getPersistentDataContainer().getOrDefault(
+                    com.forgemaster.util.Keys.GEM_VALUE, org.bukkit.persistence.PersistentDataType.DOUBLE, 0.0);
+            require(v > 0 && v <= 0.015 * 5 * 1.05 + 1e-9,
+                    "新熔炼星辉石(传说)数值应已砍半（≤0.075×1.05），实际 " + v);
+            // fix 同步：散装宝石 ×0.5 + gem_sync 标记 + 幂等
+            org.bukkit.inventory.ItemStack legacy = gems.createGem(
+                    com.forgemaster.gem.GemType.CRIT, com.forgemaster.gem.GemType.Grade.L5);
+            var lm = legacy.getItemMeta();
+            double oldV = lm.getPersistentDataContainer().getOrDefault(
+                    com.forgemaster.util.Keys.GEM_VALUE, org.bukkit.persistence.PersistentDataType.DOUBLE, 0.0);
+            lm.getPersistentDataContainer().remove(
+                    new org.bukkit.NamespacedKey(plugin, "gem_sync")); // 模拟「未同步」
+            legacy.setItemMeta(lm);
+            int n = gems.resyncLegacy(legacy);
+            require(n == 1, "同步应改动 1 颗，实际 " + n);
+            var after = legacy.getItemMeta().getPersistentDataContainer();
+            double nv = after.getOrDefault(com.forgemaster.util.Keys.GEM_VALUE,
+                    org.bukkit.persistence.PersistentDataType.DOUBLE, 0.0);
+            require(Math.abs(nv - Math.round(oldV * 50.0) / 100.0) < 1e-9,
+                    "同步后数值应 ×0.5：" + oldV + " → " + nv);
+            require(gems.resyncLegacy(legacy) == 0, "同步幂等：第二次不许再砍");
+        });
+        add(g, "v2.26.7 宝石同步：暴击聚合写入即封顶（静态形状钉）", () -> {
+            if (findSourcePackageRoot() == null) {
+                plugin.getLogger().info("[selftest] 找不到源码树，跳过宝石同步钉子");
+                return;
+            }
+            String factory = sourceFileText("item/ItemFactory.java");
+            require(factory != null && factory.contains("critLimits.maxChance()"),
+                    "锻造写入暴击聚合必须按当前口径封顶（写入即生效，不留面板虚高）");
+            String repair = sourceFileText("compat/LegacyItemRepair.java");
+            require(repair != null && repair.contains("resyncLegacy") && repair.contains("CRIT_CHANCE"),
+                    "fixattrs 收敛必须带宝石同步 + 暴击聚合封顶");
+        });
         add(g, "contest history：命令三处同源 + 反向断言契约残留清零（v2.26.0/7）", () -> {
             // 源码扫描钉子：只扫非注释行，失败要报命中数。
             java.io.File pkgRoot = findSourcePackageRoot();

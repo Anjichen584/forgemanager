@@ -285,8 +285,15 @@ public final class ItemFactory {
         pdc.set(Keys.SCORE, PersistentDataType.DOUBLE, round(s.finalScore()));
         pdc.set(Keys.FORGER, PersistentDataType.STRING, s.playerName());
         pdc.set(Keys.QUENCH, PersistentDataType.STRING, s.quench() == null ? "none" : s.quench().id());
-        pdc.set(Keys.CRIT_CHANCE, PersistentDataType.DOUBLE, round(crit));
-        pdc.set(Keys.CRIT_DAMAGE, PersistentDataType.DOUBLE, round(critDmg));
+        // v2.26.7：写入即封顶——这里写的数就是实战生效的数（战斗侧 Crit.resolve 还有
+        // 同一道夹子兜底）。旧装备靠 fixattrs（LegacyItemRepair）同步到同一口径。
+        // ItemFactory 持有的是 Bukkit Plugin 引用，转回主插件类型再读口径
+        var critLimits = com.forgemaster.combat.Crit.limitsOf(
+                plugin instanceof com.forgemaster.ForgingMasterPlugin fm ? fm : null);
+        pdc.set(Keys.CRIT_CHANCE, PersistentDataType.DOUBLE,
+                round(Math.min(crit, critLimits.maxChance() > 0 ? critLimits.maxChance() : 1.0)));
+        pdc.set(Keys.CRIT_DAMAGE, PersistentDataType.DOUBLE,
+                round(Math.min(critDmg, critLimits.maxDamage() > 0 ? critLimits.maxDamage() : 10.0)));
         // v2.23.1 修 P0：写入即封顶，让 Lore 上写的数与实战生效的数一致。
         // 以前这里存原始累加值（吸血能到 115%），而实战侧只有新加的夹子——
         // 玩家看到「+115% 吸血」却只回 2 点血，会当成 bug 报上来。

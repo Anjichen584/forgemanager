@@ -316,6 +316,115 @@ public final class GemService {
         return item;
     }
 
+    // ------------------------------------------------------------ v2.26.7 存量同步（宝石再砍一刀）
+
+    /** v2.26.7 再砍一刀的比率：战斗系四类 ×0.5（与 GemType 新区间一致） */
+    private static final double NERF_RATIO = 0.5;
+
+    /** 战斗系宝石（攻击/暴击/暴伤/吸血）——数值会被同步砍半 */
+    private static boolean nerfedType(GemType t) {
+        return t == GemType.ATTACK || t == GemType.CRIT
+                || t == GemType.CRIT_DAMAGE || t == GemType.LIFESTEAL;
+    }
+
+    /**
+     * 同步一件物品上的宝石数值（v2.26.7「再砍一刀」）。
+     *
+     * <p>覆盖两种形态：散装宝石物品（GEM_VALUE + 数值 Lore 行）与已镶装备
+     * （GEMS 列表 + 宝石 Lore 块 + 属性聚合）。只砍战斗系四类、只乘一次——
+     * 同步后打 {@code gem_sync} 标记，再次调用不动。</p>
+     *
+     * @return 实际改动的宝石颗数
+     */
+    public int resyncLegacy(ItemStack item) {
+        if (item == null || item.getType().isAir()) {
+            return 0;
+        }
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null) {
+            return 0;
+        }
+        PersistentDataContainer pdc = meta.getPersistentDataContainer();
+        NamespacedKey syncMark = new NamespacedKey(plugin, "gem_sync");
+        if (pdc.has(syncMark, PersistentDataType.BYTE)) {
+            return 0; // 已同步过，防重复砍
+        }
+
+        // 形态一：散装宝石物品
+        if (pdc.has(Keys.GEM, PersistentDataType.BYTE)) {
+            GemType type = GemType.byId(pdc.get(Keys.GEM_TYPE, PersistentDataType.STRING));
+            Double value = pdc.get(Keys.GEM_VALUE, PersistentDataType.DOUBLE);
+            int changed = 0;
+            if (type != null && nerfedType(type) && value != null && value > 0) {
+                double nv = Math.round(value * NERF_RATIO * 100.0) / 100.0;
+                pdc.set(Keys.GEM_VALUE, PersistentDataType.DOUBLE, nv);
+                rewriteGemValueLore(meta, type, value, nv);
+                changed = 1;
+            }
+            pdc.set(syncMark, PersistentDataType.BYTE, (byte) 1);
+            item.setItemMeta(meta);
+            return changed;
+        }
+
+        // 形态二：已镶装备（GEMS 列表）
+        String csv = pdc.get(Keys.GEMS, PersistentDataType.STRING);
+        if (csv == null || csv.isBlank()) {
+            return 0;
+        }
+        List<GemEntry> gems = new ArrayList<>();
+        for (String part : csv.split(",")) {
+            GemEntry e = GemEntry.decode(part);
+            if (e != null) {
+                gems.add(e);
+            }
+        }
+        List<GemEntry> old = new ArrayList<>(gems);
+        boolean touched = false;
+        List<GemEntry> synced = new ArrayList<>();
+        for (GemEntry e : gems) {
+            if (nerfedType(e.type())) {
+                double nv = Math.round(e.value() * NERF_RATIO * 100.0) / 100.0;
+                if (nv != e.value()) {
+                    touched = true;
+                    synced.add(new GemEntry(e.type(), nv, e.grade()));
+                    continue;
+                }
+            }
+            synced.add(e);
+        }
+        if (!touched) {
+            // 没有一颗要改也要打标记，避免每轮扫描都白算
+            pdc.set(syncMark, PersistentDataType.BYTE, (byte) 1);
+            item.setItemMeta(meta);
+            return 0;
+        }
+        pdc.set(Keys.GEMS, PersistentDataType.STRING, encode(synced));
+        // 属性聚合与宝石 Lore 行按新旧差量重算（复用镶嵌/拆卸的既有管线）
+        reapplyGemEffects(meta, old, synced);
+        meta.lore(gemLore(meta, socketsOf(item), enchantSocketsOf(item), synced, enchantsOf(item)));
+        pdc.set(syncMark, PersistentDataType.BYTE, (byte) 1);
+        item.setItemMeta(meta);
+        return synced.size();
+    }
+
+    /** 散装宝石的数值 Lore 行重写（旧数值行整行替换，其余行原样） */
+    private void rewriteGemValueLore(ItemMeta meta, GemType type, double oldValue, double newValue) {
+        List<Component> lore = meta.lore();
+        if (lore == null) {
+            return;
+        }
+        String oldPlain = Msg.plain(line(type.format(oldValue)));
+        List<Component> kept = new ArrayList<>();
+        for (Component ln : lore) {
+            if (Msg.plain(ln).equals(oldPlain)) {
+                kept.add(line(type.format(newValue)));
+            } else {
+                kept.add(ln);
+            }
+        }
+        meta.lore(kept);
+    }
+
     // ------------------------------------------------------------ 熔炼
 
     /** 主手矿物 → 随机宝石 */

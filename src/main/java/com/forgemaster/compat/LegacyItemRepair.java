@@ -103,6 +103,22 @@ public final class LegacyItemRepair {
         PersistentDataContainer pdc = meta.getPersistentDataContainer();
 
         // ② 词条类数值：PDC 里存的是旧版累加值，直接夹（上限走统一入口，不在这里写第三份默认值）
+        // ②b v2.26.7：宝石「再砍一刀」存量同步（散装宝石物品 + 已镶装备的 GEMS 列表，
+        //    带 gem_sync 标记只砍一次）；随后把暴击聚合按当前口径「写入即封顶」——
+        //    Lore/面板写的数从此就是实战生效的数，不再有「面板 100%、实战被夹 50%」的落差
+        var gems = plugin.gems();
+        if (gems != null) {
+            gems.resyncLegacy(item);
+            meta = item.getItemMeta();
+            if (meta == null) {
+                return false;
+            }
+            pdc = meta.getPersistentDataContainer();
+        }
+        var critLimits = com.forgemaster.combat.Crit.limitsOf(plugin);
+        clampDouble(pdc, Keys.CRIT_CHANCE, critLimits.maxChance() > 0 ? critLimits.maxChance() : 1.0);
+        clampDouble(pdc, Keys.CRIT_DAMAGE, critLimits.maxDamage() > 0 ? critLimits.maxDamage() : 10.0);
+
         var caps = com.forgemaster.combat.DamageBudget.Caps.fromConfig(plugin.getConfig());
         clampDouble(pdc, Keys.LIFESTEAL, caps.maxLifesteal());
         clampDouble(pdc, Keys.DAMAGE_REDUCE, caps.maxDamageReduce());
