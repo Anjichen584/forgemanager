@@ -23,6 +23,7 @@
 | fixattrs risk | 新增 `fixattrs risk` 子命令：清洗旧极限锻造残留（剥 risk_made PDC + 删「◆ 极限锻造」Lore 行，本体保留）——玩家/容器双扫，兼容旧 `risk_made` 标记物品。自检 +2（运行时清洗钉 + 命令面形状钉），实测 551/0 |
 >>>>>>> 98f5d7e (v2.26.7: fixattrs risk 子命令——清洗旧极限锻造残留 + 钉子 +2 + LATEST（实测 551/0）)
 | fixattrs risk | 新增 `fixattrs risk` 子命令：清洗旧极限锻造残留（剥 risk_made PDC + 删「◆ 极限锻造」Lore 行，本体保留）——玩家/容器双扫。自检 +2 |
+| money 金币口径 | 发金币功能**本来就有**（`money give/take` 走 Vault/CMI，`coin` 才是剑币）——但 help 只写剑币造成误解。已修正 help/余额提示标明金币口径，并加「无经济 provider」前置报错（本服 Vault 后面暂无 provider：需启用 CMI economy 或装 EssX） |
 | 自检 | **实测 549 项 / 通过 549 / 失败 0**（priv 2.26.7 真机 RCON 实测；main = 549 − 3 管理员钉 = 546 推算） |
 | 诊断增强 | 模拟器概率钉子的失败信息带上 o[3]/o[4]/successChance 实际值（上轮一次红为重启竞态，重跑即绿；带数值的断言让下一条红能直接定位） |
 | 静态钉子跳过数 | **0**（上一轮是 22 —— 这是本轮最重要的修复） |

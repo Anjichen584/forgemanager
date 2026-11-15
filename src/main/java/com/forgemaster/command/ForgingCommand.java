@@ -1658,6 +1658,15 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         }
         String sub = args.length >= 2 ? args[1].toLowerCase(Locale.ROOT) : "";
 
+        // v2.26.7：Vault 后面没有经济 provider（CMI economy 未开 / 没装 EssX）时，
+        // give/take 只会报「后端异常」——前置把原因说清楚，别让服主猜。剑币（coin）不在此限。
+        if (!sub.equals("coin") && !sub.equals("coins") && !sub.equals("jianbi") && !eco.external()) {
+            Msg.prefix(sender, "<red>发不了金币：Vault 后面没有经济插件。</red> "
+                    + "<gray>金币操作需要启用 CMI 的 economy 模块或安装 EssentialsX 等经济插件后重载。"
+                    + "发<white>剑币</white>不受影响：<white>" + label() + " money coin give <玩家> <数量></white></gray>");
+            return;
+        }
+
         // /zhujian money coin ... —— 内置剑币（商会 / 拍卖 / 强化用的那套）。
         // 上面的 give/take 操作的是外部经济（Vault / CMI，锻造费走那边）；
         // 管理员想发「剑币」必须走这里，不然发出去的钱在商店里花不了
@@ -1680,14 +1689,15 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
                     Msg.prefix(sender, "<red>玩家不在线：" + args[2]);
                     return;
                 }
-                Msg.prefix(sender, "<gray>" + target.getName() + " 的余额：<white>"
-                        + eco.format((long) eco.balance(target)) + "</white> <dark_gray>（" + eco.backend().label() + "）");
+                Msg.prefix(sender, "<gray>" + target.getName() + " 的金币余额：<white>"
+                        + eco.format((long) eco.balance(target)) + "</white> <dark_gray>（" + eco.backend().label()
+                        + "；剑币请用 coin balance）");
                 budgetLines(sender, target);
                 return;
             }
             if (sender instanceof Player p) {
-                Msg.prefix(p, "<gray>你的余额：<white>" + eco.format((long) eco.balance(p))
-                        + "</white> <dark_gray>（" + eco.backend().label() + "）");
+                Msg.prefix(p, "<gray>你的金币余额：<white>" + eco.format((long) eco.balance(p))
+                        + "</white> <dark_gray>（" + eco.backend().label() + "；剑币请用 coin balance）");
                 budgetLines(p, p);
             } else {
                 Msg.prefix(sender, "<gray>用法：<white>/zhujian money balance <玩家></white>"
@@ -3473,7 +3483,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         addHelp(out, u + "copy", "临摹：copy <谱号> 开始（同种子复刻）· stop / cancel 取消");
 
         out.add(HELP_G_ECON);
-        addHelp(out, u + "money", "剑币余额（balance [玩家] 查他人要管理员 · coin balance）");
+        addHelp(out, u + "money", "金币(Vault)：balance [玩家] · give/take <玩家> <数量>（查他人要管理员）<dark_gray>｜剑币走 coin give/take</dark_gray>");
         addHelp(out, u + "shop", "商会（用剑币买原料与图纸）");
         addHelp(out, u + "blackmarket", "黑市（每日轮换特价，限购）");
         addHelp(out, u + "signin", "每日签到（7 天一轮递增，第 7 天大奖）");
