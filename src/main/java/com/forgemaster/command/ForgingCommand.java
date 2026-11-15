@@ -2514,8 +2514,12 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
 
         if (containers) {
             int fixed = repair.sweepLoadedContainers();
-            plugin.getLogger().info("收敛：已加载容器扫描完成，修正 " + fixed + " 件。");
-            Msg.prefix(sender, "<green>容器扫描完成。</green> <gray>修正 <white>" + fixed + "</white> 件。</gray>");
+            // v2.26.7：容器扫描顺带做宝石同步（再砍一刀）与极限锻造痕迹清洗——一条命令全做完
+            int riskFixed = plugin.riskCleaner().cleanLoadedContainers();
+            plugin.getLogger().info("收敛：已加载容器扫描完成，修正 " + fixed + " 件，清极限锻造痕迹 " + riskFixed + " 件。");
+            Msg.prefix(sender, "<green>容器扫描完成。</green> <gray>修正 <white>" + fixed + "</white> 件"
+                    + (riskFixed > 0 ? "，清极限锻造残留 <white>" + riskFixed + "</white> 件" : "")
+                    + "。</gray>");
             Msg.send(sender, "<dark_gray>　只扫「已加载」区块的容器 —— 不为了修物品去强制加载世界。"
                     + "未加载区块里的存货等它自然加载后再跑一次即可。</dark_gray>");
             return;
@@ -2523,13 +2527,19 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
 
         int players = 0;
         int fixed2 = 0;
+        int riskFixed = 0;
         for (org.bukkit.entity.Player p : org.bukkit.Bukkit.getOnlinePlayers()) {
             players++;
             fixed2 += repair.sweepPlayer(p);
+            riskFixed += plugin.riskCleaner().cleanPlayer(p);
         }
-        plugin.getLogger().info("收敛：扫描 " + players + " 名在线玩家，修正 " + fixed2 + " 件。");
+        riskFixed += plugin.riskCleaner().cleanLoadedContainers();
+        plugin.getLogger().info("收敛：扫描 " + players + " 名在线玩家，修正 " + fixed2
+                + " 件，清极限锻造痕迹 " + riskFixed + " 件。");
         Msg.prefix(sender, "<green>在线收敛完成。</green> <gray>扫描 <white>" + players
-                + "</white> 名玩家，修正 <white>" + fixed2 + "</white> 件。</gray>");
+                + "</white> 名玩家，修正 <white>" + fixed2 + "</white> 件"
+                + (riskFixed > 0 ? "，清极限锻造残留 <white>" + riskFixed + "</white> 件" : "")
+                + "。</gray>");
         Msg.send(sender, "<dark_gray>　离线玩家无需手动处理：他们下次上线会被自动扫一遍"
                 + "（legacy-repair.on-join）。</dark_gray>");
     }
