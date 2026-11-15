@@ -20,6 +20,9 @@
 | priv config 补修 | 多轮 rebase 解冲突把 priv config.yml 的 admin 段弄丢了——BUILTIN 兜底（代码默认 enabled=true + 内置 uskeno）掩盖了缺失，功能未断但配置不可调。已补回并部署 |
 | 事故自纠 | cherry-pick 解冲突时把提交标题残行带进了 ForgingCommand（4cd08b5 不编译且已推送）——下一提交立即修复。教训：解完冲突必须 mvn compile 过了再 continue，commit 前后都要构建验证 |
 | Tab 终审 | 36 个 tab helper 逐一对账 handler：29 全对齐；7 处差异全修——money 两处玩家名补全加 admin 门（查他人已是 admin 口径）、strengthen 补 insure 候选与 help、imprint 删幽灵 insure/baoxian、spirit 删幽灵 show/hide（v2.26.1 已删的功能）+ 补 reroll/[confirm] 三层、help 文案三处修正 |
+| fixattrs risk | 新增 `fixattrs risk` 子命令：清洗旧极限锻造残留（剥 risk_made PDC + 删「◆ 极限锻造」Lore 行，本体保留）——玩家/容器双扫，兼容旧 `risk_made` 标记物品。自检 +2（运行时清洗钉 + 命令面形状钉），实测 551/0 |
+>>>>>>> 98f5d7e (v2.26.7: fixattrs risk 子命令——清洗旧极限锻造残留 + 钉子 +2 + LATEST（实测 551/0）)
+| fixattrs risk | 新增 `fixattrs risk` 子命令：清洗旧极限锻造残留（剥 risk_made PDC + 删「◆ 极限锻造」Lore 行，本体保留）——玩家/容器双扫。自检 +2 |
 | 自检 | **实测 549 项 / 通过 549 / 失败 0**（priv 2.26.7 真机 RCON 实测；main = 549 − 3 管理员钉 = 546 推算） |
 | 诊断增强 | 模拟器概率钉子的失败信息带上 o[3]/o[4]/successChance 实际值（上轮一次红为重启竞态，重跑即绿；带数值的断言让下一条红能直接定位） |
 | 静态钉子跳过数 | **0**（上一轮是 22 —— 这是本轮最重要的修复） |

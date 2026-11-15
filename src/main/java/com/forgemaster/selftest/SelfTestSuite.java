@@ -6305,6 +6305,56 @@ public final class SelfTestSuite {
                 tmp.delete(); // 净效果为零
             }
         });
+        add(g, "v2.26.7 fixattrs risk：极限锻造痕迹清洗（运行时钉）", () -> {
+            var cleaner = plugin.riskCleaner();
+            require(cleaner != null, "RiskMarkCleaner 没初始化");
+            org.bukkit.inventory.ItemStack item = new org.bukkit.inventory.ItemStack(org.bukkit.Material.IRON_SWORD);
+            var meta = item.getItemMeta();
+            var pdc = meta.getPersistentDataContainer();
+            pdc.set(com.forgemaster.util.Keys.FORGED, org.bukkit.persistence.PersistentDataType.BYTE, (byte) 1);
+            pdc.set(new org.bukkit.NamespacedKey(plugin, "risk_made"),
+                    org.bukkit.persistence.PersistentDataType.BYTE, (byte) 1);
+            java.util.List<net.kyori.adventure.text.Component> lore = new java.util.ArrayList<>();
+            lore.add(net.kyori.adventure.text.minimessage.MiniMessage.miniMessage()
+                    .deserialize("<red>◆ 极限锻造</red> <dark_gray>（险中求胜）</dark_gray>"));
+            lore.add(net.kyori.adventure.text.minimessage.MiniMessage.miniMessage()
+                    .deserialize("<gray>强化 +10</gray>"));
+            meta.lore(lore);
+            item.setItemMeta(meta);
+            require(cleaner.marked(item), "带 risk_made + 极限锻造 Lore 的物品必须被识别");
+            require(cleaner.clean(item), "clean 应动 meta");
+            ItemMeta after = item.getItemMeta();
+            require(!after.getPersistentDataContainer().has(
+                    new org.bukkit.NamespacedKey(plugin, "risk_made"),
+                    org.bukkit.persistence.PersistentDataType.BYTE), "risk_made 标记必须被剥掉");
+            require(after.lore() != null && after.lore().size() == 1
+                    && com.forgemaster.util.Msg.plain(after.lore().get(0)).contains("强化 +10"),
+                    "极限锻造 Lore 行必须删除，其余 Lore 必须保留");
+            require(!cleaner.clean(item), "幂等：清洗后再次 clean 不许再动 meta");
+            // 非锻造品不许误伤
+            org.bukkit.inventory.ItemStack normal = new org.bukkit.inventory.ItemStack(org.bukkit.Material.STONE);
+            require(!cleaner.marked(normal) && !cleaner.clean(normal), "非锻造品不许被清洗");
+        });
+        add(g, "v2.26.7 fixattrs risk：命令面挂载（静态形状钉）", () -> {
+            if (findSourcePackageRoot() == null) {
+                plugin.getLogger().info("[selftest] 找不到源码树，跳过 fixattrs risk 钉子");
+                return;
+            }
+            String cmd = sourceFileText("command/ForgingCommand.java");
+            require(cmd != null && cmd.contains("mode.equals(\"risk\")"),
+                    "fixattrs 分派必须挂 risk 模式");
+            String cleaner = sourceFileText("compat/RiskMarkCleaner.java");
+            require(cleaner != null && cleaner.contains("risk_made") && cleaner.contains("极限锻造"),
+                    "RiskMarkCleaner 必须剥 risk_made 标记并按「极限锻造」特征删 Lore 行");
+            // priv 分支的 helpLines 拆了 owner 重载，2 参薄壳切不到正文——先切 3 参全量版，回退 2 参
+            String help = sourceMethodBody("command/ForgingCommand.java",
+                    "public static List<String> helpLines(String label, boolean admin, boolean owner)");
+            if (help == null) {
+                help = sourceMethodBody("command/ForgingCommand.java", "public static List<String> helpLines(");
+            }
+            require(help != null && help.contains("risk 清极限锻造残留"),
+                    "fixattrs 的 help 文案必须写明 risk 清洗");
+        });
         add(g, "contest history：命令三处同源 + 反向断言契约残留清零（v2.26.0/7）", () -> {
             // 源码扫描钉子：只扫非注释行，失败要报命中数。
             java.io.File pkgRoot = findSourcePackageRoot();

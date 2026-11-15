@@ -2456,6 +2456,28 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
         String mode = args.length > 1 ? args[1].toLowerCase(java.util.Locale.ROOT) : "";
         boolean all = mode.equals("all") || mode.equals("全部");
         boolean containers = mode.equals("containers") || mode.equals("container") || mode.equals("容器");
+        boolean risk = mode.equals("risk") || mode.equals("fengxian") || mode.equals("极限锻造");
+
+        // v2.26.7：极限锻造残留清洗（risk_made PDC + Lore 特征行），不销毁物品本体
+        if (risk) {
+            var cleaner = plugin.riskCleaner();
+            int fixed = 0;
+            int players = 0;
+            for (org.bukkit.entity.Player pl : org.bukkit.Bukkit.getOnlinePlayers()) {
+                players++;
+                fixed += cleaner.cleanPlayer(pl);
+            }
+            fixed += cleaner.cleanLoadedContainers();
+            plugin.getLogger().info("fixattrs risk：扫描 " + players + " 名在线玩家与已加载容器，清洗 " + fixed + " 件。");
+            Msg.prefix(sender, fixed == 0
+                    ? "<green>扫描完成。</green> <gray>没有发现极限锻造残留（risk_made 标记 / Lore 行）。</gray>"
+                    : "<green>清洗完成。</green> <gray>扫描 <white>" + players + "</white> 名在线玩家与已加载容器，"
+                            + "剥掉 <white>" + fixed + "</white> 件旧极限锻造痕迹（本体保留）。</gray>");
+            Msg.send(sender, "<dark_gray>　清洗 = 剥 risk_made 标记 + 删「◆ 极限锻造」Lore 行；"
+                    + "离线玩家的末影箱下次上线自动覆盖不到——再跑一次即可。</dark_gray>");
+            return;
+        }
+
 
         if (!all && !containers) {
             if (!(sender instanceof org.bukkit.entity.Player p)) {
@@ -3501,7 +3523,7 @@ public final class ForgingCommand implements CommandExecutor, TabCompleter {
             addHelp(out, u + "metrics", "经济看板：不带参实时报表 · trend [天数] · csv [天数] · sample 立刻采样 · gui 三页面板");
 
             out.add(HELP_G_ADMIN_SYNC);
-            addHelp(out, u + "fixattrs", "存量物品收敛：不带参修主手那一件 · all 扫在线玩家（背包+盔甲+副手+末影箱）· containers 扫已加载容器");
+            addHelp(out, u + "fixattrs", "存量物品收敛：不带参修主手那一件 · all 扫在线玩家（背包+盔甲+副手+末影箱）· containers 扫已加载容器 · risk 清极限锻造残留");
             out.add("<dark_gray>      离线玩家不用手动处理，上线会被 legacy-repair.on-join 自动扫一遍");
 
             out.add(HELP_G_ADMIN_HALL);

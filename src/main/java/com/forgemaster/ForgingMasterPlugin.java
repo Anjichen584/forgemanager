@@ -105,6 +105,8 @@ public final class ForgingMasterPlugin extends JavaPlugin {
     private com.forgemaster.webhook.WebhookService webhook;
     /** 存量物品收敛（v2.23.1）：上线扫描与 fixattrs 命令共用 */
     private com.forgemaster.compat.LegacyItemRepair legacyRepair;
+    /** 极限锻造残留清洗（v2.26.7）：剥 risk_made PDC + 删 Lore 特征行 */
+    private com.forgemaster.compat.RiskMarkCleaner riskCleaner;
     /** 原创附魔注册表 + 附魔台业务 + 纯函数效果计算（v2.23.2） */
     private com.forgemaster.enchant.EnchantRegistry enchants;
     private com.forgemaster.enchant.EnchantService enchantTable;
@@ -231,6 +233,7 @@ public final class ForgingMasterPlugin extends JavaPlugin {
         // 出站 Webhook（v2.23 拓展 C）：未配置 url 时是空壳，dispatch 立刻返回
         webhook = new com.forgemaster.webhook.WebhookService(this);
         legacyRepair = new com.forgemaster.compat.LegacyItemRepair(this);
+        riskCleaner = new com.forgemaster.compat.RiskMarkCleaner(this);
         Bukkit.getPluginManager().registerEvents(new com.forgemaster.compat.LegacyRepairListener(this, legacyRepair), this);
         // 原创附魔（v2.23.3）：注册表必须在 config 迁移之后建，否则读到的还是老配置
         enchants = new com.forgemaster.enchant.EnchantRegistry(this);
@@ -897,6 +900,11 @@ public final class ForgingMasterPlugin extends JavaPlugin {
     /** 存量物品收敛（v2.23.1）：命令 / 上线 / 容器扫描三条路共用这一份逻辑 */
     public com.forgemaster.compat.LegacyItemRepair legacyRepair() {
         return legacyRepair;
+    }
+
+    /** 极限锻造残留清洗访问器（fixattrs risk 用） */
+    public com.forgemaster.compat.RiskMarkCleaner riskCleaner() {
+        return riskCleaner;
     }
 
     /** 原创附魔注册表（v2.23.2）：解析 / 随机 / 部位过滤都走它 */
